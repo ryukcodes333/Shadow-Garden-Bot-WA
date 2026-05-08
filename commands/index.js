@@ -1,29 +1,43 @@
 const db = require('../database')
 const { downloadMediaMessage } = require('@whiskeysockets/baileys')
 
-const mainCmds     = require('./main')
-const adminCmds    = require('./admin')
-const economyCmds  = require('./economy')
-const cardCmds     = require('./cards')
-const gameCmds     = require('./games')
-const pokemonCmds  = require('./pokemon')
+const mainCmds      = require('./main')
+const adminCmds     = require('./admin')
+const economyCmds   = require('./economy')
+const cardCmds      = require('./cards')
+const gameCmds      = require('./games')
+const pokemonCmds   = require('./pokemon')
 const interactionCmds = require('./interactions')
-const funCmds      = require('./fun')
-const rpgCmds      = require('./rpg')
-const unoCmds      = require('./uno')
-const gambleCmds   = require('./gamble')
-const summerCmds   = require('./summer')
-const guildCmds    = require('./guilds')
+const funCmds       = require('./fun')
+const rpgCmds       = require('./rpg')
+const unoCmds       = require('./uno')
+const gambleCmds    = require('./gamble')
+const summerCmds    = require('./summer')
+const guildCmds     = require('./guilds')
 const converterCmds = require('./converter')
-const staffCmds    = require('./staff')
-const pollCmds     = require('./poll')
-const lotteryCmds  = require('./lottery')
-const profileCmds  = require('./profile')
+const staffCmds     = require('./staff')
+const pollCmds      = require('./poll')
+const lotteryCmds   = require('./lottery')
+const profileCmds   = require('./profile')
 
-const PREFIX   = global.prefix   || '.'
-const OWNER_LID = global.ownerLid || '259683117985842@lid'
+const PREFIX      = global.prefix    || '.'
+const POKE_PREFIX = '#'
+const OWNER_LID   = global.ownerLid  || '259683117985842@lid'
 
 const spamTracker = {}
+
+// ── Pokemon commands that use # prefix ───────────────────────────
+const POKE_CMDS = new Set([
+  'phelp', 'start', 'trainer', 'pdaily', 'quests', 'rank',
+  'hunt', 'wb', 'catch', 'c', 'spawn', 'spawnp',
+  'team', 'party', 'pc', 'swap', 't2pc', 't2party', 'pswap',
+  'battle', 'pbattle', 'gym', 'raid', 'heal', 'pheal', 'boost',
+  'evolve', 'train', 'moves', 'learn', 'stats', 'pstats',
+  'mart', 'mbuy', 'use', 'puse', 'trade', 'ptrade', 'gift', 'pgive',
+  'dex', 'event', 'legend', 'achieve', 'cooldown',
+  'pokemon', 'setms', 'delms',
+  'atk', 'moveinfo',
+])
 
 async function handleMessage(sock, msg) {
   const jid       = msg.key.remoteJid
@@ -32,7 +46,7 @@ async function handleMessage(sock, msg) {
   const sender    = senderJid?.split('@')[0] || ''
 
   const isOwner = senderJid === OWNER_LID ||
-    senderJid?.replace('@s.whatsapp.net','') === OWNER_LID.replace('@lid','')
+    senderJid?.replace('@s.whatsapp.net', '') === OWNER_LID.replace('@lid', '')
 
   let isMod = false
   let isGuardian = false
@@ -41,12 +55,13 @@ async function handleMessage(sock, msg) {
       const staffUser = await db.getOrCreateUser(sender).catch(() => null)
       isMod      = staffUser?.role === 'mod'
       isGuardian = staffUser?.role === 'guardian'
-    } catch(e) {}
+    } catch {}
   }
 
-  const msgType  = Object.keys(msg.message || {})[0]
+  const msgType    = Object.keys(msg.message || {})[0]
   const isSticker  = msgType === 'stickerMessage'
   const isReaction = msgType === 'reactionMessage'
+
   const textRaw = msg.message?.conversation ||
     msg.message?.extendedTextMessage?.text ||
     msg.message?.imageMessage?.caption ||
@@ -59,24 +74,25 @@ async function handleMessage(sock, msg) {
 
   if (!textRaw && !isSticker && !isReaction && !isImageWithStickerCmd) return
 
+  // ── Group-level handling ────────────────────────────────────────
   if (isGroup && textRaw) {
     await db.logMessage(sender, jid).catch(() => {})
 
-    const groupSettings = await db.getOrCreateGroup(jid,'').catch(() => null)
+    const groupSettings = await db.getOrCreateGroup(jid, '').catch(() => null)
 
     if (groupSettings?.muted) {
       const groupMeta = await sock.groupMetadata(jid).catch(() => null)
-      const admins = (groupMeta?.participants||[]).filter(p=>p.admin).map(p=>p.id)
+      const admins = (groupMeta?.participants || []).filter(p => p.admin).map(p => p.id)
       if (!admins.includes(senderJid)) return
     }
 
     if (groupSettings?.antispam) {
       const now = Date.now()
       if (!spamTracker[senderJid]) spamTracker[senderJid] = []
-      spamTracker[senderJid] = spamTracker[senderJid].filter(t => now-t < 5000)
+      spamTracker[senderJid] = spamTracker[senderJid].filter(t => now - t < 5000)
       spamTracker[senderJid].push(now)
       if (spamTracker[senderJid].length > 6) {
-        await sock.sendMessage(jid, { text:`⚠️ *ANTI-SPAM*\n\n👤 @${sender} slow down!\n\n_The system doesn't tolerate spam… 🖤_`, mentions:[senderJid] })
+        await sock.sendMessage(jid, { text: `⚠️ @${sender} slow down!`, mentions: [senderJid] })
         return
       }
     }
@@ -85,20 +101,20 @@ async function handleMessage(sock, msg) {
       const urlRegex = /https?:\/\/[^\s]+|wa\.me\/[^\s]+|chat\.whatsapp\.com\/[^\s]+/gi
       if (urlRegex.test(textRaw)) {
         const groupMeta = await sock.groupMetadata(jid).catch(() => null)
-        const admins = (groupMeta?.participants||[]).filter(p=>p.admin).map(p=>p.id)
+        const admins = (groupMeta?.participants || []).filter(p => p.admin).map(p => p.id)
         if (!admins.includes(senderJid) && !isOwner && !isMod) {
           const action = groupSettings.antilink_action || 'warn'
           if (action === 'kick') {
-            await sock.groupParticipantsUpdate(jid,[senderJid],'remove')
-            await sock.sendMessage(jid,{text:`❌ *ANTI-LINK*\n\n@${sender} was removed for posting a link. 🚫\n\n_The shadows don't welcome spammers…_ 🖤`,mentions:[senderJid]})
+            await sock.groupParticipantsUpdate(jid, [senderJid], 'remove')
+            await sock.sendMessage(jid, { text: `❌ @${sender} removed for posting a link.`, mentions: [senderJid] })
           } else if (action === 'delete') {
-            await sock.sendMessage(jid,{delete:msg.key})
-            await sock.sendMessage(jid,{text:`⚠️ *ANTI-LINK*\n\n@${sender} link deleted! 🔗🚫`,mentions:[senderJid]})
+            await sock.sendMessage(jid, { delete: msg.key })
+            await sock.sendMessage(jid, { text: `⚠️ @${sender} link deleted!`, mentions: [senderJid] })
           } else {
-            await db.addWarning(sender,jid,'Anti-link violation','bot')
-            const total = await db.getWarnings(sender,jid)
-            await sock.sendMessage(jid,{delete:msg.key}).catch(()=>{})
-            await sock.sendMessage(jid,{text:`⚠️ *ANTI-LINK WARNING*\n\n👤 @${sender}\n🚫 Warning #${total.length}`,mentions:[senderJid]})
+            await db.addWarning(sender, jid, 'Anti-link violation', 'bot')
+            const total = await db.getWarnings(sender, jid)
+            await sock.sendMessage(jid, { delete: msg.key }).catch(() => {})
+            await sock.sendMessage(jid, { text: `⚠️ @${sender} warning #${total.length}`, mentions: [senderJid] })
           }
           return
         }
@@ -109,28 +125,30 @@ async function handleMessage(sock, msg) {
     if (blacklist.length > 0) {
       const lower = textRaw.toLowerCase()
       if (blacklist.some(w => lower.includes(w.toLowerCase()))) {
-        await sock.sendMessage(jid,{delete:msg.key}).catch(()=>{})
-        await sock.sendMessage(jid,{text:`🚫 *BLACKLISTED WORD*\n\n@${sender} that word is not allowed here.`,mentions:[senderJid]})
+        await sock.sendMessage(jid, { delete: msg.key }).catch(() => {})
+        await sock.sendMessage(jid, { text: `🚫 @${sender} that word is not allowed.`, mentions: [senderJid] })
         return
       }
     }
   }
 
+  // ── AFK return detection ────────────────────────────────────────
   if (!isSticker && !isReaction && !isBold && textRaw) {
     const afkRecord = await db.getAFK(sender).catch(() => null)
     if (afkRecord) {
       const duration = Date.now() - new Date(afkRecord.since).getTime()
-      const mins = Math.floor(duration/60000)
-      const hrs  = Math.floor(mins/60)
-      const durationStr = hrs > 0 ? `${hrs}h ${mins%60}m` : `${mins}m`
+      const mins = Math.floor(duration / 60000)
+      const hrs  = Math.floor(mins / 60)
+      const durationStr = hrs > 0 ? `${hrs}h ${mins % 60}m` : `${mins}m`
       await db.removeAFK(sender)
-      await sock.sendMessage(jid,{
-        text:`🌑 *WELCOME BACK*\n\n👤 *User:* @${sender}\n\n⏳ AFK for: ${durationStr}\n💤 Reason: ${afkRecord.reason}\n\n_The shadows have released you._ 🖤`,
-        mentions:[senderJid]
+      await sock.sendMessage(jid, {
+        text: `🌑 *WELCOME BACK*\n\n👤 @${sender}\n\n⏳ AFK for: ${durationStr}\n💤 Reason: ${afkRecord.reason}`,
+        mentions: [senderJid],
       })
     }
   }
 
+  // ── Notify when an AFK user is mentioned ───────────────────────
   if (isGroup && textRaw && senderJid) {
     const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     for (const mentionedJid of mentions) {
@@ -138,85 +156,160 @@ async function handleMessage(sock, msg) {
       const afkRecord = await db.getAFK(mentionedPhone).catch(() => null)
       if (afkRecord) {
         await db.incrementAFKMentions(mentionedPhone)
-        const since = new Date(afkRecord.since).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})
-        await sock.sendMessage(jid,{
-          text:`💤 *USER IS AFK*\n\n👤 @${mentionedPhone} is away.\n\n📌 Reason: ${afkRecord.reason}\n⏰ Since: ${since}`,
-          mentions:[mentionedJid]
+        const since = new Date(afkRecord.since).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+        await sock.sendMessage(jid, {
+          text: `💤 @${mentionedPhone} is AFK\n📌 Reason: ${afkRecord.reason}\n⏰ Since: ${since}`,
+          mentions: [mentionedJid],
         })
+      }
+
+      // ── Mention sticker ─────────────────────────────────────────
+      // Send when someone mentions a user who has a sticker set
+      // Don't send if: the bot is the sender, or if it's a reply to the mentioned user's own message
+      const isReplyToMentioned = (() => {
+        const ctx = msg.message?.extendedTextMessage?.contextInfo
+        if (!ctx) return false
+        const quotedParticipant = ctx.participant || ''
+        return quotedParticipant.split('@')[0] === mentionedPhone
+      })()
+
+      if (!isReplyToMentioned) {
+        try {
+          const ms = pokemonCmds.getMentionStickers()
+          if (ms[mentionedPhone]) {
+            const stickerBuf = Buffer.from(ms[mentionedPhone].data, 'base64')
+            await sock.sendMessage(jid, { sticker: stickerBuf }, { quoted: msg })
+          }
+        } catch {}
       }
     }
   }
 
+  // ── Image + sticker command ─────────────────────────────────────
   if (isImageWithStickerCmd) {
     const ctx = {
-      sock, msg, jid, senderJid, sender, args:[], cmd:'s', user:null,
+      sock, msg, jid, senderJid, sender, args: [], cmd: 's', user: null,
       isGroup, isOwner, isMod, isGuardian, PREFIX,
-      pushName: msg.pushName||sender, msgType, textRaw,
-      reply: (text) => sock.sendMessage(jid,{text},{quoted:msg}),
-      react:  (emoji) => sock.sendMessage(jid,{react:{text:emoji,key:msg.key}}),
+      pushName: msg.pushName || sender, msgType, textRaw,
+      reply: (text) => sock.sendMessage(jid, { text }, { quoted: msg }),
+      react:  (emoji) => sock.sendMessage(jid, { react: { text: emoji, key: msg.key } }),
     }
-    try { if (mainCmds['s']) await mainCmds['s'](ctx) } catch(e) {}
+    try { if (mainCmds['s']) await mainCmds['s'](ctx) } catch {}
     return
   }
 
-  if (!textRaw.startsWith(PREFIX)) return
+  if (!textRaw) return
 
-  const body = textRaw.slice(PREFIX.length).trim()
-  const args = body.split(/\s+/)
-  const cmd  = args.shift().toLowerCase()
+  // ── Determine which prefix was used ────────────────────────────
+  const isPokemon = textRaw.startsWith(POKE_PREFIX)
+  const isDot     = textRaw.startsWith(PREFIX)
 
-  const user = await db.getOrCreateUser(sender, msg.pushName||sender).catch(() => null)
+  if (!isPokemon && !isDot) return
+
+  const usedPrefix = isPokemon ? POKE_PREFIX : PREFIX
+  const body  = textRaw.slice(usedPrefix.length).trim()
+  const args  = body.split(/\s+/)
+  const cmd   = args.shift().toLowerCase()
+
+  const user = await db.getOrCreateUser(sender, msg.pushName || sender).catch(() => null)
   if (user?.banned && !isOwner) {
-    await sock.sendMessage(jid,{text:`🚫 You are banned from using Shadow Garden Bot.`})
+    await sock.sendMessage(jid, { text: `🚫 You are banned from using Shadow Garden Bot.` })
     return
   }
 
   const disabledCmds = await db.getDisabledCommands().catch(() => [])
-  if (disabledCmds.some(d=>d.command===cmd) && !isOwner) {
-    await sock.sendMessage(jid,{text:`⚠️ The command *.${cmd}* is currently disabled.`})
+  if (disabledCmds.some(d => d.command === cmd) && !isOwner) {
+    await sock.sendMessage(jid, { text: `⚠️ The command *${usedPrefix}${cmd}* is currently disabled.` })
     return
   }
 
   const NO_DB_CMDS = new Set([
-    'menu','help','ping','uptime','botstatus','info','status','website',
-    'community','support','addbot','memory','alive','version','runtime',
-    'sticker','s','toimg','qr','translate','play',
-    'lotterystart','lotteryjoin','lotterystatus','lotterydraw','lotteryend',
-    'poll','pollresult','dbstatus','ll','lottery',
-    'addmod','removemod','addguardian','removeguardian','mods',
+    'menu', 'help', 'ping', 'uptime', 'botstatus', 'info', 'status', 'website',
+    'community', 'support', 'addbot', 'memory', 'alive', 'version', 'runtime',
+    'sticker', 's', 'toimg', 'qr', 'translate', 'play',
+    'lotterystart', 'lotteryjoin', 'lotterystatus', 'lotterydraw', 'lotteryend',
+    'poll', 'pollresult', 'dbstatus', 'll', 'lottery',
+    'addmod', 'removemod', 'addguardian', 'removeguardian', 'mods',
+    'phelp', 'law', 'pbenefits',
   ])
 
-  const reply = (text) => sock.sendMessage(jid,{text},{quoted:msg})
+  const reply = (text) => sock.sendMessage(jid, { text }, { quoted: msg })
 
   if (!user && !NO_DB_CMDS.has(cmd)) {
     return reply(
       `⚠️ *Database Not Set Up*\n\n` +
       `The Supabase tables haven't been created yet.\n\n` +
-      `📋 *To fix this:*\n` +
-      `1. Go to *supabase.com* → your project\n` +
-      `2. Click *SQL Editor*\n` +
-      `3. Paste contents of *setup.sql* and click Run\n\n` +
-      `_Once setup is done, all commands will work._ 🖤`
+      `Run *setup.sql* in your Supabase SQL Editor to fix this.`
     )
   }
 
   const ctx = {
     sock, msg, jid, senderJid, sender, args, cmd, user, isGroup, isOwner, isMod, isGuardian, PREFIX,
-    pushName: msg.pushName||sender, msgType, textRaw,
+    pushName: msg.pushName || sender, msgType, textRaw,
     reply,
-    replyImage: (image,caption) => sock.sendMessage(jid,{image,caption},{quoted:msg}),
-    react: (emoji) => sock.sendMessage(jid,{react:{text:emoji,key:msg.key}}),
+    replyImage: (image, caption) => sock.sendMessage(jid, { image, caption }, { quoted: msg }),
+    react: (emoji) => sock.sendMessage(jid, { react: { text: emoji, key: msg.key } }),
   }
 
   try {
+    // ── # prefix → Pokemon commands ──────────────────────────────
+    if (isPokemon) {
+      // .setms / .delms also work with # prefix
+      if (cmd === 'setms')        return await pokemonCmds.setms(ctx)
+      if (cmd === 'delms')        return await pokemonCmds.delms(ctx)
+      if (cmd === 'phelp')        return await pokemonCmds.phelp(ctx)
+      if (cmd === 'start')        return await pokemonCmds.start(ctx)
+      if (cmd === 'trainer')      return await pokemonCmds.trainer(ctx)
+      if (cmd === 'pdaily')       return await pokemonCmds.pdaily(ctx)
+      if (cmd === 'quests')       return await pokemonCmds.quests(ctx)
+      if (cmd === 'rank')         return await pokemonCmds.rank(ctx)
+      if (cmd === 'hunt' || cmd === 'wb') return await pokemonCmds.hunt(ctx)
+      if (cmd === 'catch' || cmd === 'c') return await pokemonCmds.catch(ctx)
+      if (cmd === 'spawnp')       return await pokemonCmds.spawnp(ctx)
+      if (cmd === 'spawn')        return await pokemonCmds.spawnp(ctx)
+      if (cmd === 'team')         return await pokemonCmds.team(ctx)
+      if (cmd === 'party')        return await pokemonCmds.party(ctx)
+      if (cmd === 'pc')           return await pokemonCmds.pc(ctx)
+      if (cmd === 'swap' || cmd === 'pswap') return await pokemonCmds.swap(ctx)
+      if (cmd === 'battle' || cmd === 'pbattle') return await pokemonCmds.battle(ctx)
+      if (cmd === 'gym')          return await pokemonCmds.gym(ctx)
+      if (cmd === 'raid')         return await pokemonCmds.raid(ctx)
+      if (cmd === 'heal' || cmd === 'pheal') return await pokemonCmds.heal(ctx)
+      if (cmd === 'boost')        return await pokemonCmds.boost(ctx)
+      if (cmd === 'evolve')       return await pokemonCmds.evolve(ctx)
+      if (cmd === 'train')        return await pokemonCmds.train(ctx)
+      if (cmd === 'moves')        return await pokemonCmds.moves(ctx)
+      if (cmd === 'learn')        return await pokemonCmds.learn(ctx)
+      if (cmd === 'stats' || cmd === 'pstats') return await pokemonCmds.stats(ctx)
+      if (cmd === 'mart')         return await pokemonCmds.mart(ctx)
+      if (cmd === 'mbuy')         return await pokemonCmds.mbuy(ctx)
+      if (cmd === 'use' || cmd === 'puse')    return await pokemonCmds.use(ctx)
+      if (cmd === 'trade' || cmd === 'ptrade') return await pokemonCmds.trade(ctx)
+      if (cmd === 'gift' || cmd === 'pgive')  return await pokemonCmds.gift(ctx)
+      if (cmd === 'dex')          return await pokemonCmds.dex(ctx)
+      if (cmd === 'event')        return await pokemonCmds.event(ctx)
+      if (cmd === 'legend')       return await pokemonCmds.legend(ctx)
+      if (cmd === 'achieve')      return await pokemonCmds.achieve(ctx)
+      if (cmd === 'cooldown')     return await pokemonCmds.cooldown(ctx)
+      if (cmd === 'pokemon')      return await pokemonCmds.pokemon(ctx)
+      // Fallback: unknown # command
+      return
+    }
+
+    // ── . prefix → all other commands ────────────────────────────
     if (mainCmds[cmd])        return await mainCmds[cmd](ctx)
     if (adminCmds[cmd])       return await adminCmds[cmd](ctx)
     if (profileCmds[cmd])     return await profileCmds[cmd](ctx)
     if (economyCmds[cmd])     return await economyCmds[cmd](ctx)
     if (cardCmds[cmd])        return await cardCmds[cmd](ctx)
     if (gameCmds[cmd])        return await gameCmds[cmd](ctx)
-    if (cmd === 'pokecatch')  return await pokemonCmds.pokecatchInGroup({ jid, reply, react: ctx.react, sender, user })
+
+    // Legacy . prefix pokemon commands still work
+    if (cmd === 'pokecatch')  return await pokemonCmds.catch(ctx)
+    if (cmd === 'wb')         return await pokemonCmds.hunt(ctx)
+    if (cmd === 'phelp')      return await pokemonCmds.phelp(ctx)
     if (pokemonCmds[cmd])     return await pokemonCmds[cmd](ctx)
+
     if (interactionCmds[cmd]) return await interactionCmds[cmd](ctx)
     if (funCmds[cmd])         return await funCmds[cmd](ctx)
     if (rpgCmds[cmd])         return await rpgCmds[cmd](ctx)
@@ -228,9 +321,9 @@ async function handleMessage(sock, msg) {
     if (staffCmds[cmd])       return await staffCmds[cmd](ctx)
     if (pollCmds[cmd])        return await pollCmds[cmd](ctx)
     if (lotteryCmds[cmd])     return await lotteryCmds[cmd](ctx)
-  } catch(err) {
-    console.error(`Command error [${cmd}]:`, err.message)
-    await ctx.reply(`⚠️ An error occurred running *.${cmd}*\n\n_${err.message}_`)
+  } catch (err) {
+    console.error(`Command error [${usedPrefix}${cmd}]:`, err.message)
+    await ctx.reply(`⚠️ Error running *${usedPrefix}${cmd}*\n\n_${err.message}_`)
   }
 }
 
