@@ -20,24 +20,11 @@ const pollCmds      = require('./poll')
 const lotteryCmds   = require('./lottery')
 const profileCmds   = require('./profile')
 
-const PREFIX      = global.prefix    || '.'
+const PREFIX      = global.prefix   || '.'
 const POKE_PREFIX = '#'
-const OWNER_LID   = global.ownerLid  || '259683117985842@lid'
+const OWNER_LID   = global.ownerLid || '259683117985842@lid'
 
 const spamTracker = {}
-
-// ── Pokemon commands that use # prefix ───────────────────────────
-const POKE_CMDS = new Set([
-  'phelp', 'start', 'trainer', 'pdaily', 'quests', 'rank',
-  'hunt', 'wb', 'catch', 'c', 'spawn', 'spawnp',
-  'team', 'party', 'pc', 'swap', 't2pc', 't2party', 'pswap',
-  'battle', 'pbattle', 'gym', 'raid', 'heal', 'pheal', 'boost',
-  'evolve', 'train', 'moves', 'learn', 'stats', 'pstats',
-  'mart', 'mbuy', 'use', 'puse', 'trade', 'ptrade', 'gift', 'pgive',
-  'dex', 'event', 'legend', 'achieve', 'cooldown',
-  'pokemon', 'setms', 'delms',
-  'atk', 'moveinfo',
-])
 
 async function handleMessage(sock, msg) {
   const jid       = msg.key.remoteJid
@@ -74,7 +61,7 @@ async function handleMessage(sock, msg) {
 
   if (!textRaw && !isSticker && !isReaction && !isImageWithStickerCmd) return
 
-  // ── Group-level handling ────────────────────────────────────────
+  // ── Group-level protections ─────────────────────────────────
   if (isGroup && textRaw) {
     await db.logMessage(sender, jid).catch(() => {})
 
@@ -101,7 +88,7 @@ async function handleMessage(sock, msg) {
       const urlRegex = /https?:\/\/[^\s]+|wa\.me\/[^\s]+|chat\.whatsapp\.com\/[^\s]+/gi
       if (urlRegex.test(textRaw)) {
         const groupMeta = await sock.groupMetadata(jid).catch(() => null)
-        const admins = (groupMeta?.participants || []).filter(p => p.admin).map(p => p.id)
+        const admins    = (groupMeta?.participants || []).filter(p => p.admin).map(p => p.id)
         if (!admins.includes(senderJid) && !isOwner && !isMod) {
           const action = groupSettings.antilink_action || 'warn'
           if (action === 'kick') {
@@ -132,13 +119,13 @@ async function handleMessage(sock, msg) {
     }
   }
 
-  // ── AFK return detection ────────────────────────────────────────
+  // ── AFK return ──────────────────────────────────────────────
   if (!isSticker && !isReaction && !isBold && textRaw) {
     const afkRecord = await db.getAFK(sender).catch(() => null)
     if (afkRecord) {
-      const duration = Date.now() - new Date(afkRecord.since).getTime()
-      const mins = Math.floor(duration / 60000)
-      const hrs  = Math.floor(mins / 60)
+      const duration    = Date.now() - new Date(afkRecord.since).getTime()
+      const mins        = Math.floor(duration / 60000)
+      const hrs         = Math.floor(mins / 60)
       const durationStr = hrs > 0 ? `${hrs}h ${mins % 60}m` : `${mins}m`
       await db.removeAFK(sender)
       await sock.sendMessage(jid, {
@@ -148,11 +135,13 @@ async function handleMessage(sock, msg) {
     }
   }
 
-  // ── Notify when an AFK user is mentioned ───────────────────────
+  // ── AFK notifications + mention stickers ────────────────────
   if (isGroup && textRaw && senderJid) {
     const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     for (const mentionedJid of mentions) {
       const mentionedPhone = mentionedJid.split('@')[0]
+
+      // AFK notification
       const afkRecord = await db.getAFK(mentionedPhone).catch(() => null)
       if (afkRecord) {
         await db.incrementAFKMentions(mentionedPhone)
@@ -163,17 +152,9 @@ async function handleMessage(sock, msg) {
         })
       }
 
-      // ── Mention sticker ─────────────────────────────────────────
-      // Send when someone mentions a user who has a sticker set
-      // Don't send if: the bot is the sender, or if it's a reply to the mentioned user's own message
-      const isReplyToMentioned = (() => {
-        const ctx = msg.message?.extendedTextMessage?.contextInfo
-        if (!ctx) return false
-        const quotedParticipant = ctx.participant || ''
-        return quotedParticipant.split('@')[0] === mentionedPhone
-      })()
-
-      if (!isReplyToMentioned) {
+      // Mention sticker — only if this is NOT a reply to the mentioned user's own message
+      const quotedParticipant = (msg.message?.extendedTextMessage?.contextInfo?.participant || '').split('@')[0]
+      if (quotedParticipant !== mentionedPhone) {
         try {
           const ms = pokemonCmds.getMentionStickers()
           if (ms[mentionedPhone]) {
@@ -185,7 +166,7 @@ async function handleMessage(sock, msg) {
     }
   }
 
-  // ── Image + sticker command ─────────────────────────────────────
+  // ── Image + sticker shortcut ─────────────────────────────────
   if (isImageWithStickerCmd) {
     const ctx = {
       sock, msg, jid, senderJid, sender, args: [], cmd: 's', user: null,
@@ -200,10 +181,9 @@ async function handleMessage(sock, msg) {
 
   if (!textRaw) return
 
-  // ── Determine which prefix was used ────────────────────────────
+  // ── Determine prefix ─────────────────────────────────────────
   const isPokemon = textRaw.startsWith(POKE_PREFIX)
   const isDot     = textRaw.startsWith(PREFIX)
-
   if (!isPokemon && !isDot) return
 
   const usedPrefix = isPokemon ? POKE_PREFIX : PREFIX
@@ -224,13 +204,13 @@ async function handleMessage(sock, msg) {
   }
 
   const NO_DB_CMDS = new Set([
-    'menu', 'help', 'ping', 'uptime', 'botstatus', 'info', 'status', 'website',
-    'community', 'support', 'addbot', 'memory', 'alive', 'version', 'runtime',
-    'sticker', 's', 'toimg', 'qr', 'translate', 'play',
-    'lotterystart', 'lotteryjoin', 'lotterystatus', 'lotterydraw', 'lotteryend',
-    'poll', 'pollresult', 'dbstatus', 'll', 'lottery',
-    'addmod', 'removemod', 'addguardian', 'removeguardian', 'mods',
-    'phelp', 'law', 'pbenefits',
+    'menu','help','ping','uptime','botstatus','info','status','website',
+    'community','support','addbot','memory','alive','version',
+    'sticker','s','toimg','qr','translate','play',
+    'lotterystart','lotteryjoin','lotterystatus','lotterydraw','lotteryend',
+    'poll','pollresult','dbstatus','lottery',
+    'addmod','removemod','addguardian','removeguardian','mods',
+    'phelp','law','pbenefits',
   ])
 
   const reply = (text) => sock.sendMessage(jid, { text }, { quoted: msg })
@@ -238,7 +218,7 @@ async function handleMessage(sock, msg) {
   if (!user && !NO_DB_CMDS.has(cmd)) {
     return reply(
       `⚠️ *Database Not Set Up*\n\n` +
-      `The Supabase tables haven't been created yet.\n\n` +
+      `Supabase tables haven't been created yet.\n\n` +
       `Run *setup.sql* in your Supabase SQL Editor to fix this.`
     )
   }
@@ -252,75 +232,75 @@ async function handleMessage(sock, msg) {
   }
 
   try {
-    // ── # prefix → Pokemon commands ──────────────────────────────
+    // ── # prefix → Pokémon commands ─────────────────────────────
     if (isPokemon) {
-      // .setms / .delms also work with # prefix
-      if (cmd === 'setms')        return await pokemonCmds.setms(ctx)
-      if (cmd === 'delms')        return await pokemonCmds.delms(ctx)
-      if (cmd === 'phelp')        return await pokemonCmds.phelp(ctx)
-      if (cmd === 'start')        return await pokemonCmds.start(ctx)
-      if (cmd === 'trainer')      return await pokemonCmds.trainer(ctx)
-      if (cmd === 'pdaily')       return await pokemonCmds.pdaily(ctx)
-      if (cmd === 'quests')       return await pokemonCmds.quests(ctx)
-      if (cmd === 'rank')         return await pokemonCmds.rank(ctx)
-      if (cmd === 'hunt' || cmd === 'wb') return await pokemonCmds.hunt(ctx)
-      if (cmd === 'catch' || cmd === 'c') return await pokemonCmds.catch(ctx)
-      if (cmd === 'spawnp')       return await pokemonCmds.spawnp(ctx)
-      if (cmd === 'spawn')        return await pokemonCmds.spawnp(ctx)
-      if (cmd === 'team')         return await pokemonCmds.team(ctx)
-      if (cmd === 'party')        return await pokemonCmds.party(ctx)
-      if (cmd === 'pc')           return await pokemonCmds.pc(ctx)
-      if (cmd === 'swap' || cmd === 'pswap') return await pokemonCmds.swap(ctx)
-      if (cmd === 'battle' || cmd === 'pbattle') return await pokemonCmds.battle(ctx)
-      if (cmd === 'gym')          return await pokemonCmds.gym(ctx)
-      if (cmd === 'raid')         return await pokemonCmds.raid(ctx)
-      if (cmd === 'heal' || cmd === 'pheal') return await pokemonCmds.heal(ctx)
-      if (cmd === 'boost')        return await pokemonCmds.boost(ctx)
-      if (cmd === 'evolve')       return await pokemonCmds.evolve(ctx)
-      if (cmd === 'train')        return await pokemonCmds.train(ctx)
-      if (cmd === 'moves')        return await pokemonCmds.moves(ctx)
-      if (cmd === 'learn')        return await pokemonCmds.learn(ctx)
-      if (cmd === 'stats' || cmd === 'pstats') return await pokemonCmds.stats(ctx)
-      if (cmd === 'mart')         return await pokemonCmds.mart(ctx)
-      if (cmd === 'mbuy')         return await pokemonCmds.mbuy(ctx)
-      if (cmd === 'use' || cmd === 'puse')    return await pokemonCmds.use(ctx)
-      if (cmd === 'trade' || cmd === 'ptrade') return await pokemonCmds.trade(ctx)
-      if (cmd === 'gift' || cmd === 'pgive')  return await pokemonCmds.gift(ctx)
-      if (cmd === 'dex')          return await pokemonCmds.dex(ctx)
-      if (cmd === 'event')        return await pokemonCmds.event(ctx)
-      if (cmd === 'legend')       return await pokemonCmds.legend(ctx)
-      if (cmd === 'achieve')      return await pokemonCmds.achieve(ctx)
-      if (cmd === 'cooldown')     return await pokemonCmds.cooldown(ctx)
-      if (cmd === 'pokemon')      return await pokemonCmds.pokemon(ctx)
-      // Fallback: unknown # command
-      return
+      const pk = pokemonCmds
+      if (cmd === 'phelp')                      return await pk.phelp(ctx)
+      if (cmd === 'start')                      return await pk.start(ctx)
+      if (cmd === 'trainer')                    return await pk.trainer(ctx)
+      if (cmd === 'pdaily')                     return await pk.pdaily(ctx)
+      if (cmd === 'quests')                     return await pk.quests(ctx)
+      if (cmd === 'rank')                       return await pk.rank(ctx)
+      if (cmd === 'hunt' || cmd === 'wb')       return await pk.hunt(ctx)
+      if (cmd === 'catch' || cmd === 'c')       return await pk.catch(ctx)
+      if (cmd === 'spawnp' || cmd === 'spawn')  return await pk.spawnp(ctx)
+      if (cmd === 'team')                       return await pk.team(ctx)
+      if (cmd === 'party')                      return await pk.party(ctx)
+      if (cmd === 'pc')                         return await pk.pc(ctx)
+      if (cmd === 'swap' || cmd === 'pswap')    return await pk.swap(ctx)
+      if (cmd === 'battle' || cmd === 'pbattle')return await pk.battle(ctx)
+      if (cmd === 'gym')                        return await pk.gym(ctx)
+      if (cmd === 'raid')                       return await pk.raid(ctx)
+      if (cmd === 'heal' || cmd === 'pheal')    return await pk.heal(ctx)
+      if (cmd === 'boost')                      return await pk.boost(ctx)
+      if (cmd === 'evolve')                     return await pk.evolve(ctx)
+      if (cmd === 'train')                      return await pk.train(ctx)
+      if (cmd === 'moves')                      return await pk.moves(ctx)
+      if (cmd === 'learn')                      return await pk.learn(ctx)
+      if (cmd === 'stats' || cmd === 'pstats')  return await pk.stats(ctx)
+      if (cmd === 'mart')                       return await pk.mart(ctx)
+      if (cmd === 'mbuy')                       return await pk.mbuy(ctx)
+      if (cmd === 'use' || cmd === 'puse')      return await pk.use(ctx)
+      if (cmd === 'trade' || cmd === 'ptrade')  return await pk.trade(ctx)
+      if (cmd === 'gift' || cmd === 'pgive')    return await pk.gift(ctx)
+      if (cmd === 'dex')                        return await pk.dex(ctx)
+      if (cmd === 'event')                      return await pk.event(ctx)
+      if (cmd === 'legend')                     return await pk.legend(ctx)
+      if (cmd === 'achieve')                    return await pk.achieve(ctx)
+      if (cmd === 'cooldown')                   return await pk.cooldown(ctx)
+      if (cmd === 'pokemon')                    return await pk.pokemon(ctx)
+      if (cmd === 'setms')                      return await pk.setms(ctx)
+      if (cmd === 'delms')                      return await pk.delms(ctx)
+      return // unknown # command — silently ignore
     }
 
-    // ── . prefix → all other commands ────────────────────────────
-    if (mainCmds[cmd])        return await mainCmds[cmd](ctx)
-    if (adminCmds[cmd])       return await adminCmds[cmd](ctx)
-    if (profileCmds[cmd])     return await profileCmds[cmd](ctx)
-    if (economyCmds[cmd])     return await economyCmds[cmd](ctx)
-    if (cardCmds[cmd])        return await cardCmds[cmd](ctx)
-    if (gameCmds[cmd])        return await gameCmds[cmd](ctx)
+    // ── . prefix → all other commands ───────────────────────────
+    if (mainCmds[cmd])          return await mainCmds[cmd](ctx)
+    if (adminCmds[cmd])         return await adminCmds[cmd](ctx)
+    if (profileCmds[cmd])       return await profileCmds[cmd](ctx)
+    if (economyCmds[cmd])       return await economyCmds[cmd](ctx)
+    if (cardCmds[cmd])          return await cardCmds[cmd](ctx)
+    if (gameCmds[cmd])          return await gameCmds[cmd](ctx)
 
-    // Legacy . prefix pokemon commands still work
-    if (cmd === 'pokecatch')  return await pokemonCmds.catch(ctx)
-    if (cmd === 'wb')         return await pokemonCmds.hunt(ctx)
-    if (cmd === 'phelp')      return await pokemonCmds.phelp(ctx)
-    if (pokemonCmds[cmd])     return await pokemonCmds[cmd](ctx)
+    // Legacy . prefix Pokémon commands still work
+    if (cmd === 'wb')           return await pokemonCmds.hunt(ctx)
+    if (cmd === 'phelp')        return await pokemonCmds.phelp(ctx)
+    if (cmd === 'pokemon')      return await pokemonCmds.pokemon(ctx)
+    if (cmd === 'setms')        return await pokemonCmds.setms(ctx)
+    if (cmd === 'delms')        return await pokemonCmds.delms(ctx)
+    if (pokemonCmds[cmd])       return await pokemonCmds[cmd](ctx)
 
-    if (interactionCmds[cmd]) return await interactionCmds[cmd](ctx)
-    if (funCmds[cmd])         return await funCmds[cmd](ctx)
-    if (rpgCmds[cmd])         return await rpgCmds[cmd](ctx)
-    if (unoCmds[cmd])         return await unoCmds[cmd](ctx)
-    if (gambleCmds[cmd])      return await gambleCmds[cmd](ctx)
-    if (summerCmds[cmd])      return await summerCmds[cmd](ctx)
-    if (guildCmds[cmd])       return await guildCmds[cmd](ctx)
-    if (converterCmds[cmd])   return await converterCmds[cmd](ctx)
-    if (staffCmds[cmd])       return await staffCmds[cmd](ctx)
-    if (pollCmds[cmd])        return await pollCmds[cmd](ctx)
-    if (lotteryCmds[cmd])     return await lotteryCmds[cmd](ctx)
+    if (interactionCmds[cmd])   return await interactionCmds[cmd](ctx)
+    if (funCmds[cmd])           return await funCmds[cmd](ctx)
+    if (rpgCmds[cmd])           return await rpgCmds[cmd](ctx)
+    if (unoCmds[cmd])           return await unoCmds[cmd](ctx)
+    if (gambleCmds[cmd])        return await gambleCmds[cmd](ctx)
+    if (summerCmds[cmd])        return await summerCmds[cmd](ctx)
+    if (guildCmds[cmd])         return await guildCmds[cmd](ctx)
+    if (converterCmds[cmd])     return await converterCmds[cmd](ctx)
+    if (staffCmds[cmd])         return await staffCmds[cmd](ctx)
+    if (pollCmds[cmd])          return await pollCmds[cmd](ctx)
+    if (lotteryCmds[cmd])       return await lotteryCmds[cmd](ctx)
   } catch (err) {
     console.error(`Command error [${usedPrefix}${cmd}]:`, err.message)
     await ctx.reply(`⚠️ Error running *${usedPrefix}${cmd}*\n\n_${err.message}_`)
