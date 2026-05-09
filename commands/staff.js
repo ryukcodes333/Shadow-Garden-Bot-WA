@@ -371,7 +371,7 @@ module.exports = {
   },
 
   async owner({ reply }) {
-    await reply(`👑 *BOT OWNER*\n\nThis bot is managed by Shadow Garden staff.\n\n_The shadows know who rules._ 🖤`)
+    await reply(`👑 *BOT OWNER*\n\nThis bot is managed by Shadow Garden staff.`)
   },
 
   async setprefix({ reply, isOwner }) {
