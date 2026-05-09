@@ -15,20 +15,17 @@ async function isBotAdmin(sock, jid) {
 
 module.exports = {
   async kick({ sock, msg, jid, senderJid, isGroup, isOwner, reply }) {
-    if (!isGroup) return reply('❌ This command only works in groups.')
+    if (!isGroup) return reply('❌ Groups only.')
     const admin = await isAdmin(sock, jid, senderJid)
-    if (!admin && !isOwner) return reply('⚠️ You need admin rights to use this command.')
+    if (!admin && !isOwner) return reply('⚠️ Admin only.')
     const botAdmin = await isBotAdmin(sock, jid)
     if (!botAdmin) return reply('⚠️ I need to be an admin to kick users.')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ *INCORRECT COMMAND USAGE*\n\n📖 Correct Format:\n*.kick @user*\n\n_The system expects precision…_ 🖤')
+    if (!mentioned.length) return reply('⚠️ Usage: .kick @user')
     for (const target of mentioned) {
       const targetPhone = target.split('@')[0]
       await sock.groupParticipantsUpdate(jid, [target], 'remove')
-      await sock.sendMessage(jid, {
-        text: `❌ *USER REMOVED*\n\n👤 @${targetPhone} has been removed from the group 🚫\n\nNo authority remains… access denied.\n\n_The shadows enforce order._ 🖤`,
-        mentions: [target]
-      }, { quoted: msg })
+      await sock.sendMessage(jid, { text: `@${targetPhone} has been removed.`, mentions: [target] }, { quoted: msg })
     }
   },
 
@@ -50,10 +47,10 @@ module.exports = {
     const action = args[0]?.toLowerCase()
     if (action === 'on') {
       await db.updateGroup(jid, { antilink: true })
-      await reply(`🔗 *ANTI-LINK ENABLED*\n\n⚡ Action: warn\n\nUse *.antilink set [warn/kick/delete]* to change action.\n\n_The shadows guard this group._ 🖤`)
+      await reply('🔗 Anti-link *ON* — action: warn\nUse .antilink set [warn/kick/delete] to change.')
     } else if (action === 'off') {
       await db.updateGroup(jid, { antilink: false })
-      await reply(`🔓 *ANTI-LINK DISABLED*\n\n_Links are now permitted._ 🖤`)
+      await reply('🔓 Anti-link *OFF*')
     } else if (action === 'set' && args[1]) {
       const newAction = args[1].toLowerCase()
       if (!['warn', 'kick', 'delete'].includes(newAction)) return reply('⚠️ Action must be: warn, kick, or delete')
@@ -62,7 +59,7 @@ module.exports = {
     } else {
       const status = group?.antilink ? 'ON' : 'OFF'
       const act = group?.antilink_action || 'warn'
-      await reply(`🔗 *ANTI-LINK STATUS*\n\nStatus: ${status}\nAction: ${act}\n\nUsage:\n• .antilink on\n• .antilink off\n• .antilink set [warn/kick/delete]`)
+      await reply(`🔗 Anti-link: *${status}* | Action: *${act}*\n\n.antilink on/off\n.antilink set [warn/kick/delete]`)
     }
   },
 
@@ -71,19 +68,19 @@ module.exports = {
     const admin = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Reply or mention a user: *.warn @user [reason]*')
+    if (!mentioned.length) return reply('⚠️ Usage: .warn @user [reason]')
     const target = mentioned[0]
     const targetPhone = target.split('@')[0]
     const reason = args.filter(a => !a.includes('@')).join(' ') || 'No reason given'
     await db.addWarning(targetPhone, jid, reason, sender)
     const warns = await db.getWarnings(targetPhone, jid)
     await sock.sendMessage(jid, {
-      text: `⚠️ *WARNING ISSUED*\n\n👤 *User:* @${targetPhone}\n📌 *Reason:* ${reason}\n🚨 *Total Warnings:* ${warns.length}/3\n\n_The shadows track every violation…_ 🖤`,
+      text: `⚠️ @${targetPhone} warned — ${reason} (${warns.length}/3)`,
       mentions: [target]
     }, { quoted: msg })
     if (warns.length >= 3) {
       await sock.groupParticipantsUpdate(jid, [target], 'remove')
-      await sock.sendMessage(jid, { text: `🚫 @${targetPhone} has been kicked after 3 warnings.`, mentions: [target] })
+      await sock.sendMessage(jid, { text: `🚫 @${targetPhone} kicked after 3 warnings.`, mentions: [target] })
     }
   },
 
@@ -92,11 +89,11 @@ module.exports = {
     const admin = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Mention a user: *.resetwarn @user*')
+    if (!mentioned.length) return reply('⚠️ Usage: .resetwarn @user')
     const target = mentioned[0]
     const targetPhone = target.split('@')[0]
     await db.resetWarnings(targetPhone, jid)
-    await sock.sendMessage(jid, { text: `✅ Warnings reset for @${targetPhone}.`, mentions: [target] }, { quoted: msg })
+    await sock.sendMessage(jid, { text: `✅ Warnings cleared for @${targetPhone}.`, mentions: [target] }, { quoted: msg })
   },
 
   async groupinfo({ sock, msg, jid, isGroup, reply }, alias) {
@@ -138,12 +135,12 @@ module.exports = {
     const toggle = args[0]?.toLowerCase()
     if (toggle === 'on') {
       await db.updateGroup(jid, { welcome: true })
-      await reply('✅ *Welcome messages ENABLED*\n\nUse *.setwelcome <message>* to customize.\nUse <user> and <group> as placeholders.')
+      await reply('✅ Welcome messages ON\nCustomize with .setwelcome <message> (use <user> and <group>)')
     } else if (toggle === 'off') {
       await db.updateGroup(jid, { welcome: false })
-      await reply('✅ *Welcome messages DISABLED*')
+      await reply('✅ Welcome messages OFF')
     } else {
-      await reply('⚠️ Usage: *.welcome on/off*')
+      await reply('⚠️ Usage: .welcome on/off')
     }
   },
 
@@ -152,9 +149,9 @@ module.exports = {
     const admin = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     const msg_text = args.join(' ')
-    if (!msg_text) return reply('⚠️ Usage: *.setwelcome <message>*\nUse <user> and <group> as placeholders.')
+    if (!msg_text) return reply('⚠️ Usage: .setwelcome <message>\nUse <user> and <group> as placeholders.')
     await db.updateGroup(jid, { welcome_msg: msg_text, welcome: true })
-    await reply('✅ Welcome message set!')
+    await reply('✅ Welcome message set.')
   },
 
   async leave({ sock, msg, jid, args, senderJid, isGroup, isOwner, reply }) {
@@ -164,12 +161,12 @@ module.exports = {
     const toggle = args[0]?.toLowerCase()
     if (toggle === 'on') {
       await db.updateGroup(jid, { leave: true })
-      await reply('✅ *Leave messages ENABLED*')
+      await reply('✅ Leave messages ON')
     } else if (toggle === 'off') {
       await db.updateGroup(jid, { leave: false })
-      await reply('✅ *Leave messages DISABLED*')
+      await reply('✅ Leave messages OFF')
     } else {
-      await reply('⚠️ Usage: *.leave on/off*')
+      await reply('⚠️ Usage: .leave on/off')
     }
   },
 
@@ -178,9 +175,9 @@ module.exports = {
     const admin = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     const msg_text = args.join(' ')
-    if (!msg_text) return reply('⚠️ Usage: *.setleave <message>*')
+    if (!msg_text) return reply('⚠️ Usage: .setleave <message>')
     await db.updateGroup(jid, { leave_msg: msg_text, leave: true })
-    await reply('✅ Leave message set!')
+    await reply('✅ Leave message set.')
   },
 
   async promote({ sock, msg, jid, senderJid, isGroup, isOwner, reply }) {
@@ -192,10 +189,7 @@ module.exports = {
     for (const target of mentioned) {
       const targetPhone = target.split('@')[0]
       await sock.groupParticipantsUpdate(jid, [target], 'promote')
-      await sock.sendMessage(jid, {
-        text: `⚙️ *ADMIN ACTION*\n\n⬆️ @${targetPhone} has been promoted to Admin 👑\n\nPower granted successfully ⚡\n\n"The shadows trust you… don't waste it." 🖤`,
-        mentions: [target]
-      }, { quoted: msg })
+      await sock.sendMessage(jid, { text: `@${targetPhone} has been promoted to admin 👑`, mentions: [target] }, { quoted: msg })
     }
   },
 
@@ -208,10 +202,7 @@ module.exports = {
     for (const target of mentioned) {
       const targetPhone = target.split('@')[0]
       await sock.groupParticipantsUpdate(jid, [target], 'demote')
-      await sock.sendMessage(jid, {
-        text: `⚙️ *ADMIN ACTION*\n\n⬇️ @${targetPhone} has been demoted to Member ❌\n\nPower was temporary…\n\n"The shadows take back what is misused." 🖤`,
-        mentions: [target]
-      }, { quoted: msg })
+      await sock.sendMessage(jid, { text: `@${targetPhone} is no longer an admin`, mentions: [target] }, { quoted: msg })
     }
   },
 
@@ -221,7 +212,7 @@ module.exports = {
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     await sock.groupSettingUpdate(jid, 'announcement')
     await db.updateGroup(jid, { muted: true })
-    await reply('🔇 *GROUP MUTED*\n\nOnly admins can send messages now.\n\n_Silence has been imposed…_ 🖤')
+    await reply('🔇 Group muted — only admins can send messages.')
   },
 
   async unmute({ sock, msg, jid, senderJid, isGroup, isOwner, reply }) {
@@ -230,7 +221,7 @@ module.exports = {
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     await sock.groupSettingUpdate(jid, 'not_announcement')
     await db.updateGroup(jid, { muted: false })
-    await reply('🔊 *GROUP UNMUTED*\n\nEveryone can now send messages.\n\n_The silence has lifted…_ 🖤')
+    await reply('🔊 Group unmuted — everyone can now send messages.')
   },
 
   async open({ sock, msg, jid, senderJid, sender, isGroup, isOwner, reply }) {
@@ -239,7 +230,7 @@ module.exports = {
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     await sock.groupSettingUpdate(jid, 'not_announcement')
     await db.updateGroup(jid, { muted: false })
-    await reply(`🔓 *GROUP OPENED*\n\n👤 *Action By:* @${sender}\n\n📢 The group is now *OPEN*\nAnyone can send messages freely.\n\n⚡ Status: Unrestricted Access Enabled\n\n_The shadows have loosened their grip… speak freely._ 🖤`)
+    await reply('🔓 Group is now *OPEN* — anyone can send messages.')
   },
 
   async close({ sock, msg, jid, senderJid, sender, isGroup, isOwner, reply }) {
@@ -248,7 +239,7 @@ module.exports = {
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     await sock.groupSettingUpdate(jid, 'announcement')
     await db.updateGroup(jid, { muted: true })
-    await reply(`🔒 *GROUP CLOSED*\n\n👤 *Action By:* @${sender}\n\n📢 The group is now *CLOSED*\nOnly admins can send messages.\n\n⚠️ Status: Restricted Mode Active\n\n_The shadows have sealed the silence… only chosen voices remain._ 🖤`)
+    await reply('🔒 Group is now *CLOSED* — only admins can send messages.')
   },
 
   async hidetag({ sock, msg, jid, senderJid, isGroup, isOwner, args, reply }) {
@@ -268,32 +259,13 @@ module.exports = {
     const meta = await sock.groupMetadata(jid)
     const members = meta.participants.map(p => p.id)
     const message = args.join(' ') || 'Attention everyone!'
-    const owner = meta.owner || meta.participants.find(p => p.admin === 'superadmin')?.id || ''
-    const ownerPhone = owner.split('@')[0]
-
-    // Fetch who has been active in the last 7 days
     const activePhones = await db.getActiveUsers(jid, 24 * 7)
     const activeSet = new Set(activePhones)
-
     const memberLines = members.map(m => {
       const phone = m.split('@')[0]
-      const isActive = activeSet.has(phone)
-      const tag = isActive ? '🟢 Active' : '🔴 Inactive'
-      return `💠 @${phone} (${tag})`
+      return `${activeSet.has(phone) ? '🟢' : '🔴'} @${phone}`
     }).join('\n')
-
-    const text =
-      `📣 *Tagging All...*\n\n` +
-      `*Message:* ${message}\n` +
-      `*Group:* ${meta.subject}\n` +
-      `*Group JID:* ${jid}\n` +
-      `*Group Owner:* @${ownerPhone}\n` +
-      `*Group Members Count:* ${members.length}\n\n` +
-      `━━━━━━━━━━━━━━━━━━━\n\n` +
-      `${memberLines}\n\n` +
-      `━━━━━━━━━━━━━━━━━━━\n` +
-      `_The shadows have spoken._ 🖤`
-
+    const text = `📣 ${message}\n\n${memberLines}`
     await sock.sendMessage(jid, { text, mentions: members })
   },
 
@@ -307,15 +279,21 @@ module.exports = {
     const topUser = await db.getTopUser(jid, 24)
     const actLevel = Math.min(100, Math.floor((todayMsgs / Math.max(meta.participants.length, 1)) * 10))
     const actStatus = actLevel > 60 ? 'Very Active 🔥' : actLevel > 30 ? 'Moderate ⚡' : 'Low 😴'
-    await reply(`📊 *GROUP ACTIVITY CHECK*\n\n👥 *Group:* ${meta.subject}\n🆔 *ID:* ${jid}\n\n⚡ *Activity Status:* ${actStatus}\n📈 *Activity Level:* ${actLevel}%\n\n💬 *Messages Today:* ${todayMsgs}\n📉 *Messages Yesterday:* ${yestMsgs}\n📊 *Weekly Messages:* ${weekMsgs}\n\n🟢 *Active Members:* ${activeUsers.length}\n🔴 *Inactive Members:* ${meta.participants.length - activeUsers.length}\n\n🔥 *Top Active User:* ${topUser || 'N/A'}\n💬 *Most Active Time:* 8PM - 11PM\n\n⚠️ *System Note:* All data from last 24h\n\n_The system is watching the flow of conversations…_ 🖤`)
+    await reply(
+      `📊 *Activity — ${meta.subject}*\n\n` +
+      `Status: ${actStatus} (${actLevel}%)\n\n` +
+      `💬 Today: ${todayMsgs} | Yesterday: ${yestMsgs} | Week: ${weekMsgs}\n` +
+      `🟢 Active members: ${activeUsers.length}/${meta.participants.length}\n` +
+      `🔥 Top user: ${topUser || 'N/A'}`
+    )
   },
 
   async active({ sock, jid, isGroup, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
     const meta = await sock.groupMetadata(jid)
     const activeUsers = await db.getActiveUsers(jid, 24)
-    const list = activeUsers.map((p, i) => `${i + 1}. ${p}`).join('\n') || 'No active users today'
-    await reply(`🟢 *ACTIVE USERS (24h)*\n\n👥 Group: ${meta.subject}\n\n${list}\n\nTotal: ${activeUsers.length}/${meta.participants.length}\n\n_Activity is power._ 🖤`)
+    const list = activeUsers.map((p, i) => `${i + 1}. ${p}`).join('\n') || 'No active users today.'
+    await reply(`🟢 *Active Users (24h)* — ${meta.subject}\n\n${list}\n\nTotal: ${activeUsers.length}/${meta.participants.length}`)
   },
 
   async inactive({ sock, jid, isGroup, reply }) {
@@ -325,7 +303,7 @@ module.exports = {
     const all = meta.participants.map(p => p.id.split('@')[0])
     const inactive = all.filter(p => !activeUsers.includes(p))
     const list = inactive.slice(0, 20).map((p, i) => `${i + 1}. ${p}`).join('\n') || 'Everyone has been active!'
-    await reply(`🔴 *INACTIVE USERS (7 days)*\n\n👥 Group: ${meta.subject}\n\n${list}\n\nTotal: ${inactive.length}/${meta.participants.length}\n\n_Inactivity will be purged._ 🖤`)
+    await reply(`🔴 *Inactive (7 days)* — ${meta.subject}\n\n${list}\n\nTotal: ${inactive.length}/${meta.participants.length}`)
   },
 
   async antism({ sock, jid, args, senderJid, isGroup, isOwner, reply }) {
@@ -335,12 +313,12 @@ module.exports = {
     const toggle = args[0]?.toLowerCase()
     if (toggle === 'on') {
       await db.updateGroup(jid, { antispam: true })
-      await reply('🛡️ *Anti-Spam ENABLED*\n\nUsers sending 7+ messages in 5 seconds will be warned.\n\n_The system guards against flooding…_ 🖤')
+      await reply('🛡️ Anti-spam *ON* — 7+ messages in 5s will trigger a warning.')
     } else if (toggle === 'off') {
       await db.updateGroup(jid, { antispam: false })
-      await reply('✅ *Anti-Spam DISABLED*')
+      await reply('✅ Anti-spam *OFF*')
     } else {
-      await reply('⚠️ Usage: *.antism on/off*')
+      await reply('⚠️ Usage: .antism on/off')
     }
   },
 
@@ -351,18 +329,18 @@ module.exports = {
     const action = args[0]?.toLowerCase()
     const word = args.slice(1).join(' ')
     if (action === 'add') {
-      if (!word) return reply('⚠️ Usage: *.blacklist add <word>*')
+      if (!word) return reply('⚠️ Usage: .blacklist add <word>')
       await db.addBlacklist(jid, word)
-      await reply(`✅ Word "*${word}*" added to blacklist.`)
+      await reply(`✅ "*${word}*" added to blacklist.`)
     } else if (action === 'remove') {
-      if (!word) return reply('⚠️ Usage: *.blacklist remove <word>*')
+      if (!word) return reply('⚠️ Usage: .blacklist remove <word>')
       await db.removeBlacklist(jid, word)
-      await reply(`✅ Word "*${word}*" removed from blacklist.`)
+      await reply(`✅ "*${word}*" removed from blacklist.`)
     } else if (action === 'list') {
       const list = await db.getBlacklist(jid)
-      await reply(list.length ? `📋 *BLACKLISTED WORDS*\n\n${list.map((w, i) => `${i + 1}. ${w}`).join('\n')}` : 'No blacklisted words.')
+      await reply(list.length ? `📋 *Blacklisted Words*\n\n${list.map((w, i) => `${i + 1}. ${w}`).join('\n')}` : 'No blacklisted words.')
     } else {
-      await reply('⚠️ Usage: *.blacklist add/remove/list [word]*')
+      await reply('⚠️ Usage: .blacklist add/remove/list [word]')
     }
   },
 }

@@ -25,7 +25,7 @@ async function checkCooldown(sender, cmd, seconds, reply) {
     const mins = Math.floor(remaining / 60000)
     const secs = Math.floor((remaining % 60000) / 1000)
     const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
-    await reply(`⏳ *COOLDOWN ACTIVE*\n\n👤 You need to wait!\n⚠️ Command: .${cmd}\n🕒 Wait Time: ${timeStr}\n\n_The system enforces patience… not spam._ 🖤`)
+    await reply(`⏳ *.${cmd}* cooldown — ${timeStr} remaining.`)
     return true
   }
   return false
@@ -35,13 +35,18 @@ module.exports = {
   async bal({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
     const total = (u.wallet || 0) + (u.bank || 0)
-    await reply(`💰 *WALLET STATUS*\n\n👤 *User:* ${u.name || sender}\n\n💵 *Wallet:* $${(u.wallet||0).toLocaleString()}\n🏦 *Bank:* $${(u.bank||0).toLocaleString()}\n\n📊 *Total Wealth:* $${total.toLocaleString()}\n\n💡 Use .deposit / .withdraw to move funds\n\n_The shadows track every dollar you hold…_ 🖤`)
+    await reply(
+      `💰 *Balance — ${u.name || sender}*\n\n` +
+      `💵 Wallet: $${(u.wallet||0).toLocaleString()}\n` +
+      `🏦 Bank: $${(u.bank||0).toLocaleString()}\n` +
+      `📊 Total: $${total.toLocaleString()}`
+    )
   },
   async balance(ctx) { return module.exports.bal(ctx) },
 
   async gems({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
-    await reply(`💎 *GEM BALANCE*\n\n👤 *User:* ${u.name || sender}\n\n💎 *Gems:* ${u.gems||0}\n\n_Gems are rare… spend them wisely._ 🖤`)
+    await reply(`💎 *${u.name || sender}* — ${u.gems||0} gems`)
   },
 
   async daily({ reply, sender, user, pushName }) {
@@ -50,7 +55,7 @@ module.exports = {
     if (cooldown > 0) {
       const hrs  = Math.floor(cooldown / 3600000)
       const mins = Math.floor((cooldown % 3600000) / 60000)
-      return reply(`⏳ *DAILY ALREADY CLAIMED*\n\n⏰ Come back in *${hrs}h ${mins}m* ⏰\n\n_Stay consistent._ 🖤`)
+      return reply(`⏳ Daily already claimed — come back in *${hrs}h ${mins}m*`)
     }
     const tier  = Math.min(Math.floor((u.streak||0)/7), DAILY_COINS.length-1)
     const coins = DAILY_COINS[tier] + Math.floor(Math.random()*100)
@@ -61,44 +66,50 @@ module.exports = {
     await db.updateUser(sender, { wallet:(u.wallet||0)+coins+luckyBonus, gems:(u.gems||0)+gems, streak:newStreak, last_daily:new Date().toISOString() })
     await db.setCooldown(sender, 'daily', CD_DAILY)
     if (isFirst) {
-      await reply(`🌑 *FIRST DAILY CLAIM*\n\n👤 Welcome ${u.name||sender}…\n\n💰 +$${coins} received\n💎 +${gems} gems received\n\n📊 *Starting Balance*\n• 💰 Wallet: $${(u.wallet||0)+coins}\n• 🏦 Bank: $${u.bank||0}\n\n🔥 *Streak:* 1 day\n\n🎁 Starter bonus activated 🎉\n\nThe shadows are now watching you… 🖤`)
+      await reply(`🌑 *First Daily!*\n\n💰 +$${coins} | 💎 +${gems} gems\n🔥 Streak: 1 day\n\nWelcome to Shadow Garden!`)
     } else {
-      await reply(`🌑 *DAILY CLAIM COMPLETE*\n\n💰 +$${coins} added to your wallet\n💎 +${gems} gems secured\n\n📈 *Streak:* ${newStreak} days 🔥\n\n📊 *Balance*\n• 💰 Wallet: $${(u.wallet||0)+coins+luckyBonus}\n• 🏦 Bank: $${u.bank||0}\n${luckyBonus>0?`\n🎲 *Lucky Bonus!* 🍀 +$${luckyBonus}\n`:''}\n⏳ Come back in *24 hours* to claim again\n\n_Not bad… keep going._ 🖤`)
+      await reply(
+        `🌑 *Daily Claimed!*\n\n` +
+        `💰 +$${coins}${luckyBonus > 0 ? ` + $${luckyBonus} lucky bonus 🍀` : ''}\n` +
+        `💎 +${gems} gems\n` +
+        `🔥 Streak: ${newStreak} days\n\n` +
+        `💵 Wallet: $${(u.wallet||0)+coins+luckyBonus}`
+      )
     }
   },
 
   async withdraw({ reply, sender, user, args }) {
     const u = user || await db.getOrCreateUser(sender)
     const withdraw = args[0]?.toLowerCase()==='all' ? u.bank : parseInt(args[0])
-    if (!withdraw || withdraw<=0) return reply('⚠️ Usage: *.withdraw <amount>* or *.withdraw all*')
-    if (withdraw > (u.bank||0)) return reply('❌ You don\'t have that much in your bank!')
+    if (!withdraw || withdraw<=0) return reply('⚠️ Usage: .withdraw <amount> or .withdraw all')
+    if (withdraw > (u.bank||0)) return reply('❌ Not enough in bank.')
     await db.updateUser(sender, { wallet:(u.wallet||0)+withdraw, bank:(u.bank||0)-withdraw })
-    await reply(`💵 *WITHDRAW SUCCESSFUL*\n\n💰 Withdrawn: $${withdraw.toLocaleString()}\n💵 New Wallet: $${((u.wallet||0)+withdraw).toLocaleString()}\n🏦 Bank: $${((u.bank||0)-withdraw).toLocaleString()}\n\n_The shadows release your funds._ 🖤`)
+    await reply(`💵 Withdrew $${withdraw.toLocaleString()}\nWallet: $${((u.wallet||0)+withdraw).toLocaleString()} | Bank: $${((u.bank||0)-withdraw).toLocaleString()}`)
   },
   async wid(ctx) { return module.exports.withdraw(ctx) },
 
   async deposit({ reply, sender, user, args }) {
     const u = user || await db.getOrCreateUser(sender)
     const amount = args[0]?.toLowerCase()==='all' ? u.wallet : parseInt(args[0])
-    if (!amount||amount<=0) return reply('⚠️ Usage: *.deposit <amount>* or *.deposit all*')
-    if (amount>(u.wallet||0)) return reply('❌ You don\'t have that much in your wallet!')
+    if (!amount||amount<=0) return reply('⚠️ Usage: .deposit <amount> or .deposit all')
+    if (amount>(u.wallet||0)) return reply('❌ Not enough in wallet.')
     await db.updateUser(sender, { wallet:(u.wallet||0)-amount, bank:(u.bank||0)+amount })
-    await reply(`🏦 *DEPOSIT SUCCESSFUL*\n\n💰 Deposited: $${amount.toLocaleString()}\n💵 Wallet: $${((u.wallet||0)-amount).toLocaleString()}\n🏦 Bank: $${((u.bank||0)+amount).toLocaleString()}\n\n_Your cash is safe in the vault._ 🖤`)
+    await reply(`🏦 Deposited $${amount.toLocaleString()}\nWallet: $${((u.wallet||0)-amount).toLocaleString()} | Bank: $${((u.bank||0)+amount).toLocaleString()}`)
   },
   async dep(ctx) { return module.exports.deposit(ctx) },
 
   async donate({ sock, msg, jid, reply, sender, user, args }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length||!args[1]) return reply('⚠️ Usage: *.donate @user <amount>*')
+    if (!mentioned.length||!args[1]) return reply('⚠️ Usage: .donate @user <amount>')
     const u = user || await db.getOrCreateUser(sender)
     const amount = parseInt(args[1])||parseInt(args[0])
     if (!amount||amount<=0) return reply('❌ Enter a valid amount.')
-    if (amount>(u.wallet||0)) return reply('❌ Not enough cash in wallet!')
+    if (amount>(u.wallet||0)) return reply('❌ Not enough in wallet.')
     const target = mentioned[0]; const tp = target.split('@')[0]
     const tu = await db.getOrCreateUser(tp)
     await db.updateUser(sender, { wallet:(u.wallet||0)-amount })
     await db.updateUser(tp, { wallet:(tu.wallet||0)+amount })
-    await sock.sendMessage(jid, { text:`💸 *DONATION*\n\n@${sender} donated $${amount.toLocaleString()} to @${tp}\n\n_The shadows acknowledge your generosity._ 🖤`, mentions:[msg.key.participant||msg.key.remoteJid,target] })
+    await sock.sendMessage(jid, { text:`💸 @${sender} donated $${amount.toLocaleString()} to @${tp}`, mentions:[msg.key.participant||msg.key.remoteJid,target] })
   },
 
   async work({ reply, sender, user, pushName }) {
@@ -109,7 +120,7 @@ module.exports = {
     const earned = Math.floor(Math.random()*200)+100
     await db.updateUser(sender, { wallet:(u.wallet||0)+earned })
     await db.setCooldown(sender,'work',CD_WORK)
-    await reply(`💼 *WORK COMPLETE*\n\n👤 ${u.name||sender}\n\n✅ You ${job}!\n💰 Earned: +$${earned}\n💵 Balance: $${(u.wallet||0)+earned}\n\n⏰ Work again in 20 minutes.\n\n_Hustle builds empires in the shadows._ 🖤`)
+    await reply(`💼 You ${job} and earned *$${earned}*\n⏰ Work again in 20 minutes.`)
   },
 
   async dig({ reply, sender, user }) {
@@ -119,11 +130,11 @@ module.exports = {
     let result, earned=0
     if      (found<0.05){ result='a rare gem! 💎'; earned=500; await db.updateUser(sender,{gems:(u.gems||0)+2}) }
     else if (found<0.3) { earned=Math.floor(Math.random()*150)+50; result=`$${earned}` }
-    else if (found<0.6) { result='nothing useful... just dirt 🪱' }
-    else                { earned=Math.floor(Math.random()*30)+5; result=`a rusty old coin worth $${earned}` }
+    else if (found<0.6) { result='nothing useful' }
+    else                { earned=Math.floor(Math.random()*30)+5; result=`a rusty coin worth $${earned}` }
     if (earned>0) await db.updateUser(sender,{wallet:(u.wallet||0)+earned})
     await db.setCooldown(sender,'dig',CD_DIG)
-    await reply(`⛏️ *DIG RESULT*\n\n👤 ${u.name||sender}\n\n🔍 You found: ${result}\n${earned>0?`💰 +$${earned}`:''}\n\n⏰ Dig again in 2 minutes.\n\n_The earth holds secrets…_ 🖤`)
+    await reply(`⛏️ Found: ${result}${earned>0?` (+$${earned})`:''}`)
   },
 
   async fish({ reply, sender, user }) {
@@ -136,7 +147,7 @@ module.exports = {
     const coins = caught.includes('Shadow Pearl')?500:caught.includes('Shark')?250:caught.includes('Nothing')||caught.includes('Boot')?0:Math.floor(Math.random()*80)+20
     if (coins>0) await db.updateUser(sender,{wallet:(u.wallet||0)+coins})
     await db.setCooldown(sender,'fish',CD_FISH)
-    await reply(`🎣 *FISHING RESULT*\n\n👤 ${u.name||sender}\n\n🎯 Caught: ${caught}\n${coins>0?`💰 +$${coins}`:'😔 No reward this time...'}\n\n⏰ Fish again in 2 minutes.\n\n_The shadows of the sea hold many prizes._ 🖤`)
+    await reply(`🎣 Caught: ${caught}${coins>0?` — +$${coins}`:''}`)
   },
 
   async beg({ reply, sender, user }) {
@@ -146,26 +157,21 @@ module.exports = {
     const coins = success ? Math.floor(Math.random()*50)+10 : 0
     if (success) await db.updateUser(sender,{wallet:(u.wallet||0)+coins})
     await db.setCooldown(sender,'beg',CD_BEG)
-    if (success) {
-      await reply(`🙏 *BEGGING SUCCESS*\n\n👤 ${u.name||sender}\n\n💰 +$${coins} received.\n💵 Balance: $${(u.wallet||0)+coins}\n\n_Even shadows can show mercy…_ 🖤`)
-    } else {
-      await reply(`🙏 *BEGGING FAILED*\n\n😤 Nobody gave you anything.\n\n_Get a job._ 🖤`)
-    }
+    await reply(success ? `🙏 Someone gave you *$${coins}*` : `🙏 Nobody gave you anything. Get a job.`)
   },
 
   async roast({ reply }) {
     const roasts = ['Your wallet is so empty even the moths left.','You\'re the human equivalent of a participation trophy.','Your grinding skills are as slow as your internet.','Even the dungeon boss pities you.','Your balance is a negative number of brain cells.']
-    await reply(`🔥 *ROASTED*\n\n${roasts[Math.floor(Math.random()*roasts.length)]}\n\n_The shadows don't hold back._ 🖤`)
+    await reply(`🔥 ${roasts[Math.floor(Math.random()*roasts.length)]}`)
   },
 
   async richlist({ reply }) {
     const rich = await db.getRichList(10)
     if (!rich.length) return reply('No users found.')
     const medals = ['🥇','🥈','🥉']
-    const top3 = rich.slice(0,3).map((u,i)=>`${medals[i]} *#${i+1} ${u.name||u.phone}*\n💰 Wealth: $${((u.wallet||0)+(u.bank||0)).toLocaleString()}\n🏦 Bank: $${(u.bank||0).toLocaleString()}`).join('\n\n')
-    const rest = rich.slice(3).map(u=>`• ${u.name||u.phone} — $${((u.wallet||0)+(u.bank||0)).toLocaleString()}`).join('\n')
-    const total = await db.getUserCount()
-    await reply(`💎 *RICH LIST*\n\n━━━━━━━━━━━━━━━\n\n${top3}\n\n━━━━━━━━━━━━━━━\n${rest?`\n${rest}\n`:''}\n━━━━━━━━━━━━━━━\n\n👥 Total Users: ${total}\n\n_Only the richest control the system… the rest follow it._ 🖤`)
+    const top3 = rich.slice(0,3).map((u,i)=>`${medals[i]} *${u.name||u.phone}* — $${((u.wallet||0)+(u.bank||0)).toLocaleString()}`).join('\n')
+    const rest = rich.slice(3).map((u,i)=>`${i+4}. ${u.name||u.phone} — $${((u.wallet||0)+(u.bank||0)).toLocaleString()}`).join('\n')
+    await reply(`💎 *Rich List*\n\n${top3}${rest?'\n\n'+rest:''}`)
   },
   async richLg(ctx) { return module.exports.richlist(ctx) },
 
@@ -173,49 +179,72 @@ module.exports = {
     const board = await db.getLeaderboard(10)
     if (!board.length) return reply('No users on leaderboard yet.')
     const medals = ['🥇','🥈','🥉']
-    const top3 = board.slice(0,3).map((u,i)=>`${medals[i]} *#${i+1} ${u.name||u.phone}*\n💰 Cash: $${(u.wallet||0).toLocaleString()}`).join('\n\n')
-    const rest = board.slice(3).map(u=>`• ${u.name||u.phone} — ${u.xp||0} XP`).join('\n')
-    await reply(`🏆 *GLOBAL LEADERBOARD*\n\n━━━━━━━━━━━━━━━\n\n${top3}\n\n━━━━━━━━━━━━━━━\n\n${rest||'N/A'}\n\n_Only the strongest rise to the top._ 🖤`)
+    const lines = board.map((u,i)=>`${medals[i]||`${i+1}.`} *${u.name||u.phone}* — $${(u.wallet||0).toLocaleString()}`)
+    await reply(`🏆 *Leaderboard*\n\n${lines.join('\n')}`)
   },
   async lb(ctx) { return module.exports.leaderboard(ctx) },
 
   async shop({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
-    const weapons  = Object.entries(SHOP_ITEMS).filter(([,v])=>v.type==='weapon' ).map(([,v])=>`${v.emoji} ${v.name} — $${v.price}`).join('\n')
-    const items    = Object.entries(SHOP_ITEMS).filter(([,v])=>v.type==='item'   ).map(([,v])=>`${v.emoji} ${v.name} — $${v.price}`).join('\n')
-    const premium  = Object.entries(SHOP_ITEMS).filter(([,v])=>v.type==='premium').map(([,v])=>`${v.emoji} ${v.name} — ${v.price} gems`).join('\n')
-    await reply(`🛍️ *ITEM SHOP*\n\n👤 *User:* ${u.name||sender}\n💰 *Balance:* $${(u.wallet||0).toLocaleString()}\n💎 *Gems:* ${u.gems||0}\n\n━━━━━━━━━━━━━━━\n\n💰 *WEAPONS*\n${weapons}\n\n🎒 *ITEMS*\n${items}\n\n💎 *PREMIUM*\n${premium}\n\n━━━━━━━━━━━━━━━\n\n💡 Use: .buy <item> to purchase\n\n_The shop tempts the weak._ 🖤`)
+    const weapons  = Object.entries(SHOP_ITEMS).filter(([,v])=>v.type==='weapon' ).map(([k,v])=>`${v.emoji} ${v.name} — $${v.price}`).join('\n')
+    const items    = Object.entries(SHOP_ITEMS).filter(([,v])=>v.type==='item'   ).map(([k,v])=>`${v.emoji} ${v.name} — $${v.price}`).join('\n')
+    const premium  = Object.entries(SHOP_ITEMS).filter(([,v])=>v.type==='premium').map(([k,v])=>`${v.emoji} ${v.name} — ${v.price} gems`).join('\n')
+    await reply(
+      `🛍️ *Shop* | 💰 $${(u.wallet||0).toLocaleString()} | 💎 ${u.gems||0} gems\n\n` +
+      `⚔️ *Weapons*\n${weapons}\n\n` +
+      `🎒 *Items*\n${items}\n\n` +
+      `💎 *Premium*\n${premium}\n\n` +
+      `Use .buy <item> to purchase`
+    )
   },
 
   async buy({ reply, sender, user, args }) {
     const u = user || await db.getOrCreateUser(sender)
     const itemKey = args[0]?.toLowerCase()
-    if (!itemKey) return reply('⚠️ Usage: *.buy <item>*\n\nSee *.shop* for items.')
+    if (!itemKey) return reply('⚠️ Usage: .buy <item> — see .shop')
     const item = Object.entries(SHOP_ITEMS).find(([k,v])=>k===itemKey||v.name.toLowerCase()===itemKey)
-    if (!item) return reply('❌ Item not found. Check *.shop*')
+    if (!item) return reply('❌ Item not found. Check .shop')
     const [,data] = item
     if (data.gems) {
-      if ((u.gems||0)<data.price) return reply(`❌ Not enough gems! You need ${data.price} gems.`)
+      if ((u.gems||0)<data.price) return reply(`❌ Need ${data.price} gems. You have ${u.gems||0}.`)
       await db.updateUser(sender,{gems:(u.gems||0)-data.price})
     } else {
-      if ((u.wallet||0)<data.price) return reply(`❌ Not enough cash! You need $${data.price}.`)
+      if ((u.wallet||0)<data.price) return reply(`❌ Need $${data.price}. You have $${u.wallet||0}.`)
       await db.updateUser(sender,{wallet:(u.wallet||0)-data.price})
     }
     await db.addItem(sender, data.name)
-    await reply(`🛒 *PURCHASE SUCCESSFUL*\n\n✅ Bought: ${data.emoji} ${data.name}\n💰 Cost: ${data.gems?data.price+' gems':'$'+data.price}\n\n_The shadows approve your transaction._ 🖤`)
+    await reply(`✅ Bought ${data.emoji} *${data.name}*`)
   },
 
-  async inv({ reply, sender, user }) {
+  async inv({ sock, jid, msg, reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
     const items = await db.getInventory(sender)
-    if (!items.length) return reply(`🎒 *INVENTORY*\n\n👤 ${u.name||sender}\n\n📦 Empty.\n\n_Visit the shop to stock up._ 🖤`)
-    const list = items.map(i=>`• ${i.item} x${i.quantity}`).join('\n')
-    await reply(`🎒 *INVENTORY*\n\n👤 ${u.name||sender}\n\n${list}\n\n_Your arsenal awaits._ 🖤`)
+    const text = !items.length
+      ? `🎒 *${u.name||sender}'s Inventory*\n\nEmpty — visit .shop to stock up.`
+      : `🎒 *${u.name||sender}'s Inventory*\n\n${items.map(i=>`• ${i.item} x${i.quantity}`).join('\n')}`
+    try {
+      await sock.sendMessage(jid, {
+        text,
+        contextInfo: {
+          externalAdReply: {
+            title: '🌑 Shadow Garden',
+            body: 'shadowgarden.com',
+            mediaType: 1,
+            previewType: 0,
+            renderLargerThumbnail: false,
+            sourceUrl: 'https://shadowgarden.com',
+          }
+        }
+      }, { quoted: msg })
+    } catch {
+      await reply(text)
+    }
   },
+  async bag(ctx) { return module.exports.inv(ctx) },
 
   async sell({ reply, sender, user, args }) {
     const itemName = args.join(' ')
-    if (!itemName) return reply('⚠️ Usage: *.sell <item>*')
+    if (!itemName) return reply('⚠️ Usage: .sell <item>')
     const items = await db.getInventory(sender)
     const found = items.find(i=>i.item.toLowerCase()===itemName.toLowerCase())
     if (!found) return reply('❌ Item not found in inventory.')
@@ -224,45 +253,45 @@ module.exports = {
     await db.removeItem(sender, found.item)
     const u = user || await db.getOrCreateUser(sender)
     await db.updateUser(sender,{wallet:(u.wallet||0)+sellPrice})
-    await reply(`💸 *ITEM SOLD*\n\n✅ Sold: ${found.item}\n💰 Received: $${sellPrice}\n\n_The shadows take their cut._ 🖤`)
+    await reply(`💸 Sold *${found.item}* for $${sellPrice}`)
   },
 
   async use({ reply, sender, args }) {
     const itemName = args.join(' ')
-    if (!itemName) return reply('⚠️ Usage: *.use <item>*')
+    if (!itemName) return reply('⚠️ Usage: .use <item>')
     const items = await db.getInventory(sender)
     const found = items.find(i=>i.item.toLowerCase()===itemName.toLowerCase())
     if (!found) return reply('❌ Item not found in inventory.')
     await db.removeItem(sender, found.item)
-    await reply(`✨ *ITEM USED*\n\n🎒 Used: ${found.item}\n\n⚡ Effect applied!\n\n_Power consumed…_ 🖤`)
+    await reply(`✨ Used *${found.item}* — effect applied!`)
   },
 
   async register({ reply, sender, user, pushName, args }) {
     const u = user || await db.getOrCreateUser(sender,pushName)
-    if (u.bio&&u.bio!=='') return reply('⚠️ You are already registered!')
+    if (u.bio&&u.bio!=='') return reply('⚠️ Already registered.')
     const name = args.join(' ')||pushName||sender
     await db.updateUser(sender,{name,bio:'Shadow Garden Member'})
-    await reply(`✅ *REGISTERED*\n\n👤 Name: ${name}\n\n🌑 Welcome to Shadow Garden!\nType *.profile* to see your profile.\n\n_The shadows have accepted you._ 🖤`)
+    await reply(`✅ Registered as *${name}*\n\nType .profile to see your profile.`)
   },
   async reg(ctx) { return module.exports.register(ctx) },
 
   async setname({ reply, sender, args }) {
     const name = args.join(' ')
-    if (!name) return reply('⚠️ Usage: *.setname <name>*')
+    if (!name) return reply('⚠️ Usage: .setname <name>')
     await db.updateUser(sender,{name})
-    await reply(`✅ Name updated to: *${name}*`)
+    await reply(`✅ Name set to: *${name}*`)
   },
 
   async bio({ reply, sender, args }) {
     const bio = args.join(' ')
-    if (!bio) return reply('⚠️ Usage: *.bio <your bio>*')
+    if (!bio) return reply('⚠️ Usage: .bio <your bio>')
     await db.updateUser(sender,{bio})
-    await reply(`✅ Bio updated!\n\n_${bio}_`)
+    await reply(`✅ Bio updated.`)
   },
 
   async setage({ reply, sender, args }) {
     const age = parseInt(args[0])
-    if (!age||age<1||age>120) return reply('⚠️ Usage: *.setage <number>*')
+    if (!age||age<1||age>120) return reply('⚠️ Usage: .setage <number>')
     await db.updateUser(sender,{age})
     await reply(`✅ Age set to: ${age}`)
   },
@@ -272,7 +301,13 @@ module.exports = {
     const targetPhone = mentioned.length ? mentioned[0].split('@')[0] : sender
     const u = await db.getOrCreateUser(targetPhone)
     const xpNeeded = (u.level||1)*1000
-    await reply(`👤 *PLAYER STATS*\n\n🧑 *Name:* ${u.name||targetPhone}\n\n📊 *Level:* ${u.level||1}\n🔥 *XP:* ${u.xp||0} / ${xpNeeded}\n⭐ *Rank:* ${u.role||'Member'}\n\n💰 *Wallet:* $${(u.wallet||0).toLocaleString()}\n🏦 *Bank:* $${(u.bank||0).toLocaleString()}\n💎 *Gems:* ${u.gems||0}\n\n📈 *Streak:* ${u.streak||0} days\n\n📅 *Joined:* ${u.created_at?new Date(u.created_at).toLocaleDateString():'Unknown'}\n\n_The system tracks everything._ 🖤`)
+    await reply(
+      `👤 *${u.name||targetPhone}*\n\n` +
+      `📊 Lv.${u.level||1} | ⭐ ${u.xp||0}/${xpNeeded} XP | 🎖️ ${u.role||'Member'}\n` +
+      `💰 $${(u.wallet||0).toLocaleString()} wallet | 🏦 $${(u.bank||0).toLocaleString()} bank | 💎 ${u.gems||0} gems\n` +
+      `🔥 Streak: ${u.streak||0} days\n` +
+      `📅 Joined: ${u.created_at?new Date(u.created_at).toLocaleDateString():'Unknown'}`
+    )
   },
   async pstats(ctx) { return module.exports.stats(ctx) },
 
@@ -284,19 +319,19 @@ module.exports = {
       if (remaining>0) {
         const mins = Math.floor(remaining/60000)
         const secs = Math.floor((remaining%60000)/1000)
-        lines.push(`⚠️ .${cmd} — ${mins>0?`${mins}m `:''}${secs}s remaining`)
+        lines.push(`⏳ .${cmd} — ${mins>0?`${mins}m `:''}${secs}s`)
       } else {
-        lines.push(`✅ .${cmd} — Ready!`)
+        lines.push(`✅ .${cmd} — ready`)
       }
     }
-    await reply(`⏳ *COOLDOWN STATUS*\n\n${lines.join('\n')}\n\n_The system enforces patience._ 🖤`)
+    await reply(`⏱️ *Cooldowns*\n\n${lines.join('\n')}`)
   },
   async bc(ctx) { return module.exports.cds(ctx) },
   async lc(ctx) { return module.exports.cds(ctx) },
 
   async membership({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
-    await reply(`👑 *MEMBERSHIP STATUS*\n\n👤 ${u.name||sender}\n\n📊 Status: ${u.premium?'✅ Premium Member':'❌ Regular Member'}\n\n_The shadows reward the loyal._ 🖤`)
+    await reply(`👑 *${u.name||sender}* — ${u.premium?'✅ Premium':'❌ Regular'} member`)
   },
   async memb(ctx) { return module.exports.membership(ctx) },
   async premium(ctx) { return module.exports.membership(ctx) },
@@ -304,7 +339,7 @@ module.exports = {
 
   async premiumbal({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
-    await reply(`💎 *PREMIUM BALANCE*\n\n👤 ${u.name||sender}\n\n💎 Gems: ${u.gems||0}\n👑 Premium: ${u.premium?'Active':'Inactive'}\n\n_Gems are the currency of power._ 🖤`)
+    await reply(`💎 *${u.name||sender}* — ${u.gems||0} gems | Premium: ${u.premium?'Active':'Inactive'}`)
   },
   async pbal(ctx) { return module.exports.premiumbal(ctx) },
 }
