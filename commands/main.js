@@ -110,7 +110,10 @@ module.exports = {
     const reason = args.join(' ') || 'No reason given'
     await db.setAFK(sender, reason)
     const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-    await reply(`💤 *AFK*\n\n👤 @${sender}\n📌 Reason: ${reason}\n⏰ ${now}\n\nAnyone who tags you will be notified.`)
+    await reply(
+      `💤 *AFK MODE ACTIVATED*\n\n👤 @${sender}\n📌 *Reason:* ${reason}\n⏰ *Time:* ${now}\n\n` +
+      `_Anyone who tags you will be notified._ 🖤`
+    )
   },
 
   async website({ reply }) {
@@ -219,8 +222,10 @@ module.exports = {
     if (!isOwner && !isMod) return reply('⚠️ Staff only.')
     await sock.sendMessage(jid, {
       text:
-        `🔄 *Restarting...*\n\n` +
-        `Bot will be back in a few seconds, still paired to the same number.`
+        `🤖 *SYSTEM NOTICE*\n\n⚠️ *Shadow Garden Bot is restarting...*\n\n` +
+        `The bot is undergoing a quick reboot to apply updates.\n\n` +
+        `🔄 *Status:* Restart in progress\n⏳ *Estimated time:* A few moments\n\n` +
+        `✨ Please wait patiently while we bring everything back online.`
     }, { quoted: msg })
     setTimeout(() => process.exit(0), 2000)
   },

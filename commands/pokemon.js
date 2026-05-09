@@ -217,12 +217,12 @@ module.exports = {
     )
   },
 
-  // ── #trainer ──────────────────────────────────────────────────
+  // ── #trainer — FIXED: send image URL directly (no buffer download) ──
   async trainer({ sock, jid, msg, reply, sender, user, pushName }) {
-    const u       = user || await db.getOrCreateUser(sender, pushName)
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const region  = (u.bio || '').includes('from') ? u.bio.replace('A trainer from ', '') : 'Unknown'
-    const joined  = u.created_at ? new Date(u.created_at).toLocaleDateString('en-GB') : 'Unknown'
+    const u = user || await db.getOrCreateUser(sender, pushName)
+    const pokemon  = await db.getUserPokemon(sender).catch(() => [])
+    const region   = (u.bio || '').includes('from') ? u.bio.replace('A trainer from ', '') : 'Unknown'
+    const joined   = u.created_at ? new Date(u.created_at).toLocaleDateString('en-GB') : 'Unknown'
 
     const profileText =
       `👤 *Trainer Profile*\n\n` +
@@ -238,24 +238,20 @@ module.exports = {
       `📝 *Bio:* ${u.bio || 'No bio set.'}\n` +
       `📆 *Joined:* ${joined}`
 
-    // Pick a "signature" Pokémon for this trainer — seeded from their phone number
-    const seed    = parseInt(sender.replace(/\D/g, '').slice(-4) || '1') || 1
-    const pokeId  = (seed % 898) + 1   // stay within Gen 1-8 for best artwork coverage
-    const artUrl  = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${pokeId}.png`
+    // Send Pollinations image directly by URL (no buffer download = no timeout)
+    const prompt  = encodeURIComponent(
+      `anime pokemon trainer card, dark gothic theme, shadow garden, purple black neon, pokemon trainer ${u.name || 'Trainer'}, professional card art, highly detailed`
+    )
+    const imgUrl  = `https://image.pollinations.ai/prompt/${prompt}?width=512&height=512&nologo=true&model=turbo&seed=${Date.now() % 9999}`
 
     try {
       await sock.sendMessage(jid, {
-        image: { url: artUrl },
+        image: { url: imgUrl },
         caption: profileText,
       }, { quoted: msg })
     } catch {
-      // Fallback: home-gen sprite (smaller, always available)
-      const fallbackUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokeId}.png`
-      try {
-        await sock.sendMessage(jid, { image: { url: fallbackUrl }, caption: profileText }, { quoted: msg })
-      } catch {
-        await reply(profileText)
-      }
+      // If image URL fails, fallback to text only
+      await sock.sendMessage(jid, { text: profileText }, { quoted: msg })
     }
   },
 

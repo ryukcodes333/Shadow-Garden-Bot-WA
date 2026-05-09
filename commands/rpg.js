@@ -57,23 +57,10 @@ function fetchActionImage(action, enemyName) {
   return fetchPollinationsImage(prompt)
 }
 
-async function sendImgOrReply(sock, jid, buffer, caption, replyFn, quotedMsg) {
+async function sendImgOrReply(sock, jid, buffer, caption, replyFn) {
   try {
     if (sock && jid && buffer && buffer.length > 500) {
-      await sock.sendMessage(jid, {
-        text: caption,
-        contextInfo: {
-          externalAdReply: {
-            title: '🌑 Shadow Garden',
-            body: 'shadowgarden.com',
-            mediaType: 1,
-            previewType: 0,
-            renderLargerThumbnail: true,
-            thumbnail: buffer,
-            sourceUrl: 'https://shadowgarden.com',
-          }
-        }
-      }, quotedMsg ? { quoted: quotedMsg } : {})
+      await sock.sendMessage(jid, { image: buffer, caption })
       return
     }
   } catch {}
@@ -469,20 +456,7 @@ module.exports = {
     try {
       const imgBuffer = await fetchDungeonImage(enemy, floor)
       if (imgBuffer && imgBuffer.length > 500) {
-        await sock.sendMessage(jid, {
-          text: battleText,
-          contextInfo: {
-            externalAdReply: {
-              title: '🌑 Shadow Garden',
-              body: 'shadowgarden.com',
-              mediaType: 1,
-              previewType: 0,
-              renderLargerThumbnail: true,
-              thumbnail: imgBuffer,
-              sourceUrl: 'https://shadowgarden.com',
-            }
-          }
-        }, { quoted: msg })
+        await sock.sendMessage(jid, { image: imgBuffer, caption: battleText }, { quoted: msg })
       } else {
         await reply(battleText)
       }
@@ -929,31 +903,15 @@ module.exports = {
     await reply(`⚔️ *ADVENTURE COMPLETE*\n\n👤 ${u.name || sender}\n${cls ? `${cls.emoji} Class: ${cls.name}\n` : ''}\n🗺️ You ${adv.text}!\n\n💰 +$${coins}\n⭐ +${xp} XP\n\n_Every adventure forges the shadow warrior._ 🖤`)
   },
 
-  async rpg({ sock, jid, msg, reply, sender, user }) {
+  async rpg({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
     const cls = getClassForUser(u)
-    const text =
+    await reply(
       `⚔️ *RPG SYSTEM*\n\n` +
       `👤 ${u.name || sender}\n📊 Level: ${u.level || 1}\n⭐ XP: ${u.xp || 0}/${(u.level || 1) * 1000}\n\n` +
       (cls ? `${cls.emoji} Class: *${cls.name}*\n${cls.passiveDesc}\n\n` : `⚠️ No class selected! Use *.selectclass*\n\n`) +
       `🎮 *Commands:*\n• *.dungeon* — Enter dungeon\n• *.adventure* — Quick adventure\n• *.selectclass* — Choose/change class\n• *.skillinfo* — View your skills\n• *.guildraid* — Start guild raid\n• *.quest* — Daily quest\n\n_The shadows await your journey._ 🖤`
-    try {
-      await sock.sendMessage(jid, {
-        text,
-        contextInfo: {
-          externalAdReply: {
-            title: '🌑 Shadow Garden',
-            body: 'shadowgarden.com',
-            mediaType: 1,
-            previewType: 0,
-            renderLargerThumbnail: false,
-            sourceUrl: 'https://shadowgarden.com',
-          }
-        }
-      }, { quoted: msg })
-    } catch {
-      await reply(text)
-    }
+    )
   },
 
   async quest({ reply, sender, user }) {
@@ -1100,24 +1058,14 @@ module.exports = {
       `👾 ${session.enemy.name.padEnd(10)} ${hpBar(session.enemy.hp, session.enemy.hp)}  ${session.enemy.hp}/${session.enemy.hp}\n\n` +
       `_The shadows grow thicker with every step._ 🖤`
 
-    // Send loot summary as plain text, then follow with new monster preview
+    // Send loot summary as plain text, then follow with new monster anime image
     await reply(winText)
     try {
       const monsterImg = await fetchMonsterImage(session.enemy.name)
       if (monsterImg && monsterImg.length > 500 && sock && jid) {
         await sock.sendMessage(jid, {
-          text: `👾 *${session.enemy.name}* appears on Floor ${nextFloor}!\n⚡ *${session.enemy.ability.name}* — _${session.enemy.ability.desc}_\n\n_Choose your move wisely._ 🖤`,
-          contextInfo: {
-            externalAdReply: {
-              title: '🌑 Shadow Garden',
-              body: 'shadowgarden.com',
-              mediaType: 1,
-              previewType: 0,
-              renderLargerThumbnail: true,
-              thumbnail: monsterImg,
-              sourceUrl: 'https://shadowgarden.com',
-            }
-          }
+          image: monsterImg,
+          caption: `👾 *${session.enemy.name}* appears on Floor ${nextFloor}!\n⚡ *${session.enemy.ability.name}* — _${session.enemy.ability.desc}_\n\n_Choose your move wisely._ 🖤`,
         })
       }
     } catch {}
