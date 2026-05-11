@@ -699,13 +699,13 @@ app.post('/request-pairing-code', async (req, res) => {
 
   try {
     await new Promise(r => setTimeout(r, 800))
-    console.log(\`📱 Requesting pairing code for \${phone}…\`)
+    console.log(`📱 Requesting pairing code for \${phone}…`)
     const code = await sock.requestPairingCode(phone)
     const fmt = code?.match(/.{1,4}/g)?.join('-') ?? code
     global.pairingCode = fmt
     global.pairingCodeRequested = true
-    console.log(\`\\n🔑 PAIRING CODE : \${fmt}\`)
-    console.log(\`📲 WhatsApp → Linked Devices → Link a Device → Link with phone number → \${fmt}\\n\`)
+    console.log(`\\n🔑 PAIRING CODE : \${fmt}`)
+    console.log(`📲 WhatsApp → Linked Devices → Link a Device → Link with phone number → \${fmt}\\n`)
     return res.json({ ok: true, code: fmt })
   } catch (err) {
     global.pairingCodeRequested = false
@@ -717,17 +717,17 @@ app.post('/request-pairing-code', async (req, res) => {
 app.get('/ping', (req, res) => res.json({ status: 'alive', ts: Date.now() }))
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(\`\\n🌐 Shadow Garden Web Panel → http://localhost:\${PORT}\\n\`)
+  console.log(`\\n🌐 Shadow Garden Web Panel → http://localhost:\${PORT}\\n`)
 })
 
 // Keep-alive ping for Render free tier (every 5 min)
-const RENDER_URL = process.env.RENDER_EXTERNAL_URL || \`http://localhost:\${PORT}\`
+const RENDER_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:\${PORT}`
 const SHOOB_URL  = (process.env.SHOOB_API_URL || '').replace(/\/$/, '')
 
 function keepAlivePing(url, label) {
   try {
     const httpLib = url.startsWith('https') ? require('https') : require('http')
-    httpLib.get(\`\${url}/ping\`, (r) => r.resume()).on('error', () => {})
+    httpLib.get(`\${url}/ping`, (r) => r.resume()).on('error', () => {})
   } catch {}
 }
 
