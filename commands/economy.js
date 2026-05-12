@@ -19,16 +19,6 @@ const CD_FISH  =  2 * 60
 const CD_DIG   =  2 * 60
 const CD_BEG   = 300
 
-const FISH_TABLE = [
-  { name: '🐟 Common Fish',     weight: 30, min: 300,  max: 450  },
-  { name: '🐠 Tropical Fish',   weight: 25, min: 400,  max: 600  },
-  { name: '🦈 Shark',           weight:  5, min: 900,  max: 1200 },
-  { name: '🐡 Puffer Fish',     weight: 15, min: 350,  max: 550  },
-  { name: '💎 Shadow Pearl',    weight:  3, min: 1000, max: 1200 },
-  { name: '👢 Old Boot',        weight: 10, min: 0,    max: 0    },
-  { name: '🎣 Nothing...',      weight: 12, min: 0,    max: 0    },
-]
-
 async function checkCooldown(sender, cmd, seconds, reply) {
   const remaining = await db.getCooldown(sender, cmd)
   if (remaining > 0) {
@@ -157,23 +147,14 @@ module.exports = {
   async fish({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
     if (await checkCooldown(sender, 'fish', CD_FISH, reply)) return
-
-    // Weighted random catch
-    let rand = Math.random() * 100, cumulative = 0
-    let caught = FISH_TABLE[FISH_TABLE.length - 1]
-    for (const entry of FISH_TABLE) {
-      cumulative += entry.weight
-      if (rand < cumulative) { caught = entry; break }
-    }
-
-    // Coins in range
-    const coins = caught.min > 0
-      ? Math.floor(Math.random() * (caught.max - caught.min + 1)) + caught.min
-      : 0
-
+    const catches = ['🐟 Common Fish', '🐠 Tropical Fish', '🦈 Shark!', '🐡 Puffer Fish', '💎 Shadow Pearl', '👢 Old Boot', '🎣 Nothing...']
+    const weights = [30, 25, 5, 15, 3, 10, 12]
+    let rand = Math.random() * 100, cumulative = 0, caught = catches[6]
+    for (let i = 0; i < catches.length; i++) { cumulative += weights[i]; if (rand < cumulative) { caught = catches[i]; break } }
+    const coins = caught.includes('Shadow Pearl') ? 500 : caught.includes('Shark') ? 250 : caught.includes('Nothing') || caught.includes('Boot') ? 0 : Math.floor(Math.random() * 80) + 20
     if (coins > 0) await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
     await db.setCooldown(sender, 'fish', CD_FISH)
-    await reply(`🎣 Caught: ${caught.name}${coins > 0 ? ` — +$${coins.toLocaleString()}` : ''}`)
+    await reply(`🎣 Caught: ${caught}${coins > 0 ? ` — +$${coins}` : ''}`)
   },
 
   async beg({ reply, sender, user }) {
@@ -202,22 +183,11 @@ module.exports = {
     if (!rich.length) return reply('No users found yet.')
     const medals  = ['🥇', '🥈', '🥉']
     const mentions = rich.map(u => `${u.phone}@s.whatsapp.net`)
-    const lines = rich.map((u, i) => {
-      const badge  = medals[i] || `${String(i + 1).padStart(2, '0')}.`
-      const total  = ((u.wallet || 0) + (u.bank || 0)).toLocaleString()
-      const name   = u.name || u.phone
-      return `┃ ${badge} ├ @${u.phone}\n┃    └ *$${total}*  — ${name}`
-    }).join('\n┃\n')
+    const lines   = rich.map((u, i) =>
+      `${medals[i] || `${i + 1}.`} @${u.phone} — $${((u.wallet || 0) + (u.bank || 0)).toLocaleString()}`
+    )
     await sock.sendMessage(jid, {
-      text:
-        `┏❐💎 *sʜᴀᴅᴏᴡ ɢᴀʀᴅᴇɴ ʀɪᴄʜ ʟɪsᴛ* 💎❐\n` +
-        `┃» *ᴛᴏᴘ* : 10 Players\n` +
-        `┃» *ʙᴀsᴇ* : Wallet + Bank\n` +
-        `┗❐\n\n` +
-        `┏❐ 💰 ᴛᴏᴘ ᴡᴇᴀʟᴛʜ\n` +
-        `┃ 📊 ʀᴀɴᴋɪɴɢs\n┃\n` +
-        `${lines}\n┃\n` +
-        `┗❐`,
+      text: `💎 *Rich List*\n\n${lines.join('\n')}`,
       mentions,
     }, { quoted: msg })
   },
@@ -228,21 +198,11 @@ module.exports = {
     if (!board.length) return reply('Leaderboard is empty.')
     const medals   = ['🥇', '🥈', '🥉']
     const mentions = board.map(u => `${u.phone}@s.whatsapp.net`)
-    const lines = board.map((u, i) => {
-      const badge = medals[i] || `${String(i + 1).padStart(2, '0')}.`
-      const name  = u.name || u.phone
-      return `┃ ${badge} ├ @${u.phone}\n┃    └ *$${(u.wallet || 0).toLocaleString()}*  — ${name}`
-    }).join('\n┃\n')
+    const lines    = board.map((u, i) =>
+      `${medals[i] || `${i + 1}.`} @${u.phone} — $${(u.wallet || 0).toLocaleString()}`
+    )
     await sock.sendMessage(jid, {
-      text:
-        `┏❐🏆 *sʜᴀᴅᴏᴡ ɢᴀʀᴅᴇɴ ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ* 🏆❐\n` +
-        `┃» *ᴛᴏᴘ* : 10 Players\n` +
-        `┃» *ʙᴀsᴇ* : Wallet\n` +
-        `┗❐\n\n` +
-        `┏❐ 🎖️ ʀᴀɴᴋɪɴɢs\n` +
-        `┃ 📊 ᴛᴏᴘ ᴘʟᴀʏᴇʀs\n┃\n` +
-        `${lines}\n┃\n` +
-        `┗❐`,
+      text: `🏆 *Leaderboard*\n\n${lines.join('\n')}`,
       mentions,
     }, { quoted: msg })
   },
@@ -358,50 +318,20 @@ module.exports = {
   },
   async pstats(ctx) { return module.exports.stats(ctx) },
 
-  async cds({ reply, sender, user, pushName }) {
-    const u = user || await db.getOrCreateUser(sender, pushName)
-    const displayName = u.name || pushName || sender
+  async cds({ reply, sender }) {
     const commands = ['daily', 'work', 'fish', 'dig', 'beg']
-    const activeLines = []
-    let totalActive = 0
-
+    const lines    = []
     for (const cmd of commands) {
       const remaining = await db.getCooldown(sender, cmd)
       if (remaining > 0) {
         const mins = Math.floor(remaining / 60000)
         const secs = Math.floor((remaining % 60000) / 1000)
-        const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
-        activeLines.push(`┃ ├ \`${cmd}\`\n┃ │  └ ${timeStr}`)
-        totalActive++
+        lines.push(`⏳ .${cmd} — ${mins > 0 ? `${mins}m ` : ''}${secs}s`)
+      } else {
+        lines.push(`✅ .${cmd} — ready`)
       }
     }
-
-    if (!totalActive) {
-      return reply(
-        `⏳ You currently have no active cooldowns.\n\n` +
-        `> *All commands are available and ready to use.*`
-      )
-    }
-
-    await reply(
-      `┏❐⏳ *ᴀᴄᴛɪᴠᴇ ᴄᴏᴏʟᴅᴏᴡɴs* ⏳❐\n` +
-      `┃» *ᴜsᴇʀ* : ${displayName}\n` +
-      `┃» *sᴛᴀᴛᴜs* : Active\n` +
-      `┃» *ᴛᴏᴛᴀʟ ᴄᴏᴏʟᴅᴏᴡɴs* : ${totalActive}\n` +
-      `┃» *ʀᴇsᴇᴛ ᴛɪᴍᴇ* : Auto\n` +
-      `┗❐\n\n` +
-      `┏❐ 🎮 ɢᴀᴍᴇ ᴄᴏᴏʟᴅᴏᴡɴs\n` +
-      `┃ 🎯 ᴀᴄᴛɪᴠᴇ ᴛɪᴍᴇʀs\n┃\n` +
-      `${activeLines.join('\n┃\n')}\n┃\n` +
-      `┗❐\n\n` +
-      `┏❐ 📌 ɪɴғᴏ\n` +
-      `┃ ⏳ ᴄᴏᴏʟᴅᴏᴡɴ ɴᴏᴛɪᴄᴇ\n` +
-      `┃ ├ Cooldowns reset automatically\n` +
-      `┃ ├ Premium users get reduced timers\n` +
-      `┃ ├ Use commands after timer ends\n` +
-      `┃ └ Avoid spam to prevent penalties\n` +
-      `┗❐`
-    )
+    await reply(`⏱️ *Cooldowns*\n\n${lines.join('\n')}`)
   },
   async bc(ctx) { return module.exports.cds(ctx) },
 

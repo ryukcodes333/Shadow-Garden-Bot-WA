@@ -42,7 +42,7 @@ module.exports = {
 
   async antilink({ sock, msg, jid, args, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const admin  = await isAdmin(sock, jid, senderJid)
+    const admin = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     const group  = await db.getOrCreateGroup(jid, '')
     const action = args[0]?.toLowerCase()
@@ -87,7 +87,7 @@ module.exports = {
     const toggle = args[0]?.toLowerCase()
     if (toggle === 'on') {
       await db.updateGroup(jid, { antibot: true })
-      await reply('🤖 Anti-bot ON')
+      await reply('🤖 Anti-bot ON — bots will be kicked automatically.')
     } else if (toggle === 'off') {
       await db.updateGroup(jid, { antibot: false })
       await reply('✅ Anti-bot OFF')
@@ -209,7 +209,7 @@ module.exports = {
     const toggle = args[0]?.toLowerCase()
     if (toggle === 'on') {
       await db.updateGroup(jid, { welcome: true })
-      await reply('✅ Welcome messages ON')
+      await reply('✅ Welcome messages ON\nCustomize with .setwelcome <msg> (use <user> and <group>)')
     } else if (toggle === 'off') {
       await db.updateGroup(jid, { welcome: false })
       await reply('✅ Welcome messages OFF')
@@ -286,7 +286,7 @@ module.exports = {
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     await sock.groupSettingUpdate(jid, 'announcement')
     await db.updateGroup(jid, { muted: true })
-    await reply('🔇 Group muted')
+    await reply('🔇 Group muted — only admins can send.')
   },
 
   async unmute({ sock, msg, jid, senderJid, isGroup, isOwner, reply }) {
@@ -381,7 +381,9 @@ module.exports = {
     await reply(`🔴 *Inactive (7 days) — ${meta.subject}*\n\n${list}\n\n${inactive.length}/${meta.participants.length}`)
   },
 
-  async antism(ctx) { return module.exports.antispam(ctx) },
+  async antism({ sock, jid, args, senderJid, isGroup, isOwner, reply }) {
+    return module.exports.antispam({ sock, jid, args, senderJid, isGroup, isOwner, reply })
+  },
 
   async blacklist({ sock, jid, args, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
@@ -404,77 +406,67 @@ module.exports = {
       await reply('⚠️ Usage: .blacklist add/remove/list [word]')
     }
   },
-
-  // ── Ban / Unban / Banlist ───────────────────────────────────────────────────
-  async ban({ sock, msg, jid, args, senderJid, sender, isGroup, isOwner, isMod, reply }) {
+  // ─── BOT BAN SYSTEM ─────────────────────────────────────────
+  // Ban blocks user from using the bot silently — no group kick
+  async ban({ sock, msg, jid, args, isOwner, isMod, reply }) {
     if (!isOwner && !isMod) return reply('⚠️ Staff only.')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('⚠️ Usage: .ban @user [reason]')
-    const reason = args.filter(a => !a.includes('@')).join(' ') || 'No reason given'
+    const reason = args.filter(a => !a.startsWith('@')).join(' ') || 'No reason given'
+    const db = require('../database')
+    let count = 0
     for (const target of mentioned) {
-      const phone = target.split('@')[0]
-      await db.updateUser(phone, { banned: true })
-      if (isGroup) {
-        await sock.groupParticipantsUpdate(jid, [target], 'remove').catch(() => {})
-      }
-      await sock.sendMessage(jid, {
-        text: `🚫 @${phone} has been *Shadow Banned*\n📌 Reason: ${reason}`,
-        mentions: [target],
-      }, { quoted: msg })
+      const phone = target.split('@')[0].split(':')[0]
+      await db.updateUser(phone, { banned: true }).catch(() => {})
+      count++
     }
+    const phones = mentioned.map(t => '@' + t.split('@')[0].split(':')[0]).join(' ')
+    await sock.sendMessage(jid, {
+      text:
+        `🚫 *Shadow Ban Issued*\n\n` +
+        `👤 ${phones}\n` +
+        `📌 Reason: ${reason}\n\n` +
+        `_Banned user's messages will be silently ignored by the bot._`,
+      mentions: mentioned
+    }, { quoted: msg })
   },
 
-  async unban({ sock, msg, jid, args, senderJid, isOwner, isMod, reply }) {
+  async unban({ sock, msg, jid, isOwner, isMod, reply }) {
     if (!isOwner && !isMod) return reply('⚠️ Staff only.')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('⚠️ Usage: .unban @user')
+    const db = require('../database')
     for (const target of mentioned) {
-      const phone = target.split('@')[0]
-      await db.updateUser(phone, { banned: false })
-      await sock.sendMessage(jid, {
-        text: `✅ @${phone} has been unbanned.`,
-        mentions: [target],
-      }, { quoted: msg })
+      const phone = target.split('@')[0].split(':')[0]
+      await db.updateUser(phone, { banned: false }).catch(() => {})
     }
+    const phones = mentioned.map(t => '@' + t.split('@')[0].split(':')[0]).join(' ')
+    await sock.sendMessage(jid, {
+      text: `✅ *Shadow Ban Lifted*\n\n👤 ${phones}\n\n_User can now use the bot again._`,
+      mentions: mentioned
+    }, { quoted: msg })
   },
 
-  async banlist({ reply }) {
+  async banlist({ sock, jid, reply }) {
+    const db = require('../database')
     try {
-      const banned = await db.getBannedUsers()
-      const total  = banned?.length || 0
-      const now    = new Date()
-      const dateStr = `${String(now.getDate()).padStart(2,'0')}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getFullYear()).slice(2)}`
-
-      if (!total) {
-        return reply(
-          `┏❐⚠️ *sʜᴀᴅᴏᴡ ɢᴀʀᴅᴇɴ ʙᴀɴ ʟɪsᴛ* ⚠️❐\n` +
-          `┃» *ᴄᴏᴍᴍᴜɴɪᴛʏ* : Shadow Garden\n` +
-          `┃» *ᴛᴏᴛᴀʟ ʙᴀɴɴᴇᴅ* : 0\n` +
-          `┃» *ʟᴀsᴛ ᴜᴘᴅᴀᴛᴇ* : ${dateStr}\n` +
-          `┗❐\n\n` +
-          `✅ No banned users.`
-        )
-      }
-
-      const userLines = banned.map((u, i) => {
-        const num = String(i + 1).padStart(2, '0')
-        return `┃ ${num} ├ ${u.phone}\n┃    └ *Reason:* ${u.ban_reason || 'Not specified'}`
-      }).join('\n┃\n')
-
+      const { data, error } = await db.supabase
+        .from('users')
+        .select('phone, name')
+        .eq('banned', true)
+        .order('name')
+      if (error) return reply('❌ DB error: ' + error.message)
+      if (!data || !data.length) return reply('📋 *Shadow Ban List*\n\n✅ No banned users.')
+      const lines = data.map((u, i) =>
+        `${i + 1}. 👤 ${u.name || 'Unknown'} — ${u.phone}`
+      ).join('\n')
       await reply(
-        `┏❐⚠️ *sʜᴀᴅᴏᴡ ɢᴀʀᴅᴇɴ ʙᴀɴ ʟɪsᴛ* ⚠️❐\n` +
-        `┃» *ᴄᴏᴍᴍᴜɴɪᴛʏ* : Shadow Garden\n` +
-        `┃» *ᴛᴏᴛᴀʟ ʙᴀɴɴᴇᴅ* : ${total}\n` +
-        `┃» *ʟᴀsᴛ ᴜᴘᴅᴀᴛᴇ* : ${dateStr}\n` +
-        `┗❐\n\n` +
-        `┏❐ 🚫 ʙᴀɴɴᴇᴅ ᴜsᴇʀs\n` +
-        `┃ 🚫 ᴜsᴇʀ ʀᴇᴄᴏʀᴅs\n┃\n` +
-        `${userLines}\n┃\n` +
-        `┗❐`
+        `🚫 *Shadow Ban List* (${data.length} user${data.length !== 1 ? 's' : ''})\n\n` +
+        lines +
+        `\n\n_These users' messages are silently ignored._`
       )
     } catch (e) {
-      await reply('❌ Could not fetch ban list.')
+      await reply(`❌ Error: ${e.message}`)
     }
   },
-  async bl(ctx) { return module.exports.banlist(ctx) },
 }

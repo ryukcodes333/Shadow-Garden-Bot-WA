@@ -21,6 +21,7 @@ const lotteryCmds     = require('./lottery')
 const profileCmds     = require('./profile')
 const aiCmds          = require('./ai')
 const utilityCmds     = require('./utility')
+const imagesCmds      = require('./images')
 
 const PREFIX      = global.prefix   || '.'
 const POKE_PREFIX = '#'
@@ -201,10 +202,7 @@ async function handleMessage(sock, msg) {
   const cmd   = args.shift().toLowerCase()
 
   const user = await db.getOrCreateUser(sender, msg.pushName || sender).catch(() => null)
-  if (user?.banned && !isOwner) {
-    await sock.sendMessage(jid, { text: `🚫 You are banned from Shadow Garden Bot.` })
-    return
-  }
+  if (user?.banned && !isOwner) return  // Silently ignore banned users
 
   const disabledCmds = await db.getDisabledCommands().catch(() => [])
   if (disabledCmds.some(d => d.command === cmd) && !isOwner) {
@@ -355,6 +353,9 @@ async function handleMessage(sock, msg) {
 
     // Utility commands (weather, wiki, translate, download, etc.)
     if (utilityCmds[cmd])       return await utilityCmds[cmd](ctx)
+
+    // Image filter commands (removebg, jail, gun, cartoon, etc.)
+    if (imagesCmds[cmd])             return await imagesCmds[cmd](ctx)
 
   } catch (err) {
     console.error(`Command error [${usedPrefix}${cmd}]:`, err.message)
