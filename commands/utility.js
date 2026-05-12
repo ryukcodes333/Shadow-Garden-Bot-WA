@@ -23,6 +23,35 @@ async function getImageBuffer(sock, msg) {
   })
 }
 
+// Fetch movie poster as buffer
+async function fetchMoviePoster(posterPath) {
+  if (!posterPath) return null
+  try {
+    const url = posterPath.startsWith('http') ? posterPath : `https://image.tmdb.org/t/p/w500${posterPath}`
+    const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 15000 })
+    return Buffer.from(res.data)
+  } catch { return null }
+}
+
+// Search movie using imdbot free API
+async function searchMovie(query) {
+  try {
+    const res = await axios.get(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(query)}`, { timeout: 10000 })
+    const items = res.data?.description || []
+    if (!items.length) return null
+    const m = items[0]
+    return {
+      title:    m['#TITLE']    || query,
+      year:     m['#YEAR']     || 'N/A',
+      imdb_id:  m['#IMDB_ID']  || '',
+      rank:     m['#RANK']     || 'N/A',
+      actors:   (m['#ACTORS']  || '').split(',').slice(0, 3).join(', '),
+      poster:   m['#IMG_POSTER'] || null,
+      link:     m['#IMDB_ID']  ? `https://www.imdb.com/title/${m['#IMDB_ID']}` : null,
+    }
+  } catch { return null }
+}
+
 module.exports = {
   async translate({ reply, args }) {
     const text = args.slice(1).join(' ')
@@ -93,7 +122,7 @@ module.exports = {
     } catch (e) { await reply(`❌ Failed: ${e.message}`) }
   },
 
-  async readqr({ sock, msg, jid, reply }) {
+  async readqr({ reply }) {
     await reply('📷 QR reading from images isn\'t supported in this version. Try a QR scanner app.')
   },
 
@@ -101,7 +130,7 @@ module.exports = {
     const query = args.join(' ')
     if (!query) return reply('⚠️ Usage: .lyrics <song name>')
     try {
-      const parts = query.split('-').map(s => s.trim())
+      const parts  = query.split('-').map(s => s.trim())
       const artist = parts.length > 1 ? parts[0] : ''
       const title  = parts.length > 1 ? parts.slice(1).join('-').trim() : query
       const url    = artist
@@ -112,10 +141,10 @@ module.exports = {
         const sugRes = await axios.get(url, { timeout: 10000 })
         const first  = sugRes.data?.data?.[0]
         if (!first) return reply('❌ Song not found.')
-        const lyricRes = await axios.get(`https://api.lyrics.ovh/v1/${encodeURIComponent(first.artist.name)}/${encodeURIComponent(first.title)}`, { timeout: 10000 })
-        const lyrics   = lyricRes.data?.lyrics?.slice(0, 2000)
-        if (!lyrics) return reply('❌ Lyrics not found.')
-        return reply(`🎵 *${first.title}* by ${first.artist.name}\n\n${lyrics}${lyricRes.data.lyrics.length > 2000 ? '\n\n...(truncated)' : ''}`)
+        const lr = await axios.get(`https://api.lyrics.ovh/v1/${encodeURIComponent(first.artist.name)}/${encodeURIComponent(first.title)}`, { timeout: 10000 })
+        const lyr = lr.data?.lyrics?.slice(0, 2000)
+        if (!lyr) return reply('❌ Lyrics not found.')
+        return reply(`🎵 *${first.title}* by ${first.artist.name}\n\n${lyr}${lr.data.lyrics.length > 2000 ? '\n\n...(truncated)' : ''}`)
       }
 
       const res    = await axios.get(url, { timeout: 10000 })
@@ -125,25 +154,36 @@ module.exports = {
     } catch { await reply('❌ Lyrics not found. Try: .lyrics artist - song') }
   },
 
-  async movie({ reply, args }) {
+  async movie({ sock, msg, jid, reply, args }) {
     const query = args.join(' ')
     if (!query) return reply('⚠️ Usage: .movie <movie name>')
+
+    await reply('🎬 Searching...')
+
     try {
-      const res = await axios.get(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&type=movie&limit=1`, { timeout: 10000 })
-      const m   = res.data?.data?.[0]
-      if (m) {
-        return reply(
-          `🎬 *${m.title}*\n\n` +
-          `📅 Year: ${m.year || 'N/A'}\n` +
-          `⭐ Score: ${m.score || 'N/A'}\n` +
-          `🗂️ Status: ${m.status || 'N/A'}\n\n` +
-          `📝 ${m.synopsis?.slice(0, 300) || 'No synopsis'}...`
-        )
+      const m = await searchMovie(query)
+      if (!m) return reply('❌ Movie not found.')
+
+      const caption =
+        `🎬 *${m.title}*\n\n` +
+        `📅 Year: ${m.year}\n` +
+        `⭐ Rank: #${m.rank}\n` +
+        `🎭 Stars: ${m.actors || 'N/A'}\n` +
+        (m.link ? `\n🔗 ${m.link}` : '')
+
+      // Try to send with poster image
+      if (m.poster) {
+        const imgBuf = await fetchMoviePoster(m.poster)
+        if (imgBuf) {
+          return sock.sendMessage(jid, { image: imgBuf, caption }, { quoted: msg })
+        }
       }
-      const wikiRes = await axios.get(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`, { timeout: 10000 })
-      const p = wikiRes.data
-      await reply(`🎬 *${p.title}*\n\n${p.extract?.slice(0, 400) || 'No info found'}`)
-    } catch { await reply('❌ Movie not found.') }
+
+      // Fallback: text only
+      await reply(caption)
+    } catch (e) {
+      await reply('❌ Movie not found.')
+    }
   },
 
   async ytsearch({ reply, args }) {
@@ -178,10 +218,10 @@ module.exports = {
       const city = area?.areaName?.[0]?.value || location
       await reply(
         `🌤️ *Weather — ${city}*\n\n` +
-        `🌡️ Temp: ${cur.temp_C}°C / ${cur.temp_F}°F\n` +
+        `🌡️ ${cur.temp_C}°C / ${cur.temp_F}°F\n` +
         `💧 Humidity: ${cur.humidity}%\n` +
         `💨 Wind: ${cur.windspeedKmph} km/h\n` +
-        `☁️ Condition: ${cur.weatherDesc?.[0]?.value || 'N/A'}`
+        `☁️ ${cur.weatherDesc?.[0]?.value || 'N/A'}`
       )
     } catch { await reply('❌ Couldn\'t get weather. Check city name.') }
   },
@@ -202,9 +242,7 @@ module.exports = {
     try {
       const res = await axios.get(`https://gnews.io/api/v4/search?q=${encodeURIComponent(topic)}&lang=en&max=5&apikey=free`, { timeout: 10000 })
       const articles = res.data?.articles?.slice(0, 5)
-      if (!articles?.length) {
-        return reply(`📰 Search for *${topic}* news:\nhttps://news.google.com/search?q=${encodeURIComponent(topic)}`)
-      }
+      if (!articles?.length) return reply(`📰 Search for *${topic}* news:\nhttps://news.google.com/search?q=${encodeURIComponent(topic)}`)
       const lines = articles.map((a, i) => `${i + 1}. *${a.title}*\n${a.url}`).join('\n\n')
       await reply(`📰 *News: ${topic}*\n\n${lines}`)
     } catch {
@@ -216,11 +254,11 @@ module.exports = {
     const url = args[0]
     if (!url) return reply('⚠️ Usage: .ssweb <url>')
     try {
-      const ss  = await axios.get(`https://image.thum.io/get/width/1280/crop/720/${encodeURIComponent(url)}`, {
+      const ss = await axios.get(`https://image.thum.io/get/width/1280/crop/720/${encodeURIComponent(url)}`, {
         responseType: 'arraybuffer', timeout: 20000,
       })
       await sock.sendMessage(jid, { image: Buffer.from(ss.data), caption: `🌐 ${url}` }, { quoted: msg })
-    } catch { await reply(`❌ Screenshot failed. Try: ${url}`) }
+    } catch { await reply(`❌ Screenshot failed.`) }
   },
 
   async myip({ reply }) {
@@ -234,18 +272,11 @@ module.exports = {
     const url = args[0]
     if (!url) return reply('⚠️ Usage: .ytmp4 <youtube url>')
     try {
-      const apiUrl = `https://co.wuk.sh/api/json`
-      const res = await axios.post(apiUrl, {
+      const res = await axios.post(`https://co.wuk.sh/api/json`, {
         url, vCodec: 'h264', vQuality: '720', aFormat: 'mp3', isAudioOnly: false,
-      }, {
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        timeout: 20000,
-      })
-      if (res.data?.url) {
-        await reply(`🎬 *Download ready!*\n\n${res.data.url}`)
-      } else {
-        await reply('❌ Download failed. Try y2mate.com or similar.')
-      }
+      }, { headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, timeout: 20000 })
+      if (res.data?.url) return reply(`🎬 *Download ready!*\n\n${res.data.url}`)
+      await reply(`❌ Download failed.\n\n💡 Try: https://y2mate.com`)
     } catch { await reply(`❌ Download failed.\n\n💡 Try: https://y2mate.com`) }
   },
 
@@ -255,101 +286,65 @@ module.exports = {
     try {
       const res = await axios.post(`https://co.wuk.sh/api/json`, {
         url, aFormat: 'mp3', isAudioOnly: true,
-      }, {
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        timeout: 20000,
-      })
-      if (res.data?.url) {
-        await reply(`🎵 *Download ready!*\n\n${res.data.url}`)
-      } else {
-        await reply('❌ Download failed. Try y2mate.com or similar.')
-      }
+      }, { headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, timeout: 20000 })
+      if (res.data?.url) return reply(`🎵 *Download ready!*\n\n${res.data.url}`)
+      await reply(`❌ Download failed.\n\n💡 Try: https://y2mate.com`)
     } catch { await reply(`❌ Download failed.\n\n💡 Try: https://y2mate.com`) }
   },
 
   async tiktok({ reply, args }) {
-    const url = args[0]
-    if (!url) return reply('⚠️ Usage: .tiktok <tiktok url>')
-    await reply(`📥 TikTok downloader:\nhttps://snaptik.app/?url=${encodeURIComponent(url || '')}`)
+    await reply(`📥 TikTok:\nhttps://snaptik.app/?url=${encodeURIComponent(args[0] || '')}`)
   },
-
   async instagram({ reply, args }) {
-    const url = args[0]
-    if (!url) return reply('⚠️ Usage: .instagram <instagram url>')
-    await reply(`📥 Instagram downloader:\nhttps://snapinsta.app/?url=${encodeURIComponent(url || '')}`)
+    await reply(`📥 Instagram:\nhttps://snapinsta.app/?url=${encodeURIComponent(args[0] || '')}`)
   },
-
   async facebook({ reply, args }) {
-    const url = args[0]
-    if (!url) return reply('⚠️ Usage: .facebook <facebook url>')
-    await reply(`📥 Facebook downloader:\nhttps://fdownloader.net/?url=${encodeURIComponent(url || '')}`)
+    await reply(`📥 Facebook:\nhttps://fdownloader.net/?url=${encodeURIComponent(args[0] || '')}`)
   },
-
   async twitter({ reply, args }) {
-    const url = args[0]
-    if (!url) return reply('⚠️ Usage: .twitter <tweet url>')
-    await reply(`📥 Twitter downloader:\nhttps://twittervideodownloader.com/?url=${encodeURIComponent(url || '')}`)
+    await reply(`📥 Twitter:\nhttps://twittervideodownloader.com/?url=${encodeURIComponent(args[0] || '')}`)
   },
-
   async threads({ reply, args }) {
-    const url = args[0]
-    if (!url) return reply('⚠️ Usage: .threads <threads url>')
-    await reply(`📥 Threads downloader:\nhttps://threadsaver.com/?url=${encodeURIComponent(url || '')}`)
+    await reply(`📥 Threads:\nhttps://threadsaver.com/?url=${encodeURIComponent(args[0] || '')}`)
   },
-
   async capcut({ reply, args }) {
-    const url = args[0]
-    if (!url) return reply('⚠️ Usage: .capcut <capcut url>')
-    await reply(`📥 CapCut downloader:\nhttps://capcutdownloader.io/?url=${encodeURIComponent(url || '')}`)
+    await reply(`📥 CapCut:\nhttps://capcutdownloader.io/?url=${encodeURIComponent(args[0] || '')}`)
   },
-
   async mediafire({ reply, args }) {
-    const url = args[0]
-    if (!url) return reply('⚠️ Usage: .mediafire <mediafire url>')
-    await reply(`📥 MediaFire link:\n${url}\n\nOpen it directly in your browser to download.`)
+    if (!args[0]) return reply('⚠️ Usage: .mediafire <url>')
+    await reply(`📥 MediaFire:\n${args[0]}\n\nOpen directly in browser to download.`)
   },
-
   async apk({ reply, args }) {
     const name = args.join(' ')
     if (!name) return reply('⚠️ Usage: .apk <app name>')
-    await reply(`📱 Search for *${name}* APK:\nhttps://apkpure.com/search?q=${encodeURIComponent(name)}`)
+    await reply(`📱 APK Search: *${name}*\nhttps://apkpure.com/search?q=${encodeURIComponent(name)}`)
   },
-
   async pinterest({ reply, args }) {
     const query = args.join(' ')
     if (!query) return reply('⚠️ Usage: .pinterest <query>')
-    await reply(`📌 Pinterest search:\nhttps://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`)
+    await reply(`📌 Pinterest:\nhttps://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`)
   },
 
   async wallpaper({ sock, msg, jid, reply, args }) {
-    const query = args.join(' ') || 'nature landscape dark'
+    const query = args.join(' ') || 'dark anime landscape'
     try {
-      const res = await axios.get(`https://image.pollinations.ai/prompt/${encodeURIComponent(query + ' high quality wallpaper 4k')}?width=1920&height=1080&nologo=true&model=flux&seed=${Math.floor(Math.random() * 99999)}`, {
-        responseType: 'arraybuffer', timeout: 60000,
-      })
+      const res = await axios.get(
+        `https://image.pollinations.ai/prompt/${encodeURIComponent(query + ' high quality wallpaper 4k')}?width=1920&height=1080&nologo=true&model=flux&seed=${Math.floor(Math.random() * 99999)}`,
+        { responseType: 'arraybuffer', timeout: 60000 }
+      )
       await sock.sendMessage(jid, { image: Buffer.from(res.data), caption: `🖼️ Wallpaper: ${query}` }, { quoted: msg })
-    } catch { await reply(`❌ Couldn't get wallpaper`) }
+    } catch { await reply('❌ Couldn\'t get wallpaper') }
   },
 
-  async smeme({ sock, msg, jid, reply }) {
-    const ctx    = msg.message?.extendedTextMessage?.contextInfo
-    const quoted = ctx?.quotedMessage
-    if (!quoted?.imageMessage) return reply('↩️ Reply to an image with .smeme <top text> / <bottom text>')
-    await reply('🎭 Meme maker coming soon! Reply to image.')
+  async smeme({ reply }) {
+    await reply('↩️ Reply to an image with .smeme <top text> / <bottom text>')
   },
 
-  async qc({ sock, msg, jid, reply }) {
-    const text = msg.message?.extendedTextMessage?.text ||
-                 msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation
-    if (!text) return reply('↩️ Reply to a text message with .qc to create a quote card')
-    try {
-      const QRCode = require('qrcode')
-      const canvas = `https://api.quotable.io/random`
-      const res    = await axios.get(canvas, { timeout: 8000 })
-      await reply(`💬 *Quote Card*\n\n_${text}_\n\n— Shadow Garden`)
-    } catch {
-      await reply(`💬 _${text}_\n\n— Shadow Garden`)
-    }
+  async qc({ reply, args, msg }) {
+    const text = args.join(' ') ||
+      msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation
+    if (!text) return reply('↩️ Reply to a message or add text: .qc <text>')
+    await reply(`💬 _${text}_\n\n— Shadow Garden`)
   },
 
   async emojimix({ reply, args }) {
