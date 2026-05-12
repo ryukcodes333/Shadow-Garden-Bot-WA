@@ -127,80 +127,52 @@ module.exports = {
 
   async movie({ sock, msg, jid, reply, args }) {
     const query = args.join(' ')
-    if (!query) return reply('⚠️ Usage: .movie <title>
-
-Example: .movie Avengers Endgame')
+    if (!query) return reply('Usage: .movie <title>')
     try {
-      await reply('🎬 Searching...')
+      await reply('Searching...')
       const key = process.env.OMDB_KEY || 'b4fe75e5'
       let m = null
-
       try {
         const r = await axios.get('https://www.omdbapi.com/', { params: { apikey: key, t: query, plot: 'short' }, timeout: 12000 })
-        if (r.data?.Response === 'True') m = r.data
-      } catch {}
-
+        if (r.data && r.data.Response === 'True') m = r.data
+      } catch (e1) {}
       if (!m) {
         try {
           const r = await axios.get('https://www.omdbapi.com/', { params: { apikey: key, s: query, type: 'movie' }, timeout: 12000 })
-          const first = r.data?.Search?.[0]
+          const first = r.data && r.data.Search && r.data.Search[0]
           if (first) {
             const r2 = await axios.get('https://www.omdbapi.com/', { params: { apikey: key, i: first.imdbID, plot: 'short' }, timeout: 12000 })
-            if (r2.data?.Response === 'True') m = r2.data
+            if (r2.data && r2.data.Response === 'True') m = r2.data
           }
-        } catch {}
+        } catch (e2) {}
       }
-
       if (m) {
-        const text =
-          `🎬 *${m.Title}* (${m.Year})
-
-` +
-          `🎭 Genre: ${m.Genre || 'N/A'}
-` +
-          `⭐ IMDb: ${m.imdbRating || 'N/A'}/10
-` +
-          `⏱️ Runtime: ${m.Runtime || 'N/A'}
-` +
-          `🎬 Director: ${m.Director || 'N/A'}
-` +
-          `🌟 Stars: ${(m.Actors || 'N/A').split(',').slice(0,3).join(',')}
-
-` +
-          `📝 *Plot:*
-${m.Plot || 'N/A'}
-
-` +
-          `🏆 ${m.Awards && m.Awards !== 'N/A' ? m.Awards.slice(0, 80) : ''}`
+        const stars = (m.Actors || 'N/A').split(',').slice(0,3).join(',')
+        const awards = (m.Awards && m.Awards !== 'N/A') ? m.Awards.slice(0,80) : ''
+        const text = [
+          '*' + m.Title + '* (' + m.Year + ')',
+          '',
+          'Genre: ' + (m.Genre || 'N/A'),
+          'IMDb: ' + (m.imdbRating || 'N/A') + '/10',
+          'Runtime: ' + (m.Runtime || 'N/A'),
+          'Director: ' + (m.Director || 'N/A'),
+          'Stars: ' + stars,
+          '',
+          'Plot:',
+          m.Plot || 'N/A',
+          '',
+          awards,
+        ].join(String.fromCharCode(10))
         if (m.Poster && m.Poster !== 'N/A') {
           try {
             const imgRes = await axios.get(m.Poster, { responseType: 'arraybuffer', timeout: 12000 })
             return await sock.sendMessage(jid, { image: Buffer.from(imgRes.data), caption: text }, { quoted: msg })
-          } catch {}
+          } catch (ei) {}
         }
         return await reply(text)
       }
-
-      try {
-        const wikiRes = await axios.get('https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(query), { timeout: 10000 })
-        const p = wikiRes.data
-        if (p.title && p.extract) {
-          if (p.thumbnail?.source) {
-            try {
-              const imgRes = await axios.get(p.thumbnail.source, { responseType: 'arraybuffer', timeout: 10000 })
-              return await sock.sendMessage(jid, { image: Buffer.from(imgRes.data), caption: `🎬 *${p.title}*
-
-${p.extract.slice(0, 600)}` }, { quoted: msg })
-            } catch {}
-          }
-          return await reply(`🎬 *${p.title}*
-
-${p.extract.slice(0, 600)}`)
-        }
-      } catch {}
-
-      await reply('❌ Movie not found. Try a more specific title.')
-    } catch (e) { await reply(`❌ Error: ${e.message}`) }
+      await reply('Movie not found. Try a more specific title.')
+    } catch (e) { await reply('Error: ' + e.message) }
   },
 
   async ytsearch({ reply, args }) {
