@@ -60,23 +60,10 @@ function fetchActionImage(action, enemyName) {
 async function sendImgOrReply(sock, jid, buffer, caption, replyFn, quotedMsg) {
   try {
     if (sock && jid && buffer && buffer.length > 500) {
-      await sock.sendMessage(jid, {
-        text: caption,
-        contextInfo: {
-          externalAdReply: {
-            title: '🌑 Shadow Garden',
-            body: 'shadowgarden.com',
-            mediaType: 1,
-            previewType: 0,
-            renderLargerThumbnail: true,
-            thumbnail: buffer,
-            sourceUrl: 'https://shadowgarden.com',
-          }
-        }
-      }, quotedMsg ? { quoted: quotedMsg } : {})
+      await sock.sendMessage(jid, { image: buffer, caption }, quotedMsg ? { quoted: quotedMsg } : {})
       return
     }
-  } catch {}
+  } catch (e) { console.error('[sendImgOrReply]', e.message) }
   await replyFn(caption)
 }
 
@@ -469,20 +456,7 @@ module.exports = {
     try {
       const imgBuffer = await fetchDungeonImage(enemy, floor)
       if (imgBuffer && imgBuffer.length > 500) {
-        await sock.sendMessage(jid, {
-          text: battleText,
-          contextInfo: {
-            externalAdReply: {
-              title: '🌑 Shadow Garden',
-              body: 'shadowgarden.com',
-              mediaType: 1,
-              previewType: 0,
-              renderLargerThumbnail: true,
-              thumbnail: imgBuffer,
-              sourceUrl: 'https://shadowgarden.com',
-            }
-          }
-        }, { quoted: msg })
+        await sock.sendMessage(jid, { image: imgBuffer, caption: battleText }, { quoted: msg })
       } else {
         await reply(battleText)
       }
@@ -938,19 +912,7 @@ module.exports = {
       (cls ? `${cls.emoji} Class: *${cls.name}*\n${cls.passiveDesc}\n\n` : `⚠️ No class selected! Use *.selectclass*\n\n`) +
       `🎮 *Commands:*\n• *.dungeon* — Enter dungeon\n• *.adventure* — Quick adventure\n• *.selectclass* — Choose/change class\n• *.skillinfo* — View your skills\n• *.guildraid* — Start guild raid\n• *.quest* — Daily quest\n\n_The shadows await your journey._ 🖤`
     try {
-      await sock.sendMessage(jid, {
-        text,
-        contextInfo: {
-          externalAdReply: {
-            title: '🌑 Shadow Garden',
-            body: 'shadowgarden.com',
-            mediaType: 1,
-            previewType: 0,
-            renderLargerThumbnail: false,
-            sourceUrl: 'https://shadowgarden.com',
-          }
-        }
-      }, { quoted: msg })
+      await sock.sendMessage(jid, { text }, { quoted: msg })
     } catch {
       await reply(text)
     }
@@ -1105,20 +1067,7 @@ module.exports = {
     try {
       const monsterImg = await fetchMonsterImage(session.enemy.name)
       if (monsterImg && monsterImg.length > 500 && sock && jid) {
-        await sock.sendMessage(jid, {
-          text: `👾 *${session.enemy.name}* appears on Floor ${nextFloor}!\n⚡ *${session.enemy.ability.name}* — _${session.enemy.ability.desc}_\n\n_Choose your move wisely._ 🖤`,
-          contextInfo: {
-            externalAdReply: {
-              title: '🌑 Shadow Garden',
-              body: 'shadowgarden.com',
-              mediaType: 1,
-              previewType: 0,
-              renderLargerThumbnail: true,
-              thumbnail: monsterImg,
-              sourceUrl: 'https://shadowgarden.com',
-            }
-          }
-        })
+        await sock.sendMessage(jid, { image: monsterImg, caption: `👾 *${session.enemy.name}* appears on Floor ${nextFloor}!\n⚡ *${session.enemy.ability.name}* — _${session.enemy.ability.desc}_\n\n_Choose your move wisely._ 🖤` })
       }
     } catch {}
   },

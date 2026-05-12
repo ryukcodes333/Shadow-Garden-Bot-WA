@@ -22,6 +22,7 @@ const profileCmds     = require('./profile')
 const aiCmds          = require('./ai')
 const utilityCmds     = require('./utility')
 const imagesCmds      = require('./images')
+const { alphaChatReply, getSuspension } = require('./chat')
 
 const PREFIX      = global.prefix   || '.'
 const POKE_PREFIX = '#'
@@ -191,6 +192,21 @@ async function handleMessage(sock, msg) {
 
   if (!textRaw) return
 
+  // ── Alpha chat detection (before prefix check) ───────────────
+  if (!isSticker && !isReaction && !isBold) {
+    const botPhone = (sock.user?.id || '').split(':')[0].split('@')[0]
+    const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    const quotedParticipant = (msg.message?.extendedTextMessage?.contextInfo?.participant || '').split('@')[0].split(':')[0]
+    const isReplyToBot = quotedParticipant && botPhone && quotedParticipant === botPhone
+    const isBotMentioned = botPhone && mentionedJids.some(m => m.split('@')[0].split(':')[0] === botPhone)
+    const mentionsAlpha = /\balpha\b/i.test(textRaw)
+
+    if ((isReplyToBot || isBotMentioned || mentionsAlpha) && !textRaw.startsWith(PREFIX) && !textRaw.startsWith(POKE_PREFIX)) {
+      await alphaChatReply(sock, jid, msg, sender, msg.pushName || sender, textRaw, isOwner)
+      return
+    }
+  }
+
   // ── Determine prefix ─────────────────────────────────────────
   const isPokemon = textRaw.startsWith(POKE_PREFIX)
   const isDot     = textRaw.startsWith(PREFIX)
@@ -202,7 +218,49 @@ async function handleMessage(sock, msg) {
   const cmd   = args.shift().toLowerCase()
 
   const user = await db.getOrCreateUser(sender, msg.pushName || sender).catch(() => null)
-  if (user?.banned && !isOwner) return  // Silently ignore banned users
+
+  // ── Banned: silently ignore ───────────────────────────────────
+  if (user?.banned && !isOwner) return
+
+  // ── Suspension check (sender) ─────────────────────────────────
+  if (!isOwner && cmd !== 'p' && cmd !== 'profile') {
+    const suspension = await getSuspension(db.supabase, sender).catch(() => null)
+    if (suspension) {
+      const until = new Date(suspension.suspended_until).toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
+      })
+      await sock.sendMessage(jid, {
+        text:
+          `*You are currently suspended from using this bot.*\n\n` +
+          `*⏳ Suspension Ends:* ${until}\n` +
+          `*📋 Reason:* ${suspension.reason || 'No reason given'}\n\n` +
+          `> Contact a staff if you think this was a mistake.`,
+      }, { quoted: msg })
+      return
+    }
+  }
+
+  // ── Suspension check (mentioned/target user) ──────────────────
+  if (!isOwner && cmd !== 'p' && cmd !== 'profile') {
+    const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    for (const mJid of mentions) {
+      const mPhone = mJid.split('@')[0].split(':')[0]
+      const mSusp = await getSuspension(db.supabase, mPhone).catch(() => null)
+      if (mSusp) {
+        const until = new Date(mSusp.suspended_until).toLocaleString('en-US', {
+          month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
+        })
+        await sock.sendMessage(jid, {
+          text:
+            `*That user is currently suspended from using the bot.*\n\n` +
+            `*⏳ Suspension Ends:* ${until}\n` +
+            `*📋 Reason:* ${mSusp.reason || 'No reason given'}\n\n` +
+            `> You cannot interact with suspended users.`,
+        }, { quoted: msg })
+        return
+      }
+    }
+  }
 
   const disabledCmds = await db.getDisabledCommands().catch(() => [])
   if (disabledCmds.some(d => d.command === cmd) && !isOwner) {
@@ -226,6 +284,8 @@ async function handleMessage(sock, msg) {
     'addmod','removemod','addguardian','removeguardian','mods','modlist','modslist',
     'phelp','law','pbenefits','report','trivia','math','fact','joke','flip','8ball','roll','choose',
     'roulette','horse','casino','dice',
+    'removebg','nobg','enhance','remini','upscale','night','sunset','rain','city','gun','jail','toanime','cartoon','carbon',
+    'suspend','unsuspend','suspendlist',
   ])
 
   const reply = (text) => sock.sendMessage(jid, { text }, { quoted: msg })
@@ -288,6 +348,9 @@ async function handleMessage(sock, msg) {
     }
 
     // ── . prefix → all other commands ───────────────────────────
+
+    // Image filter commands
+    if (imagesCmds[cmd])        return await imagesCmds[cmd](ctx)
 
     // Main commands (menu, ping, sticker, etc.)
     if (mainCmds[cmd])          return await mainCmds[cmd](ctx)
@@ -353,9 +416,6 @@ async function handleMessage(sock, msg) {
 
     // Utility commands (weather, wiki, translate, download, etc.)
     if (utilityCmds[cmd])       return await utilityCmds[cmd](ctx)
-
-    // Image filter commands (removebg, jail, gun, cartoon, etc.)
-    if (imagesCmds[cmd])             return await imagesCmds[cmd](ctx)
 
   } catch (err) {
     console.error(`Command error [${usedPrefix}${cmd}]:`, err.message)

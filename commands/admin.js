@@ -1,4 +1,5 @@
 const db = require('../database')
+const { parseDuration, formatTimestamp, setSuspension, removeSuspension } = require('./chat')
 
 async function isAdmin(sock, jid, senderJid) {
   const meta = await sock.groupMetadata(jid).catch(() => null)
@@ -42,7 +43,7 @@ module.exports = {
 
   async antilink({ sock, msg, jid, args, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const admin = await isAdmin(sock, jid, senderJid)
+    const admin  = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     const group  = await db.getOrCreateGroup(jid, '')
     const action = args[0]?.toLowerCase()
@@ -66,7 +67,7 @@ module.exports = {
 
   async antispam({ sock, jid, args, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const admin = await isAdmin(sock, jid, senderJid)
+    const admin  = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     const toggle = args[0]?.toLowerCase()
     if (toggle === 'on') {
@@ -82,7 +83,7 @@ module.exports = {
 
   async antibot({ sock, jid, args, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const admin = await isAdmin(sock, jid, senderJid)
+    const admin  = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     const toggle = args[0]?.toLowerCase()
     if (toggle === 'on') {
@@ -115,7 +116,7 @@ module.exports = {
         `⚙️ *Admins — ${meta.subject}*\n\n${adminLines || 'None'}\n\n` +
         `🤖 Bot admin: ${botIsAdm ? '✅ Yes' : '❌ No'}`,
       mentions: admins.map(p => p.id),
-    }, { quoted: null })
+    })
   },
 
   async warn({ sock, msg, jid, args, senderJid, sender, isGroup, isOwner, reply }) {
@@ -139,7 +140,7 @@ module.exports = {
     }
   },
 
-  async resetwarn({ sock, msg, jid, args, senderJid, isGroup, isOwner, reply }) {
+  async resetwarn({ sock, msg, jid, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
     const admin = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
@@ -151,7 +152,7 @@ module.exports = {
     await sock.sendMessage(jid, { text: `✅ Warnings cleared for @${targetPhone}.`, mentions: [target] }, { quoted: msg })
   },
 
-  async groupinfo({ sock, msg, jid, isGroup, reply }) {
+  async groupinfo({ sock, jid, isGroup, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
     const meta   = await sock.groupMetadata(jid)
     const group  = await db.getOrCreateGroup(jid, meta.subject)
@@ -178,7 +179,7 @@ module.exports = {
   },
   async gi(ctx) { return module.exports.groupinfo(ctx) },
 
-  async groupstats({ sock, msg, jid, isGroup, reply }) {
+  async groupstats({ sock, jid, isGroup, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
     const meta        = await sock.groupMetadata(jid)
     const group       = await db.getOrCreateGroup(jid, meta.subject)
@@ -187,29 +188,27 @@ module.exports = {
     const inactiveCount = meta.participants.length - activeUsers.length
     const todayMsgs   = await db.getMessageCount(jid, 24)
     const weekMsgs    = await db.getMessageCount(jid, 24 * 7)
-    const warnings    = await db.getWarnings('', jid)
     await reply(
       `📊 *Group Stats — ${meta.subject}*\n\n` +
       `👤 Members: ${meta.participants.length}\n` +
       `🟢 Active: ${activeUsers.length} | 🔴 Inactive: ${inactiveCount}\n` +
       `⚙️ Admins: ${admins.length}\n\n` +
       `📈 Today: ${todayMsgs} msgs\n` +
-      `📉 Week: ${weekMsgs} msgs\n` +
-      `⚠️ Warnings: ${warnings.length}\n\n` +
+      `📉 Week: ${weekMsgs} msgs\n\n` +
       `🔗 Anti-Link: ${group?.antilink ? 'ON' : 'OFF'}\n` +
       `🛡️ Anti-Spam: ${group?.antispam ? 'ON' : 'OFF'}`
     )
   },
   async gs(ctx) { return module.exports.groupstats(ctx) },
 
-  async welcome({ sock, msg, jid, args, senderJid, isGroup, isOwner, reply }) {
+  async welcome({ sock, jid, args, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
     const admin  = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     const toggle = args[0]?.toLowerCase()
     if (toggle === 'on') {
       await db.updateGroup(jid, { welcome: true })
-      await reply('✅ Welcome messages ON\nCustomize with .setwelcome <msg> (use <user> and <group>)')
+      await reply('✅ Welcome messages ON')
     } else if (toggle === 'off') {
       await db.updateGroup(jid, { welcome: false })
       await reply('✅ Welcome messages OFF')
@@ -218,9 +217,9 @@ module.exports = {
     }
   },
 
-  async setwelcome({ jid, args, senderJid, isGroup, isOwner, reply, sock }) {
+  async setwelcome({ sock, jid, args, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const admin = await isAdmin(sock, jid, senderJid)
+    const admin    = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     const msg_text = args.join(' ')
     if (!msg_text) return reply('⚠️ Usage: .setwelcome <message>\nUse <user> and <group> as placeholders.')
@@ -228,7 +227,7 @@ module.exports = {
     await reply('✅ Welcome message set.')
   },
 
-  async leave({ sock, msg, jid, args, senderJid, isGroup, isOwner, reply }) {
+  async leave({ sock, jid, args, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
     const admin  = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
@@ -246,7 +245,7 @@ module.exports = {
 
   async setleave({ sock, jid, args, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const admin = await isAdmin(sock, jid, senderJid)
+    const admin    = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     const msg_text = args.join(' ')
     if (!msg_text) return reply('⚠️ Usage: .setleave <message>')
@@ -280,7 +279,7 @@ module.exports = {
     }
   },
 
-  async mute({ sock, msg, jid, senderJid, isGroup, isOwner, reply }) {
+  async mute({ sock, jid, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
     const admin = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
@@ -289,7 +288,7 @@ module.exports = {
     await reply('🔇 Group muted — only admins can send.')
   },
 
-  async unmute({ sock, msg, jid, senderJid, isGroup, isOwner, reply }) {
+  async unmute({ sock, jid, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
     const admin = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
@@ -298,7 +297,7 @@ module.exports = {
     await reply('🔊 Group unmuted')
   },
 
-  async open({ sock, msg, jid, senderJid, isGroup, isOwner, reply }) {
+  async open({ sock, jid, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
     const admin = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
@@ -307,7 +306,7 @@ module.exports = {
     await reply('🔓 Group OPEN')
   },
 
-  async close({ sock, msg, jid, senderJid, isGroup, isOwner, reply }) {
+  async close({ sock, jid, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
     const admin = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
@@ -316,9 +315,9 @@ module.exports = {
     await reply('🔒 Group CLOSED')
   },
 
-  async hidetag({ sock, msg, jid, senderJid, isGroup, isOwner, args, reply }) {
+  async hidetag({ sock, jid, senderJid, isGroup, isOwner, args, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const admin = await isAdmin(sock, jid, senderJid)
+    const admin   = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
     const meta    = await sock.groupMetadata(jid)
     const members = meta.participants.map(p => p.id)
@@ -326,16 +325,16 @@ module.exports = {
     await sock.sendMessage(jid, { text, mentions: members })
   },
 
-  async tagall({ sock, msg, jid, senderJid, isGroup, isOwner, args, reply }) {
+  async tagall({ sock, jid, senderJid, isGroup, isOwner, args, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const admin = await isAdmin(sock, jid, senderJid)
+    const admin   = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('⚠️ Admin only.')
-    const meta    = await sock.groupMetadata(jid)
-    const members = meta.participants.map(p => p.id)
-    const message = args.join(' ') || 'Attention everyone!'
+    const meta       = await sock.groupMetadata(jid)
+    const members    = meta.participants.map(p => p.id)
+    const message    = args.join(' ') || 'Attention everyone!'
     const activePhones = await db.getActiveUsers(jid, 24 * 7)
-    const activeSet    = new Set(activePhones)
-    const memberLines  = members.map(m => {
+    const activeSet  = new Set(activePhones)
+    const memberLines = members.map(m => {
       const phone = m.split('@')[0]
       return `${activeSet.has(phone) ? '🟢' : '🔴'} @${phone}`
     }).join('\n')
@@ -344,12 +343,12 @@ module.exports = {
 
   async activity({ sock, jid, isGroup, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const meta       = await sock.groupMetadata(jid)
+    const meta        = await sock.groupMetadata(jid)
     const activeUsers = await db.getActiveUsers(jid, 24)
-    const todayMsgs  = await db.getMessageCount(jid, 24)
-    const weekMsgs   = await db.getMessageCount(jid, 24 * 7)
-    const actLevel   = Math.min(100, Math.floor((todayMsgs / Math.max(meta.participants.length, 1)) * 10))
-    const actStatus  = actLevel > 60 ? 'Very Active 🔥' : actLevel > 30 ? 'Moderate ⚡' : 'Low 😴'
+    const todayMsgs   = await db.getMessageCount(jid, 24)
+    const weekMsgs    = await db.getMessageCount(jid, 24 * 7)
+    const actLevel    = Math.min(100, Math.floor((todayMsgs / Math.max(meta.participants.length, 1)) * 10))
+    const actStatus   = actLevel > 60 ? 'Very Active 🔥' : actLevel > 30 ? 'Moderate ⚡' : 'Low 😴'
     await reply(
       `📊 *Activity — ${meta.subject}*\n\n` +
       `Status: ${actStatus} (${actLevel}%)\n\n` +
@@ -381,9 +380,7 @@ module.exports = {
     await reply(`🔴 *Inactive (7 days) — ${meta.subject}*\n\n${list}\n\n${inactive.length}/${meta.participants.length}`)
   },
 
-  async antism({ sock, jid, args, senderJid, isGroup, isOwner, reply }) {
-    return module.exports.antispam({ sock, jid, args, senderJid, isGroup, isOwner, reply })
-  },
+  async antism(ctx) { return module.exports.antispam(ctx) },
 
   async blacklist({ sock, jid, args, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
@@ -406,67 +403,108 @@ module.exports = {
       await reply('⚠️ Usage: .blacklist add/remove/list [word]')
     }
   },
-  // ─── BOT BAN SYSTEM ─────────────────────────────────────────
-  // Ban blocks user from using the bot silently — no group kick
-  async ban({ sock, msg, jid, args, isOwner, isMod, reply }) {
+
+  // ── BAN SYSTEM ────────────────────────────────────────────────
+
+  async ban({ sock, msg, jid, args, senderJid, isOwner, isMod, reply }) {
     if (!isOwner && !isMod) return reply('⚠️ Staff only.')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('⚠️ Usage: .ban @user [reason]')
-    const reason = args.filter(a => !a.startsWith('@')).join(' ') || 'No reason given'
-    const db = require('../database')
-    let count = 0
-    for (const target of mentioned) {
-      const phone = target.split('@')[0].split(':')[0]
-      await db.updateUser(phone, { banned: true }).catch(() => {})
-      count++
-    }
-    const phones = mentioned.map(t => '@' + t.split('@')[0].split(':')[0]).join(' ')
-    await sock.sendMessage(jid, {
-      text:
-        `🚫 *Shadow Ban Issued*\n\n` +
-        `👤 ${phones}\n` +
-        `📌 Reason: ${reason}\n\n` +
-        `_Banned user's messages will be silently ignored by the bot._`,
-      mentions: mentioned
-    }, { quoted: msg })
+    const target  = mentioned[0]
+    const phone   = target.split('@')[0].split(':')[0]
+    const reason  = args.filter(a => !a.startsWith('@') && !a.includes('@')).join(' ') || 'No reason given'
+    const { error } = await db.supabase.from('users').update({ banned: true }).eq('phone', phone)
+    if (error) return reply(`❌ Failed: ${error.message}`)
+    await reply(`🚫 *@${phone} has been banned.*\n📋 Reason: ${reason}`)
   },
 
-  async unban({ sock, msg, jid, isOwner, isMod, reply }) {
+  async unban({ sock, msg, jid, args, senderJid, isOwner, isMod, reply }) {
     if (!isOwner && !isMod) return reply('⚠️ Staff only.')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: .unban @user')
-    const db = require('../database')
-    for (const target of mentioned) {
-      const phone = target.split('@')[0].split(':')[0]
-      await db.updateUser(phone, { banned: false }).catch(() => {})
-    }
-    const phones = mentioned.map(t => '@' + t.split('@')[0].split(':')[0]).join(' ')
-    await sock.sendMessage(jid, {
-      text: `✅ *Shadow Ban Lifted*\n\n👤 ${phones}\n\n_User can now use the bot again._`,
-      mentions: mentioned
-    }, { quoted: msg })
+    const phone = mentioned.length
+      ? mentioned[0].split('@')[0].split(':')[0]
+      : (args[0] || '').replace(/[^0-9]/g, '')
+    if (!phone) return reply('⚠️ Usage: .unban @user')
+    const { error } = await db.supabase.from('users').update({ banned: false }).eq('phone', phone)
+    if (error) return reply(`❌ Failed: ${error.message}`)
+    await reply(`✅ *${phone} has been unbanned.*`)
   },
 
-  async banlist({ sock, jid, reply }) {
-    const db = require('../database')
+  async banlist({ reply }) {
     try {
       const { data, error } = await db.supabase
         .from('users')
         .select('phone, name')
         .eq('banned', true)
-        .order('name')
-      if (error) return reply('❌ DB error: ' + error.message)
-      if (!data || !data.length) return reply('📋 *Shadow Ban List*\n\n✅ No banned users.')
-      const lines = data.map((u, i) =>
-        `${i + 1}. 👤 ${u.name || 'Unknown'} — ${u.phone}`
-      ).join('\n')
-      await reply(
-        `🚫 *Shadow Ban List* (${data.length} user${data.length !== 1 ? 's' : ''})\n\n` +
-        lines +
-        `\n\n_These users' messages are silently ignored._`
-      )
-    } catch (e) {
-      await reply(`❌ Error: ${e.message}`)
-    }
+      if (error) return reply(`❌ DB error: ${error.message}`)
+      if (!data || data.length === 0) return reply('✅ No banned users.')
+      const list = data.map((u, i) => `${i + 1}. *${u.name || u.phone}* — \`${u.phone}\``).join('\n')
+      await reply(`🚫 *Banned Users (${data.length})*\n\n${list}`)
+    } catch (e) { await reply(`❌ Error: ${e.message}`) }
+  },
+
+  // ── SUSPEND SYSTEM ────────────────────────────────────────────
+
+  async suspend({ sock, msg, jid, args, senderJid, sender, isOwner, isMod, isGuardian, reply }) {
+    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
+    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    if (!mentioned.length) return reply('⚠️ Usage: .suspend @user <duration> [reason]\n\nDuration: 30m / 1h / 1d / 1w')
+
+    const target = mentioned[0]
+    const phone  = target.split('@')[0].split(':')[0]
+
+    // Find duration arg (30m, 1h, 1d, 1w)
+    const durationArg = args.find(a => /^\d+(m|h|d|w)$/i.test(a))
+    if (!durationArg) return reply('⚠️ Duration required. Examples: 30m, 1h, 6h, 1d, 1w')
+    const ms = parseDuration(durationArg)
+    if (!ms) return reply('⚠️ Invalid duration. Use: 30m, 1h, 1d, 1w')
+
+    const reason = args.filter(a => !a.startsWith('@') && !a.includes('@') && !/^\d+(m|h|d|w)$/i.test(a)).join(' ') || 'No reason given'
+
+    await setSuspension(db.supabase, phone, ms, reason, sender)
+
+    const until = new Date(Date.now() + ms).toLocaleString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
+    })
+
+    await sock.sendMessage(jid, {
+      text: `⏸️ *@${phone} has been suspended.*\n\n*⏳ Until:* ${until}\n*📋 Reason:* ${reason}`,
+      mentions: [target],
+    }, { quoted: msg })
+  },
+
+  async unsuspend({ sock, msg, jid, args, senderJid, isOwner, isMod, isGuardian, reply }) {
+    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
+    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    const phone = mentioned.length
+      ? mentioned[0].split('@')[0].split(':')[0]
+      : (args[0] || '').replace(/[^0-9]/g, '')
+    if (!phone) return reply('⚠️ Usage: .unsuspend @user')
+    await removeSuspension(db.supabase, phone)
+    await sock.sendMessage(jid, {
+      text: `✅ *@${phone}'s suspension has been lifted.*`,
+      mentions: mentioned.length ? [mentioned[0]] : [],
+    }, { quoted: msg })
+  },
+
+  async suspendlist({ reply }) {
+    try {
+      const { data, error } = await db.supabase
+        .from('suspensions')
+        .select('phone, suspended_until, reason, suspended_by')
+        .order('suspended_until', { ascending: true })
+      if (error) return reply(`❌ DB error: ${error.message}`)
+      if (!data || data.length === 0) return reply('✅ No active suspensions.')
+      const now  = new Date()
+      const active = data.filter(s => new Date(s.suspended_until) > now)
+      if (!active.length) return reply('✅ No active suspensions.')
+      const list = active.map((s, i) => {
+        const until = new Date(s.suspended_until).toLocaleString('en-US', {
+          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
+        })
+        return `${i + 1}. *${s.phone}*\n   ⏳ Until: ${until}\n   📋 ${s.reason}`
+      }).join('\n\n')
+      await reply(`⏸️ *Suspended Users (${active.length})*\n\n${list}`)
+    } catch (e) { await reply(`❌ Error: ${e.message}`) }
   },
 }
