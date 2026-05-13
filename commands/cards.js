@@ -82,35 +82,6 @@ const FILTER_TIER_TO_LOCAL = {
   TZ: "Z",
 };
 
-function apiGet(path) {
-  const base = (process.env.SHOOB_API_URL || "").replace(/\/+$/, "");
-  if (!base) {
-    return Promise.reject(new Error("SHOOB_API_URL not configured - set it in your Render environment variables"));
-  }
-  const url = base + path;
-  const lib = url.startsWith("https") ? https : http;
-  return new Promise((resolve, reject) => {
-    const req = lib.get(url, { headers: { "User-Agent": "ShadowGardenBot/2.0" }, timeout: 15000 }, (res) => {
-      let data = "";
-      res.on("data", (d) => {
-        data += d;
-      });
-      res.on("end", () => {
-        try {
-          resolve(JSON.parse(data));
-        } catch {
-          reject(new Error("Bad JSON from API"));
-        }
-      });
-    });
-    req.on("error", reject);
-    req.on("timeout", () => {
-      req.destroy();
-      reject(new Error("API timeout"));
-    });
-  });
-}
-
 function toBold(str) {
   return str
     .split("")
@@ -161,22 +132,45 @@ function findCardsByName(nameQuery, tierFilter) {
   return matches;
 }
 
+function getRandomCardByTier(tier) {
+  const localTier = FILTER_TIER_TO_LOCAL[tier];
+  const pool = localTier ? cardIndex.filter((c) => String(c.tier) === localTier) : cardIndex;
+  if (!pool.length) return null;
+  const raw = pool[Math.floor(Math.random() * pool.length)];
+  return {
+    id: extractCardId(raw.url),
+    name: raw.title,
+    title: raw.title,
+    series: "—",
+    tier: LOCAL_TIER_TO_LABEL[String(raw.tier)] || String(raw.tier),
+    imageUrl: raw.url,
+  };
+}
+
+function getCardStats() {
+  const byTier = {};
+  for (const card of cardIndex) {
+    const tier = LOCAL_TIER_TO_LABEL[String(card.tier)] || String(card.tier);
+    byTier[tier] = (byTier[tier] || 0) + 1;
+  }
+  return { total: cardIndex.length, indexedCount: cardIndex.length, byTier };
+}
+
 module.exports = {
   async spawnc({ sock, jid, msg, reply, react, isOwner, isMod, isGuardian }) {
     if (!isOwner && !isMod && !isGuardian) return reply("⚠️ Only staff can spawn cards.");
     await react("⏳");
     try {
       const tier = SPAWN_TIERS[Math.floor(Math.random() * SPAWN_TIERS.length)];
-      let card = await apiGet(`/api/cards/random?tier=${tier}`).catch(() => null);
-      if (!card?.id) card = await apiGet("/api/cards/random").catch(() => null);
-      if (!card?.id) return reply("❌ No cards available yet. The index may still be loading - try again in a minute.");
+      let card = getRandomCardByTier(tier);
+      if (!card) card = getRandomCardByTier(null);
+      if (!card) return reply("❌ No cards found in card.json.");
       const price = TIER_PRICES[card.tier] || 0;
       const owners = await db.getCardOwners(card.id).catch(() => []);
       const issues = owners.length;
       const caption =
         `✨ A card has spawned!\n\n` +
         `*🎴 Name:* ${card.name}\n` +
-        `*📚 Series:* ${card.series}\n` +
         `*⭐ Tier:* ${card.tier}\n` +
         `*🏷️ Price:* $${price.toLocaleString()}\n` +
         `*🆔 Card ID:* ${card.id}\n` +
@@ -186,10 +180,9 @@ module.exports = {
       setTimeout(() => {
         if (pendingCards[jid]?.card?.id === card.id) delete pendingCards[jid];
       }, 120000);
-      const imgUrl = card.imageUrl || card.thumbnailUrl;
       try {
-        if (imgUrl) {
-          await sock.sendMessage(jid, { image: { url: imgUrl }, caption }, { quoted: msg });
+        if (card.imageUrl) {
+          await sock.sendMessage(jid, { image: { url: card.imageUrl }, caption }, { quoted: msg });
         } else {
           await sock.sendMessage(jid, { text: caption }, { quoted: msg });
         }
@@ -218,7 +211,7 @@ module.exports = {
     const { card } = pending;
     delete pendingCards[jid];
     const localCard = await db
-      .getOrCreateShoobCard(card.id, card.name, card.tier, card.series, card.imageUrl || card.thumbnailUrl || null, TIER_PRICES[card.tier] || 0)
+      .getOrCreateShoobCard(card.id, card.name, card.tier, card.series, card.imageUrl || null, TIER_PRICES[card.tier] || 0)
       .catch(() => null);
     if (!localCard) return reply("❌ Failed to save card. Check your database setup and try again.");
     await db.addUserCard(sender, localCard.id);
@@ -226,7 +219,6 @@ module.exports = {
     await reply(
       `✅ *CARD CLAIMED!*\n\n` +
         `${tierEmoji} *${card.name}*\n` +
-        `📚 Series: ${card.series}\n` +
         `⭐ Tier: ${card.tier} — ${TIER_NAMES[card.tier] || card.tier}\n` +
         `💰 Worth: $${(TIER_PRICES[card.tier] || 0).toLocaleString()}\n\n` +
         `_Added to your collection! Use *.coll* to view it._`
@@ -327,24 +319,24 @@ module.exports = {
   },
 
   async ss({ reply, react, args }) {
-    if (!args.length) return reply("⚠️ Usage: *.ss <series name>*\n\nExample: *.ss Naruto*");
+    if (!args.length) return reply("⚠️ Usage: *.ss <card name>*\n\nExample: *.ss Naruto*\n\n_Searches card names in the local index._");
     await react("⏳");
-    const seriesQuery = args.join(" ").trim();
+    const nameQuery = args.join(" ").trim();
     try {
-      const data = await apiGet(`/api/cards?search=${encodeURIComponent(seriesQuery)}&limit=50`);
-      if (!data.cards?.length) {
-        return reply(`❌ No cards found for: *${seriesQuery}*`);
+      const matches = findCardsByName(nameQuery, null);
+      if (!matches.length) {
+        return reply(`❌ No cards found matching: *${nameQuery}*`);
       }
-      const seriesMatch = data.cards.filter((c) => c.series.toLowerCase().includes(seriesQuery.toLowerCase()));
-      const displayCards = seriesMatch.length ? seriesMatch : data.cards;
-      const actualSeries = displayCards[0].series;
-      const boldSeries = toBold(actualSeries.toUpperCase());
-      const cardLines = displayCards
+      const boldQuery = toBold(nameQuery.toUpperCase());
+      const cardLines = matches
         .slice(0, 30)
-        .map((c) => `\n✦ 『 ${c.name} 』\n> 🏷️ 𝗧𝗶𝗲𝗿: ${c.tier}`)
+        .map((c) => {
+          const tier = LOCAL_TIER_TO_LABEL[String(c.tier)] || String(c.tier);
+          return `\n✦ 『 ${c.title} 』\n> 🏷️ 𝗧𝗶𝗲𝗿: ${tier}`;
+        })
         .join("\n");
-      const more = displayCards.length > 30 ? `\n\n_...and ${displayCards.length - 30} more cards._` : "";
-      await reply(`╭─❖ 「 📚 𝗔𝗩𝗔𝗜𝗟𝗔𝗕𝗟𝗘 𝗖𝗔𝗥𝗗𝗦 𝗙𝗥𝗢𝗠 ${boldSeries} 📚 」 ❖─╮` + cardLines + more + `\n╰────────────────────╯`);
+      const more = matches.length > 30 ? `\n\n_...and ${matches.length - 30} more cards._` : "";
+      await reply(`╭─❖ 「 📚 𝗖𝗔𝗥𝗗𝗦 𝗠𝗔𝗧𝗖𝗛𝗜𝗡𝗚 ${boldQuery} 📚 」 ❖─╮` + cardLines + more + `\n╰────────────────────╯`);
     } catch (err) {
       await reply(`❌ Error: ${err.message}`);
     }
@@ -406,18 +398,18 @@ module.exports = {
 
   async cards({ reply }) {
     try {
-      const stats = await apiGet("/api/cards/stats");
+      const stats = getCardStats();
       const byTier = stats.byTier || {};
       await reply(
         `🎴 *CARD DATABASE*\n\n` +
-          `📦 *Total:* ${(stats.total || 0).toLocaleString()}\n` +
-          `📊 *Indexed:* ${(stats.indexedCount || 0).toLocaleString()}\n\n` +
+          `📦 *Total:* ${stats.total.toLocaleString()}\n` +
+          `📊 *Indexed:* ${stats.indexedCount.toLocaleString()}\n\n` +
           `━━━━━━━━━━━━━━━\n\n` +
           Object.entries(byTier)
             .map(([t, c]) => `${TIERS[t] || "🎴"} ${t}: ${Number(c).toLocaleString()} cards`)
             .join("\n") +
           `\n\n━━━━━━━━━━━━━━━\n\n` +
-          `_Search: *.ci <name>* | Series: *.ss <series>*_`
+          `_Search: *.ci <name>* | Name search: *.ss <name>*_`
       );
     } catch (err) {
       await reply(`❌ Error fetching stats: ${err.message}`);
@@ -466,4 +458,3 @@ module.exports = {
     await reply(`✨ *STARDUST*\n\n💫 Earn stardust by participating in events.\n\n_Coming soon…_ 🖤`);
   },
 };
-        
