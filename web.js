@@ -714,13 +714,14 @@ app.post('/request-pairing-code', async (req, res) => {
   }
 })
 
-app.get('/ping', (req, res) => res.json({ status: 'alive', ts: Date.now() }))
+app.get('/ping',     (req, res) => res.json({ status: 'alive', ts: Date.now() }))
+app.get('/bot.ping', (req, res) => res.json({ status: 'alive', ts: Date.now() }))
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`\\n🌐 Shadow Garden Web Panel → http://localhost:\${PORT}\\n`)
 })
 
-// Keep-alive ping for Render free tier (every 5 min)
+// Keep-alive ping for Render free tier (every 2 min)
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:\${PORT}`
 const SHOOB_URL  = (process.env.SHOOB_API_URL || '').replace(/\/$/, '')
 
@@ -734,6 +735,6 @@ function keepAlivePing(url, label) {
 setInterval(() => {
   keepAlivePing(RENDER_URL, 'bot')
   if (SHOOB_URL) keepAlivePing(SHOOB_URL, 'shoob-api')
-}, 5 * 60 * 1000)
+}, 2 * 60 * 1000)
 
 module.exports = app
