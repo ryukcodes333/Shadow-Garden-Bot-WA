@@ -1,29 +1,6 @@
 const db = require("../database");
-const http = require("http");
-const https = require("https");
 const cardIndex = require("./card.json");
-
-function fetchPollinationsImage(prompt) {
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true&model=flux`;
-  return new Promise((resolve) => {
-    const client = url.startsWith("https") ? https : http;
-    const req = client.get(url, { timeout: 18000 }, (res) => {
-      if (res.statusCode !== 200) {
-        res.resume();
-        return resolve(null);
-      }
-      const chunks = [];
-      res.on("data", (c) => chunks.push(c));
-      res.on("end", () => resolve(Buffer.concat(chunks)));
-      res.on("error", () => resolve(null));
-    });
-    req.on("error", () => resolve(null));
-    req.on("timeout", () => {
-      req.destroy();
-      resolve(null);
-    });
-  });
-}
+const { getOrEnrichSeries, getCachedSeries, fetchCardMedia } = require("./groqVision");
 
 const TIER_PRICES = {
   T1: 17500,
@@ -82,6 +59,8 @@ const FILTER_TIER_TO_LOCAL = {
   TZ: "Z",
 };
 
+const SEEALL_PAGE_SIZE = 25;
+
 function toBold(str) {
   return str
     .split("")
@@ -137,11 +116,13 @@ function getRandomCardByTier(tier) {
   const pool = localTier ? cardIndex.filter((c) => String(c.tier) === localTier) : cardIndex;
   if (!pool.length) return null;
   const raw = pool[Math.floor(Math.random() * pool.length)];
+  const id = extractCardId(raw.url);
+  const cachedSeries = getCachedSeries(id);
   return {
-    id: extractCardId(raw.url),
+    id,
     name: raw.title,
     title: raw.title,
-    series: "—",
+    series: cachedSeries || "—",
     tier: LOCAL_TIER_TO_LABEL[String(raw.tier)] || String(raw.tier),
     imageUrl: raw.url,
   };
@@ -154,6 +135,27 @@ function getCardStats() {
     byTier[tier] = (byTier[tier] || 0) + 1;
   }
   return { total: cardIndex.length, indexedCount: cardIndex.length, byTier };
+}
+
+async function sendCardMedia(sock, jid, imageUrl, caption, quotedMsg) {
+  const media = await fetchCardMedia(imageUrl).catch(() => null);
+  if (!media) {
+    await sock.sendMessage(jid, { text: caption }, quotedMsg ? { quoted: quotedMsg } : {});
+    return;
+  }
+  if (media.isGif) {
+    await sock.sendMessage(
+      jid,
+      { video: media.buffer, gifPlayback: true, caption },
+      quotedMsg ? { quoted: quotedMsg } : {}
+    );
+  } else {
+    await sock.sendMessage(
+      jid,
+      { image: media.buffer, caption },
+      quotedMsg ? { quoted: quotedMsg } : {}
+    );
+  }
 }
 
 module.exports = {
@@ -169,26 +171,28 @@ module.exports = {
       const owners = await db.getCardOwners(card.id).catch(() => []);
       const issues = owners.length;
       const caption =
-        `✨ A card has spawned!\n\n` +
+        `✨ *A card has spawned!*\n\n` +
         `*🎴 Name:* ${card.name}\n` +
-        `*⭐ Tier:* ${card.tier}\n` +
+        `*📚 Series:* ${card.series}\n` +
+        `*⭐ Tier:* ${card.tier} — ${TIER_NAMES[card.tier] || card.tier}\n` +
         `*🏷️ Price:* $${price.toLocaleString()}\n` +
         `*🆔 Card ID:* ${card.id}\n` +
         `*#️⃣ Issues:* ${issues}\n\n` +
-        `> Use .get \`${card.id}\` to *claim* this card!`;
+        `> Use *.get* \`${card.id}\` to *claim* this card!`;
       pendingCards[jid] = { card, expiresAt: Date.now() + 120000 };
       setTimeout(() => {
         if (pendingCards[jid]?.card?.id === card.id) delete pendingCards[jid];
       }, 120000);
       try {
-        if (card.imageUrl) {
-          await sock.sendMessage(jid, { image: { url: card.imageUrl }, caption }, { quoted: msg });
-        } else {
-          await sock.sendMessage(jid, { text: caption }, { quoted: msg });
-        }
+        await sendCardMedia(sock, jid, card.imageUrl, caption, msg);
       } catch {
         await sock.sendMessage(jid, { text: caption });
       }
+      getOrEnrichSeries(card.id, card.imageUrl).then((series) => {
+        if (series && series !== "—" && pendingCards[jid]?.card?.id === card.id) {
+          pendingCards[jid].card.series = series;
+        }
+      }).catch(() => {});
     } catch (err) {
       await reply(`❌ Failed to spawn: ${err.message}`);
     }
@@ -198,7 +202,7 @@ module.exports = {
     return module.exports.spawnc(ctx);
   },
 
-  async get({ sock, jid, msg, reply, react, sender, user, args }) {
+  async get({ sock, jid, msg, reply, react, sender, args }) {
     const pending = pendingCards[jid];
     if (!pending || Date.now() > pending.expiresAt) {
       return reply("❌ No card spawned right now! Wait for one to appear.");
@@ -219,6 +223,7 @@ module.exports = {
     await reply(
       `✅ *CARD CLAIMED!*\n\n` +
         `${tierEmoji} *${card.name}*\n` +
+        `📚 Series: ${card.series}\n` +
         `⭐ Tier: ${card.tier} — ${TIER_NAMES[card.tier] || card.tier}\n` +
         `💰 Worth: $${(TIER_PRICES[card.tier] || 0).toLocaleString()}\n\n` +
         `_Added to your collection! Use *.coll* to view it._`
@@ -237,8 +242,7 @@ module.exports = {
     await react("⏳");
     const validTiers = ["T1", "T2", "T3", "T4", "T5", "T6", "TS", "TZ"];
     const lastArg = args[args.length - 1].toUpperCase();
-    let nameQuery;
-    let tierFilter;
+    let nameQuery, tierFilter;
     if (validTiers.includes(lastArg)) {
       nameQuery = args.slice(0, -1).join(" ").trim();
       tierFilter = lastArg;
@@ -260,21 +264,25 @@ module.exports = {
       const tier = LOCAL_TIER_TO_LABEL[String(card.tier)] || String(card.tier);
       const price = TIER_PRICES[tier] || 0;
       const cardId = extractCardId(card.url);
+      const cachedSeries = getCachedSeries(cardId);
+      const seriesLine = cachedSeries ? `*📚 Series:* ${cachedSeries}\n` : "";
       const caption =
         `*🃏 Card Info*\n\n` +
         `*🎴 Name:* ${card.title}\n` +
+        seriesLine +
         `*⭐ Tier:* ${tier} — ${TIER_NAMES[tier] || tier}\n` +
         `*💰 Price:* $${price.toLocaleString()}\n` +
         `*🆔 Card ID:* \`${cardId}\`` +
-        (matches.length > 1 ? `\n\n_Found ${matches.length} matches. Showing first._\n_Try *.ci ${nameQuery} T4* to filter by tier._` : "");
+        (matches.length > 1
+          ? `\n\n_Found ${matches.length} matches. Showing first._\n_Try *.ci ${nameQuery} ${tier}* to filter by tier._`
+          : "");
       try {
-        if (card.url) {
-          await sock.sendMessage(jid, { image: { url: card.url }, caption }, { quoted: msg });
-        } else {
-          await reply(caption);
-        }
+        await sendCardMedia(sock, jid, card.url, caption, msg);
       } catch {
         await reply(caption);
+      }
+      if (!cachedSeries) {
+        getOrEnrichSeries(cardId, card.url).catch(() => {});
       }
     } catch (err) {
       await reply(`❌ Error: ${err.message}`);
@@ -309,13 +317,64 @@ module.exports = {
       `_Collection entry #${index}._`;
     try {
       if (imageUrl) {
-        await sock.sendMessage(jid, { image: { url: imageUrl }, caption }, { quoted: msg });
+        await sendCardMedia(sock, jid, imageUrl, caption, msg);
       } else {
         await reply(caption);
       }
     } catch {
       await reply(caption);
     }
+  },
+
+  async seeall({ reply, react, args }) {
+    const validTiers = ["T1", "T2", "T3", "T4", "T5", "T6", "TS"];
+    const firstArg = (args[0] || "").toUpperCase();
+
+    if (!firstArg || !validTiers.includes(firstArg)) {
+      return reply(
+        `📋 *SEE ALL CARDS*\n\n` +
+          `Usage: *.seeall <tier> [page]*\n\n` +
+          `Example: *.seeall T3*\n` +
+          `Example: *.seeall T1 2*\n\n` +
+          `Tiers: ${validTiers.join(" | ")}\n\n` +
+          `${validTiers.map((t) => {
+            const local = FILTER_TIER_TO_LOCAL[t];
+            const count = cardIndex.filter((c) => String(c.tier) === local).length;
+            return `${TIERS[t]} ${t} (${count})`;
+          }).join("  ")}`
+      );
+    }
+
+    await react("⏳");
+    const tier = firstArg;
+    const page = Math.max(1, parseInt(args[1]) || 1);
+    const localTier = FILTER_TIER_TO_LOCAL[tier];
+    const pool = cardIndex.filter((c) => String(c.tier) === localTier);
+
+    if (!pool.length) return reply(`❌ No cards found for tier *${tier}*.`);
+
+    const totalPages = Math.ceil(pool.length / SEEALL_PAGE_SIZE);
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * SEEALL_PAGE_SIZE;
+    const slice = pool.slice(start, start + SEEALL_PAGE_SIZE);
+
+    const tierEmoji = TIERS[tier] || "🎴";
+    const boldTier = toBold(tier);
+    const lines = slice
+      .map((c, i) => `${start + i + 1}. *${c.title}*`)
+      .join("\n");
+
+    await reply(
+      `${tierEmoji} *${boldTier} — ${TIER_NAMES[tier]} Cards*\n` +
+        `📦 Total: ${pool.length} | Page ${safePage}/${totalPages}\n` +
+        `━━━━━━━━━━━━━━━━━━━\n\n` +
+        `${lines}\n\n` +
+        `━━━━━━━━━━━━━━━━━━━\n` +
+        (safePage < totalPages
+          ? `_Next page: *.seeall ${tier} ${safePage + 1}*_\n`
+          : `_Last page reached._\n`) +
+        `_Search a card: *.ci <name>*_`
+    );
   },
 
   async ss({ reply, react, args }) {
@@ -332,11 +391,18 @@ module.exports = {
         .slice(0, 30)
         .map((c) => {
           const tier = LOCAL_TIER_TO_LABEL[String(c.tier)] || String(c.tier);
-          return `\n✦ 『 ${c.title} 』\n> 🏷️ 𝗧𝗶𝗲𝗿: ${tier}`;
+          const cached = getCachedSeries(extractCardId(c.url));
+          const seriesTag = cached ? ` · ${cached}` : "";
+          return `\n✦ 『 ${c.title} 』\n> 🏷️ 𝗧𝗶𝗲𝗿: ${tier}${seriesTag}`;
         })
         .join("\n");
       const more = matches.length > 30 ? `\n\n_...and ${matches.length - 30} more cards._` : "";
-      await reply(`╭─❖ 「 📚 𝗖𝗔𝗥𝗗𝗦 𝗠𝗔𝗧𝗖𝗛𝗜𝗡𝗚 ${boldQuery} 📚 」 ❖─╮` + cardLines + more + `\n╰────────────────────╯`);
+      await reply(
+        `╭─❖ 「 📚 𝗖𝗔𝗥𝗗𝗦 𝗠𝗔𝗧𝗖𝗛𝗜𝗡𝗚 ${boldQuery} 📚 」 ❖─╮` +
+          cardLines +
+          more +
+          `\n╰────────────────────╯`
+      );
     } catch (err) {
       await reply(`❌ Error: ${err.message}`);
     }
@@ -406,13 +472,13 @@ module.exports = {
           `📊 *Indexed:* ${stats.indexedCount.toLocaleString()}\n\n` +
           `━━━━━━━━━━━━━━━\n\n` +
           Object.entries(byTier)
-            .map(([t, c]) => `${TIERS[t] || "🎴"} ${t}: ${Number(c).toLocaleString()} cards`)
+            .map(([t, c]) => `${TIERS[t] || "🎴"} ${t} — ${TIER_NAMES[t] || t}: ${Number(c).toLocaleString()} cards`)
             .join("\n") +
           `\n\n━━━━━━━━━━━━━━━\n\n` +
-          `_Search: *.ci <name>* | Name search: *.ss <name>*_`
+          `_Search: *.ci <name>* | Browse: *.seeall <tier>*_`
       );
     } catch (err) {
-      await reply(`❌ Error fetching stats: ${err.message}`);
+      await reply(`❌ Error: ${err.message}`);
     }
   },
 
