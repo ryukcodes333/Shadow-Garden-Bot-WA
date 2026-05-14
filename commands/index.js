@@ -1,6 +1,7 @@
 const db = require('../database')
 const { downloadMediaMessage } = require('@whiskeysockets/baileys')
 
+const gtaCmds         = require('./gta')
 const mainCmds        = require('./main')
 const adminCmds       = require('./admin')
 const economyCmds     = require('./economy')
@@ -348,6 +349,9 @@ async function handleMessage(sock, msg) {
     }
 
     // ── . prefix → all other commands ───────────────────────────
+
+    // GTA V RP commands
+    if (gtaCmds[cmd])           return await gtaCmds[cmd](ctx)
 
     // Image filter commands
     if (imagesCmds[cmd])        return await imagesCmds[cmd](ctx)
