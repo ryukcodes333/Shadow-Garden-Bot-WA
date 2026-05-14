@@ -14,37 +14,90 @@ function getSupabase() {
   )
 }
 
+// Download an attached or quoted image from a message, returns buffer or null
 async function getImageBuffer(sock, msg) {
   const imgMsg =
     msg.message?.imageMessage ||
     msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage
+
   if (!imgMsg) return null
+
   const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
   const targetMsg = quoted
-    ? { message: quoted, key: { remoteJid: msg.key.remoteJid, id: msg.message.extendedTextMessage.contextInfo.stanzaId, participant: msg.message.extendedTextMessage.contextInfo.participant } }
+    ? {
+        message: quoted,
+        key: {
+          remoteJid: msg.key.remoteJid,
+          id: msg.message.extendedTextMessage.contextInfo.stanzaId,
+          participant: msg.message.extendedTextMessage.contextInfo.participant,
+        },
+      }
     : msg
-  return downloadMediaMessage(targetMsg, 'buffer', {}, { logger: console, reuploadRequest: sock.updateMediaMessage })
+
+  return downloadMediaMessage(
+    targetMsg, 'buffer', {},
+    { logger: console, reuploadRequest: sock.updateMediaMessage }
+  )
 }
 
+// Search raw binary for the first embedded JPEG (SOI…EOI)
+function extractJpegFromBinary(buf) {
+  let start = -1
+  for (let i = 0; i < buf.length - 2; i++) {
+    if (buf[i] === 0xFF && buf[i + 1] === 0xD8 && buf[i + 2] === 0xFF) { start = i; break }
+  }
+  if (start === -1) return null
+  let end = -1
+  for (let i = buf.length - 2; i > start; i--) {
+    if (buf[i] === 0xFF && buf[i + 1] === 0xD9) { end = i + 2; break }
+  }
+  if (end === -1 || end - start < 500) return null
+  return buf.slice(start, end)
+}
+
+// Download the raw video from a message — returns the mp4 buffer as-is.
 async function getRawVideoBuffer(sock, msg) {
   const vidMsg =
     msg.message?.videoMessage ||
     msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage
   if (!vidMsg) return null
+
   const fileSize = Number(vidMsg.fileLength || 0)
-  if (fileSize > 50 * 1024 * 1024) throw new Error('Video too large (max 50 MB). Try a shorter clip.')
+  if (fileSize > 50 * 1024 * 1024) {
+    throw new Error('Video too large (max 50 MB). Try sending a shorter clip.')
+  }
+
   const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
   const targetMsg = quoted
-    ? { message: quoted, key: { remoteJid: msg.key.remoteJid, id: msg.message.extendedTextMessage.contextInfo.stanzaId, participant: msg.message.extendedTextMessage.contextInfo.participant } }
+    ? {
+        message: quoted,
+        key: {
+          remoteJid: msg.key.remoteJid,
+          id: msg.message.extendedTextMessage.contextInfo.stanzaId,
+          participant: msg.message.extendedTextMessage.contextInfo.participant,
+        },
+      }
     : msg
+
   let videoBuf
   try {
-    videoBuf = await downloadMediaMessage(targetMsg, 'buffer', {}, { logger: { level: 'silent', ...console }, reuploadRequest: sock.updateMediaMessage })
-  } catch (err) { throw new Error('Could not download video: ' + err.message) }
-  if (!videoBuf || videoBuf.length < 100) throw new Error('Downloaded video is empty. Try sending it again.')
+    videoBuf = await downloadMediaMessage(
+      targetMsg, 'buffer', {},
+      { logger: { level: 'silent', ...console }, reuploadRequest: sock.updateMediaMessage }
+    )
+  } catch (err) {
+    throw new Error('Could not download video: ' + err.message)
+  }
+
+  if (!videoBuf || videoBuf.length < 100) {
+    throw new Error('Downloaded video is empty. Try sending it again.')
+  }
+
   return videoBuf
 }
 
+// Use ffmpeg to extract the first frame of a video buffer as a PNG buffer.
+// Used when rendering profile cards where the bg/pp is a saved video.
 async function extractVideoFrame(videoBuf) {
   const tmpDir = os.tmpdir()
   const tmpIn  = path.join(tmpDir, `sgbot_vin_${Date.now()}.mp4`)
@@ -52,7 +105,12 @@ async function extractVideoFrame(videoBuf) {
   try {
     fs.writeFileSync(tmpIn, videoBuf)
     await new Promise((resolve, reject) => {
-      execFile('ffmpeg', ['-y', '-i', tmpIn, '-frames:v', '1', '-q:v', '2', tmpOut], { timeout: 20000 }, (err, _out, stderr) => {
+      execFile('ffmpeg', [
+        '-y', '-i', tmpIn,
+        '-frames:v', '1',
+        '-q:v', '2',
+        tmpOut,
+      ], { timeout: 20000 }, (err, _out, stderr) => {
         if (err) reject(new Error('ffmpeg frame error: ' + (stderr || err.message).slice(0, 200)))
         else resolve()
       })
@@ -66,120 +124,52 @@ async function extractVideoFrame(videoBuf) {
   }
 }
 
-async function uploadToStorage(buffer, storagePath, mime = 'image/jpeg') {
+// Upload a buffer to Supabase storage, return public URL
+async function uploadToStorage(buffer, path, mime = 'image/jpeg') {
   const supabase = getSupabase()
-  const { error } = await supabase.storage.from('card-images').upload(storagePath, buffer, { contentType: mime, upsert: true })
+  const { error } = await supabase.storage
+    .from('card-images')
+    .upload(path, buffer, { contentType: mime, upsert: true })
   if (error) throw new Error(error.message)
-  const { data } = supabase.storage.from('card-images').getPublicUrl(storagePath)
+  const { data } = supabase.storage.from('card-images').getPublicUrl(path)
   return data.publicUrl
 }
 
-// ── Badge / rank helper ────────────────────────────────────────────────────────
-function getRoleBadge(role) {
-  const badges = { owner:'👑 Owner', mod:'🛡️ Moderator', guardian:'🗡️ Guardian', card_maker:'🎴 Card Maker', premium:'⭐ Premium' }
-  return badges[role] || '🌑 Member'
-}
-
-function getXPBar(xp, level) {
-  const needed = level * 1000
-  const pct    = Math.min(1, (xp % needed) / needed)
-  const filled = Math.round(pct * 10)
-  return `[${'█'.repeat(filled)}${'░'.repeat(10 - filled)}] ${Math.floor(pct * 100)}%`
-}
-
-function getAchievements(u) {
-  const ach = []
-  if ((u.level || 1) >= 5)   ach.push('🏅 Rising Star (Lvl 5)')
-  if ((u.level || 1) >= 10)  ach.push('🥈 Veteran (Lvl 10)')
-  if ((u.level || 1) >= 25)  ach.push('🥇 Elite (Lvl 25)')
-  if ((u.gems  || 0) >= 100) ach.push('💎 Gem Collector')
-  if ((u.streak|| 0) >= 7)   ach.push('🔥 Week Streak')
-  if ((u.streak|| 0) >= 30)  ach.push('🌟 Month Streak')
-  if (u.premium)             ach.push('👑 Premium Member')
-  if (u.role === 'mod')      ach.push('🛡️ Staff Guard')
-  return ach.length ? ach.join('\n') : '🔒 No achievements yet'
-}
-
 module.exports = {
-  // ─── .p — profile card ──────────────────────────────────────────────────────
+  // ─── .p — image profile card ──────────────────────────────────────────────
   async p({ sock, msg, jid, sender, user, reply, isOwner, isMod, isGuardian }) {
     await reply('⏳ Generating your profile card…')
 
     const u = user || await db.getOrCreateUser(sender)
-    if (!u) return reply('❌ Could not load your profile.')
+    if (!u) return reply('❌ Could not load your profile. Make sure the database is set up.')
 
-    const effectiveRole = isOwner ? 'owner' : isMod ? 'mod' : isGuardian ? 'guardian' : (u.role || 'member')
-    const displayUser   = { ...u, role: effectiveRole }
+    // Override displayed role using runtime permission flags so owner/mod/guardian
+    // always shows the correct badge even if the DB role column hasn't been set
+    const effectiveRole = isOwner ? 'owner'
+      : isMod                     ? 'mod'
+      : isGuardian                ? 'guardian'
+      : (u.role || 'member')
+    const displayUser = { ...u, role: effectiveRole }
 
-    const xpNeeded  = (u.level || 1) * 1000
-    const xpBar     = getXPBar(u.xp || 0, u.level || 1)
-    const cardCount = await db.getUserCardCount(sender).catch(() => 0)
-    const frameId   = u.profile_frame || 1
-    const frameName = getFrame(frameId).name
-    const joinDate  = u.created_at ? new Date(u.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : 'Unknown'
-    const marriage  = await db.getMarriage(sender).catch(() => null)
-    const partner   = marriage
-      ? (marriage.proposer_phone === sender ? marriage.target_name : marriage.proposer_name)
-      : null
+    // Fetch custom bg + pp if set
+    let ppBuffer  = null
+    let bgBuffer  = null
 
-    const profileCaption =
-      `╭─「 🌑 *${u.name || sender}* 」─\n` +
-      `│\n` +
-      `├ 👤 *Name:* ${u.name || sender}\n` +
-      `├ 🆔 *ID:* ${sender}\n` +
-      `├ 🎭 *Role:* ${getRoleBadge(effectiveRole)}\n` +
-      `├ 🧠 *Title:* ${u.title || 'Newcomer'}\n` +
-      `│\n` +
-      `├─── 📊 *STATS*\n` +
-      `├ ⭐ Level: *${u.level || 1}*\n` +
-      `├ 🔥 XP: *${(u.xp||0).toLocaleString()} / ${xpNeeded.toLocaleString()}*\n` +
-      `├ ${xpBar}\n` +
-      `├ 🔁 Streak: *${u.streak || 0} days*\n` +
-      `│\n` +
-      `├─── 💰 *ECONOMY*\n` +
-      `├ 💵 Wallet: *${(u.wallet||0).toLocaleString()} Bnhz*\n` +
-      `├ 🏦 Bank: *${(u.bank||0).toLocaleString()} Bnhz*\n` +
-      `├ 💎 Gems: *${u.gems || 0}*\n` +
-      `├ 📊 Net Worth: *${((u.wallet||0)+(u.bank||0)).toLocaleString()} Bnhz*\n` +
-      `│\n` +
-      `├─── 🎴 *COLLECTION*\n` +
-      `├ 🃏 Cards: *${cardCount}*\n` +
-      `├ 🖼️ Frame: *${frameName}* (#${frameId})\n` +
-      (partner ? `├ 💍 Married to: *${partner}*\n` : '') +
-      `│\n` +
-      `├─── 🏆 *ACHIEVEMENTS*\n` +
-      getAchievements(u).split('\n').map(a => `├ ${a}`).join('\n') + '\n' +
-      `│\n` +
-      `├ 📅 Joined: *${joinDate}*\n` +
-      `├ 🌍 Status: *${u.banned ? '🚫 Banned' : '✅ Active'}*\n` +
-      `│\n` +
-      `╰─ _The shadow garden remembers all._ 🖤`
-
-    // If user has a VIDEO background — send the actual video playing
-    if (u.profile_bg && (u.profile_bg.endsWith('.mp4') || u.profile_bg.includes('video'))) {
-      try {
-        const videoBuf = await fetchBuffer(u.profile_bg)
-        await sock.sendMessage(jid, { video: videoBuf, caption: profileCaption, gifPlayback: false }, { quoted: msg })
-        return
-      } catch (e) {
-        // fallback to image card if video fetch fails
-      }
-    }
-
-    // Normal image card
-    let ppBuffer = null
-    let bgBuffer = null
     try {
       if (u.profile_pp) {
         const raw = await fetchBuffer(u.profile_pp)
-        ppBuffer = u.profile_pp.endsWith('.mp4') ? await extractVideoFrame(raw) : raw
+        ppBuffer = u.profile_pp.endsWith('.mp4')
+          ? await extractVideoFrame(raw)
+          : raw
       }
     } catch { ppBuffer = null }
 
     try {
       if (u.profile_bg) {
         const raw = await fetchBuffer(u.profile_bg)
-        bgBuffer = u.profile_bg.endsWith('.mp4') ? await extractVideoFrame(raw) : raw
+        bgBuffer = u.profile_bg.endsWith('.mp4')
+          ? await extractVideoFrame(raw)
+          : raw
       }
     } catch { bgBuffer = null }
 
@@ -187,204 +177,347 @@ module.exports = {
     try {
       cardBuffer = await generateProfileCard(displayUser, ppBuffer, bgBuffer)
     } catch (err) {
+      console.error('[profile] Card gen error:', err)
       return reply(`❌ Failed to generate profile card: ${err.message}`)
     }
 
-    await sock.sendMessage(jid, { image: cardBuffer, caption: profileCaption }, { quoted: msg })
-  },
+    const frameId   = u.profile_frame || 1
+    const frameName = getFrame(frameId).name
+    const cardCount = await db.getUserCardCount(sender).catch(() => '?')
 
-  // ─── .profile ────────────────────────────────────────────────────────────────
-  async profile({ reply, sender, user, msg }) {
-    const mentioned   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    const targetPhone = mentioned.length ? mentioned[0].split('@')[0].split(':')[0] : sender
-    const u = (user && targetPhone === sender) ? user : await db.getOrCreateUser(targetPhone)
-    if (!u) return reply('❌ Could not load profile.')
-
-    const xpNeeded  = (u.level || 1) * 1000
-    const xpBar     = getXPBar(u.xp || 0, u.level || 1)
-    const cardCount = await db.getUserCardCount(targetPhone).catch(() => 0)
-    const joinDate  = u.created_at ? new Date(u.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : 'Unknown'
-    const marriage  = await db.getMarriage(targetPhone).catch(() => null)
-    const partner   = marriage
-      ? (marriage.proposer_phone === targetPhone ? marriage.target_name : marriage.proposer_name)
-      : null
-
-    await reply(
-      `╭─「 🌑 *${u.name || targetPhone} — PROFILE* 」─\n` +
-      `│\n` +
-      `├ 👤 *Name:* ${u.name || targetPhone}\n` +
-      `├ 🆔 *User ID:* ${targetPhone}\n` +
-      `├ 🎭 *Role:* ${getRoleBadge(u.role || 'member')}\n` +
-      `├ 🧠 *Title:* ${u.title || 'Newcomer'}\n` +
-      `├ 📝 *Bio:* ${u.bio || 'No bio set'}\n` +
-      `│\n` +
-      `├─── 📊 *STATS*\n` +
-      `├ ⭐ Level: *${u.level || 1}*\n` +
-      `├ 🔥 XP: *${(u.xp||0).toLocaleString()} / ${xpNeeded.toLocaleString()}*\n` +
-      `├ ${xpBar}\n` +
-      `├ 🔁 Daily Streak: *${u.streak || 0} days*\n` +
-      `│\n` +
-      `├─── 💰 *ECONOMY*\n` +
-      `├ 💵 Wallet: *${(u.wallet||0).toLocaleString()} Bnhz*\n` +
-      `├ 🏦 Bank: *${(u.bank||0).toLocaleString()} Bnhz*\n` +
-      `├ 💎 Gems: *${u.gems || 0}*\n` +
-      `├ 📊 Net Worth: *${((u.wallet||0)+(u.bank||0)).toLocaleString()} Bnhz*\n` +
-      `│\n` +
-      `├─── 🎴 *COLLECTION*\n` +
-      `├ 🃏 Cards Owned: *${cardCount}*\n` +
-      `├ 🖼️ Frame: *#${u.profile_frame || 1}*\n` +
-      (partner ? `├ 💍 Married to: *${partner}*\n` : `├ 💔 Marital Status: *Single*\n`) +
-      `│\n` +
-      `├─── 🏆 *ACHIEVEMENTS*\n` +
-      getAchievements(u).split('\n').map(a => `├ ${a}`).join('\n') + '\n' +
-      `│\n` +
-      `├ 📅 Member Since: *${joinDate}*\n` +
-      `├ ⚡ Account Status: *${u.banned ? '🚫 Banned' : u.premium ? '⭐ Premium' : '✅ Active'}*\n` +
-      `│\n` +
-      `╰─ _𝐒𝐇𝚫𝐃𝐎𝐖 𝐆𝚫𝐑𝐃𝚵𝐍 Records_ 🖤`
+    await sock.sendMessage(
+      jid,
+      {
+        image: cardBuffer,
+        caption:
+          `🌑 *${u.name || sender}\'s Profile*\n\n` +
+          `⭐ Level ${u.level || 1}  |  🎭 ${u.role || 'member'}\n` +
+          `💰 ${Number(u.wallet || 0).toLocaleString()} coins  •  💎 ${Number(u.gems || 0).toLocaleString()} gems\n` +
+          `🃏 Cards: ${cardCount}\n` +
+          `🖼️ Frame: ${frameName} (#${frameId})\n\n` +
+          `_Type .frames to browse all 30 frames_ 🖤`,
+      },
+      { quoted: msg }
     )
   },
 
-  // ─── .setpp ───────────────────────────────────────────────────────────────────
-  async setpp({ sock, msg, jid, sender, user, reply, isOwner, isMod, isGuardian }) {
-    const u       = user || await db.getOrCreateUser(sender)
-    const isStaff = isOwner || isMod || isGuardian
-    const isPrem  = u?.premium || false
-    const canVideo = isStaff || isPrem
+  // ─── .profile — text profile ─────────────────────────────────────────────
+  async profile({ reply, sender, user, msg }) {
+    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    const targetPhone = mentioned.length ? mentioned[0].split('@')[0] : sender
+    const u = (user && targetPhone === sender) ? user : await db.getOrCreateUser(targetPhone)
+    if (!u) return reply('❌ Could not load profile.')
 
+    const xpNeeded = (u.level || 1) * 1000
+    const joinDate = u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Unknown'
+
+    await reply(
+      `👤 *USER PROFILE*\n\n` +
+      `🧑 *Name:* ${u.name || targetPhone}\n` +
+      `🆔 *User ID:* ${targetPhone}\n\n` +
+      `📊 *Level:* ${u.level || 1}\n` +
+      `🔥 *XP:* ${u.xp || 0} / ${xpNeeded}\n` +
+      `⭐ *Rank:* ${u.role || 'member'}\n\n` +
+      `💰 *Wallet:* ${u.wallet || 0} coins\n` +
+      `🏦 *Bank:* ${u.bank || 0} coins\n` +
+      `💎 *Gems:* ${u.gems || 0}\n\n` +
+      `🎮 *Games Won:* 0\n` +
+      `❌ *Games Lost:* 0\n\n` +
+      `📈 *Streak:* ${u.streak || 0} days\n` +
+      `⚡ *Status:* Active\n\n` +
+      `🧠 *Title:* ${u.title || 'Newcomer'}\n` +
+      `🎴 *Card Tier:* N/A\n\n` +
+      `🚫 *Banned:* ${u.banned ? 'Yes' : 'No'}\n` +
+      `📅 *Joined:* ${joinDate}\n` +
+      `🌍 *Registered:* ${u.created_at ? 'Yes' : 'No'}\n\n` +
+      `_The system records everything… even what you don't notice._ 🖤`
+    )
+  },
+
+  // ─── .setpp ───────────────────────────────────────────────────────────────
+  async setpp({ sock, msg, jid, sender, user, reply, isOwner, isMod, isGuardian }) {
+    const isStaff = isOwner || isMod || isGuardian
+
+    // Check for video first (staff only)
     const isVideoMsg =
       !!msg.message?.videoMessage ||
       !!msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage
 
-    if (isVideoMsg) {
-      if (!canVideo)
-        return reply('⚠️ Video profile pictures are for *Staff* and *Premium members* only.\n\nUpgrade to premium with *.premium* or ask a staff member.')
+    if (isVideoMsg && isStaff) {
       await reply('⏳ Saving your video profile picture…')
       let videoBuf
-      try { videoBuf = await getRawVideoBuffer(sock, msg) }
-      catch (err) { return reply(`❌ Video error: ${err.message}`) }
       try {
-        const url = await uploadToStorage(videoBuf, `profiles/pp/${sender}.mp4`, 'video/mp4')
+        videoBuf = await getRawVideoBuffer(sock, msg)
+      } catch (err) {
+        return reply(`❌ Video error: ${err.message}`)
+      }
+      try {
+        const storagePath = `profiles/pp/${sender}.mp4`
+        const url = await uploadToStorage(videoBuf, storagePath, 'video/mp4')
         await db.updateUser(sender, { profile_pp: url })
-        await sock.sendMessage(jid, { video: videoBuf, caption: `✅ *VIDEO PROFILE PICTURE UPDATED*\n\n🎬 Your video PP is saved! Type *.p* to see your card.\n\n_The shadows reflect your true face._ 🖤` }, { quoted: msg })
-      } catch (err) { await reply(`❌ Failed to upload: ${err.message}`) }
+        await sock.sendMessage(
+          jid,
+          {
+            video: videoBuf,
+            caption:
+              `✅ *PROFILE PICTURE UPDATED*\n\n` +
+              `Your video PP has been saved! 🎬\n\n` +
+              `📸 Type *.p* to see your updated card.\n\n` +
+              `_The shadows reflect your true face._ 🖤`,
+          },
+          { quoted: msg }
+        )
+      } catch (err) {
+        await reply(`❌ Failed to upload video: ${err.message}`)
+      }
       return
     }
 
+    // Image path
     const buffer = await getImageBuffer(sock, msg)
+
     if (!buffer) {
+      const staffNote = isStaff
+        ? '\n\n👑 *Staff perk:* You can also send/quote a *video* to use it as your PP.'
+        : ''
       return reply(
-        `🖼️ *SET PROFILE PICTURE*\n\nSend or quote a *JPG/PNG* image with *.setpp*\nThis sets the inner circle of your profile card.\n\n` +
-        (canVideo ? `🎬 *You can also send a video* to use it as your PP.` : `👑 *Staff & Premium perk:* Send a video to use it as your PP.`) +
-        `\n\n_The image will be cropped to a circle._ 🖤`
+        `🖼️ *SET PROFILE PICTURE*\n\n` +
+        `Send or quote a *JPG/PNG* image with *.setpp*\n\n` +
+        `This sets the inner circle of your profile card.\n\n` +
+        `_The image will be cropped to a circle._ 🖤${staffNote}`
       )
     }
 
     await reply('⏳ Uploading your profile picture…')
+
     try {
-      const url = await uploadToStorage(buffer, `profiles/pp/${sender}.jpg`, 'image/jpeg')
+      const storagePath = `profiles/pp/${sender}.jpg`
+      const url = await uploadToStorage(buffer, storagePath, 'image/jpeg')
       await db.updateUser(sender, { profile_pp: url })
-      await sock.sendMessage(jid, { image: buffer, caption: `✅ *PROFILE PICTURE UPDATED*\n\nYour PP is saved.\n\n📸 Type *.p* to see your card.\n\n_The shadows reflect your true face._ 🖤` }, { quoted: msg })
+      await sock.sendMessage(
+        jid,
+        {
+          image: buffer,
+          caption:
+            `✅ *PROFILE PICTURE UPDATED*\n\n` +
+            `Your PP has been saved.\n\n` +
+            `📸 Type *.p* to see your updated card.\n\n` +
+            `_The shadows reflect your true face._ 🖤`,
+        },
+        { quoted: msg }
+      )
     } catch (err) {
-      if (err.message?.includes('row-level security'))
-        return reply(`❌ *UPLOAD BLOCKED — RLS Policy Missing*\n\nRun this SQL in your Supabase SQL Editor:\n\nCREATE POLICY "allow_all_card_images"\nON storage.objects AS PERMISSIVE\nFOR ALL TO public\nUSING (bucket_id = 'card-images')\nWITH CHECK (bucket_id = 'card-images');\n\nThen try *.setpp* again. 🖤`)
-      await reply(`❌ Failed to upload: ${err.message}`)
+      if (err.message && err.message.includes('row-level security')) {
+        return reply(
+          `❌ *UPLOAD BLOCKED — RLS Policy Missing*\n\n` +
+          `Run this SQL in your *Supabase SQL Editor* once:\n\n` +
+          `CREATE POLICY "allow_all_card_images"\n` +
+          `ON storage.objects AS PERMISSIVE\n` +
+          `FOR ALL TO public\n` +
+          `USING (bucket_id = 'card-images')\n` +
+          `WITH CHECK (bucket_id = 'card-images');\n\n` +
+          `Then try *.setpp* again. 🖤`
+        )
+      }
+      await reply(`❌ Failed to upload profile picture: ${err.message}`)
     }
   },
 
-  // ─── .setbg ───────────────────────────────────────────────────────────────────
-  // Video bg: Staff + Premium only. Image bg: All users.
+  // ─── .setbg ───────────────────────────────────────────────────────────────
   async setbg({ sock, msg, jid, sender, user, reply, isOwner, isMod, isGuardian }) {
-    const u       = user || await db.getOrCreateUser(sender)
     const isStaff = isOwner || isMod || isGuardian
-    const isPrem  = u?.premium || false
-    const canVideo = isStaff || isPrem
 
+    // Check for video first (staff only)
     const isVideoMsg =
       !!msg.message?.videoMessage ||
       !!msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage
 
-    if (isVideoMsg) {
-      if (!canVideo)
-        return reply(
-          `🎬 *VIDEO BACKGROUNDS*\n\nVideo backgrounds are for *Staff* and *Premium members* only.\n\n` +
-          `To set a static image background (for everyone), send/quote an *image* with *.setbg*\n\n` +
-          `_Upgrade to premium to unlock video backgrounds._ 🖤`
-        )
-
-      await reply('⏳ Saving your video background…\n\n_When you type .p, the video will play automatically!_')
+    if (isVideoMsg && isStaff) {
+      await reply('⏳ Saving your video background…')
       let videoBuf
-      try { videoBuf = await getRawVideoBuffer(sock, msg) }
-      catch (err) { return reply(`❌ Video error: ${err.message}`) }
       try {
-        const url = await uploadToStorage(videoBuf, `profiles/bg/${sender}.mp4`, 'video/mp4')
+        videoBuf = await getRawVideoBuffer(sock, msg)
+      } catch (err) {
+        return reply(`❌ Video error: ${err.message}`)
+      }
+      try {
+        const storagePath = `profiles/bg/${sender}.mp4`
+        const url = await uploadToStorage(videoBuf, storagePath, 'video/mp4')
         await db.updateUser(sender, { profile_bg: url })
-        await sock.sendMessage(jid, {
-          video: videoBuf,
-          caption:
-            `✅ *VIDEO BACKGROUND SAVED!* 🎬\n\n` +
-            `Your profile background is now a *live video*!\n\n` +
-            `📱 Type *.p* — your profile card will send the video playing automatically.\n\n` +
-            `_Your shadow now moves._ 🖤`,
-        }, { quoted: msg })
-      } catch (err) { await reply(`❌ Failed to upload video: ${err.message}`) }
+        await sock.sendMessage(
+          jid,
+          {
+            video: videoBuf,
+            caption:
+              `✅ *PROFILE BACKGROUND UPDATED*\n\n` +
+              `Your video background has been saved! 🎬\n\n` +
+              `📸 Type *.p* to see your card (uses first frame).\n\n` +
+              `_Your shadow now has a new stage._ 🖤`,
+          },
+          { quoted: msg }
+        )
+      } catch (err) {
+        await reply(`❌ Failed to upload video: ${err.message}`)
+      }
       return
     }
 
-    // Image background — available to ALL users
+    // Image path
     const buffer = await getImageBuffer(sock, msg)
+
     if (!buffer) {
+      const staffNote = isStaff
+        ? '\n\n👑 *Staff perk:* You can also send/quote a *video* to use it as your background.'
+        : ''
       return reply(
         `🎨 *SET PROFILE BACKGROUND*\n\n` +
-        `Send or quote a *JPG/PNG* image with *.setbg*\nThis sets the background of your profile card.\n\n` +
-        (canVideo
-          ? `🎬 *You can also send a video* — your *.p* card will play it live!`
-          : `👑 *Staff & Premium perk:* Send a video to make your background play live.`) +
-        `\n\n_Any image works — landscapes, gradients, art._ 🖤`
+        `Send or quote a *JPG/PNG* image with *.setbg*\n\n` +
+        `This sets the background of your profile card.\n\n` +
+        `_Any image works — landscapes, gradients, etc._ 🖤${staffNote}`
       )
     }
 
     await reply('⏳ Uploading your background…')
+
     try {
-      const url = await uploadToStorage(buffer, `profiles/bg/${sender}.jpg`, 'image/jpeg')
+      const storagePath = `profiles/bg/${sender}.jpg`
+      const url = await uploadToStorage(buffer, storagePath, 'image/jpeg')
       await db.updateUser(sender, { profile_bg: url })
-      await sock.sendMessage(jid, { image: buffer, caption: `✅ *PROFILE BACKGROUND UPDATED*\n\nYour background is saved.\n\n📸 Type *.p* to see your updated card.\n\n_Your shadow now has a new stage._ 🖤` }, { quoted: msg })
+      await sock.sendMessage(
+        jid,
+        {
+          image: buffer,
+          caption:
+            `✅ *PROFILE BACKGROUND UPDATED*\n\n` +
+            `Your background has been saved.\n\n` +
+            `📸 Type *.p* to see your updated card.\n\n` +
+            `_Your shadow now has a new stage._ 🖤`,
+        },
+        { quoted: msg }
+      )
     } catch (err) {
-      if (err.message?.includes('row-level security'))
-        return reply(`❌ *UPLOAD BLOCKED — RLS Policy Missing*\n\nRun this SQL in Supabase:\n\nCREATE POLICY "allow_all_card_images"\nON storage.objects AS PERMISSIVE\nFOR ALL TO public\nUSING (bucket_id = 'card-images')\nWITH CHECK (bucket_id = 'card-images');\n\nThen try *.setbg* again. 🖤`)
-      await reply(`❌ Failed to upload: ${err.message}`)
+      if (err.message && err.message.includes('row-level security')) {
+        return reply(
+          `❌ *UPLOAD BLOCKED — RLS Policy Missing*\n\n` +
+          `Run this SQL in your *Supabase SQL Editor* once:\n\n` +
+          `CREATE POLICY "allow_all_card_images"\n` +
+          `ON storage.objects AS PERMISSIVE\n` +
+          `FOR ALL TO public\n` +
+          `USING (bucket_id = 'card-images')\n` +
+          `WITH CHECK (bucket_id = 'card-images');\n\n` +
+          `Then try *.setbg* again. 🖤`
+        )
+      }
+      await reply(`❌ Failed to upload background: ${err.message}`)
     }
   },
 
-  // ─── .frames ─────────────────────────────────────────────────────────────────
+  // ─── .frames ──────────────────────────────────────────────────────────────
   async frames({ sock, msg, jid, reply, args }) {
     const page = parseInt(args[0]) || 1
+
     if (page < 1 || page > 3) {
-      return reply(`🖼️ *FRAMES CATALOG*\n\nUsage:\n• *.frames* or *.frames 1* — Page 1 (frames 1–35, Basic)\n• *.frames 2* — Page 2 (frames 36–70, Anime)\n• *.frames 3* — Page 3 (frames 71–100, 3D Prestige)\n\n_100 frames total across three pages._ 🖤`)
+      return reply(
+        `🖼️ *FRAMES CATALOG*\n\n` +
+        `Usage:\n` +
+        `• *.frames* or *.frames 1* — Page 1 (frames 1–35, Basic)\n` +
+        `• *.frames 2* — Page 2 (frames 36–70, Anime)\n` +
+        `• *.frames 3* — Page 3 (frames 71–100, 3D Prestige)\n\n` +
+        `_100 frames total across three pages._ 🖤`
+      )
     }
+
     await reply(`⏳ Generating frames catalog page ${page}…`)
+
     let catalog
-    try { catalog = await generateFrameCatalog(page) }
-    catch (err) { return reply(`❌ Failed to generate catalog: ${err.message}`) }
-    const captions = {
-      1: `🖼️ *FRAMES — Page 1/3 (Basic)*\n\n*35 frames* across 7 categories:\n• Basic (1–5)  • Neon (6–10)  • Gradient (11–15)\n• Ornate (16–20)  • Nature (21–25)\n• Prestige (26–30)  • Extra (31–35)\n\n📖 *.frames 2* — Anime  |  *.frames 3* — 3D\n⚙️ *.setframe <id>* — Equip a frame\n\n_e.g. .setframe 14_ 🖤`,
-      2: `🎌 *FRAMES — Page 2/3 (Anime)*\n\n*35 anime frames* (36–70)\n\n📖 *.frames* — Basic  |  *.frames 3* — 3D\n⚙️ *.setframe <id>* — Equip\n\n_Anime shadows await._ 🖤`,
-      3: `✨ *FRAMES — Page 3/3 (3D Prestige)*\n\n*30 prestige frames* (71–100)\n\n📖 *.frames* — Basic  |  *.frames 2* — Anime\n⚙️ *.setframe <id>* — Equip\n\n_Only the strongest carry these._ 🖤`,
+    try {
+      catalog = await generateFrameCatalog(page)
+    } catch (err) {
+      console.error('[frames] Catalog gen error:', err)
+      return reply(`❌ Failed to generate catalog: ${err.message}`)
     }
-    await sock.sendMessage(jid, { image: catalog, caption: captions[page] }, { quoted: msg })
+
+    const captions = {
+      1:
+        `🖼️ *FRAMES COLLECTION — Page 1/3 (Basic)*\n\n` +
+        `*35 frames* across 7 categories:\n` +
+        `• Basic (1–5)  • Neon (6–10)  • Gradient (11–15)\n` +
+        `• Ornate (16–20)  • Nature (21–25)\n` +
+        `• Prestige (26–30)  • Extra (31–35)\n\n` +
+        `📖 *.frames 2* — Anime frames (36–70)\n` +
+        `📖 *.frames 3* — 3D Prestige frames (71–100)\n` +
+        `⚙️ *.setframe <id>* — Equip a frame\n\n` +
+        `_e.g. .setframe 14_ 🖤`,
+
+      2:
+        `🎌 *FRAMES COLLECTION — Page 2/3 (Anime)*\n\n` +
+        `*35 anime & cartoon frames* (36–70):\n` +
+        `• Anime Basics (36–40)  • Anime Fantasy (41–45)\n` +
+        `• Anime Magic (46–50)  • Anime Nature (51–55)\n` +
+        `• Cyberpunk (56–60)  • Anime Prestige (61–65)\n` +
+        `• Anime Ultimate (66–70)\n\n` +
+        `📖 *.frames* — Page 1 (basic)  |  *.frames 3* — 3D frames\n` +
+        `⚙️ *.setframe <id>* — Equip a frame\n\n` +
+        `_Cartoonish, anime-styled shadows await._ 🖤`,
+
+      3:
+        `✨ *FRAMES COLLECTION — Page 3/3 (3D Prestige)*\n\n` +
+        `*30 three-dimensional prestige frames* (71–100):\n` +
+        `• Shadow Depth (71–80)  • Neon 3D (81–90)\n` +
+        `• Void Prism (91–100)\n\n` +
+        `💎 These frames feature: radial gradients, bevel edges,\n` +
+        `   specular highlights, glow rings & accent gems.\n\n` +
+        `📖 *.frames* — Page 1  |  *.frames 2* — Anime\n` +
+        `⚙️ *.setframe <id>* — Equip a frame\n\n` +
+        `_Only the strongest carry these marks._ 🖤`,
+    }
+
+    await sock.sendMessage(
+      jid,
+      { image: catalog, caption: captions[page] },
+      { quoted: msg }
+    )
   },
 
-  // ─── .setframe <id> ──────────────────────────────────────────────────────────
+  // ─── .setframe <id> ───────────────────────────────────────────────────────
   async setframe({ reply, sender, args }) {
     const id = parseInt(args[0])
+
     if (!id || id < 1 || id > 100) {
-      return reply(`🖼️ *SET FRAME*\n\nUsage: *.setframe <1–100>*\n\n• *.frames*   — Page 1 (Basic)\n• *.frames 2* — Page 2 (Anime)\n• *.frames 3* — Page 3 (3D)\n\n_e.g. .setframe 88_ 🖤`)
+      return reply(
+        `🖼️ *SET FRAME*\n\n` +
+        `Usage: *.setframe <1–100>*\n\n` +
+        `• *.frames*   — Page 1 (frames 1–35, Basic)\n` +
+        `• *.frames 2* — Page 2 (frames 36–70, Anime)\n` +
+        `• *.frames 3* — Page 3 (frames 71–100, 3D Prestige)\n\n` +
+        `_e.g. .setframe 88_ 🖤`
+      )
     }
-    const frame  = getFrame(id)
+
+    const frame = getFrame(id)
     const result = await db.updateUser(sender, { profile_frame: id })
+
     if (!result) {
-      return reply(`❌ *SETFRAME FAILED*\n\nRun this SQL in Supabase:\n\nALTER TABLE users\n  ADD COLUMN IF NOT EXISTS profile_frame INTEGER DEFAULT 1,\n  ADD COLUMN IF NOT EXISTS profile_pp TEXT DEFAULT NULL,\n  ADD COLUMN IF NOT EXISTS profile_bg TEXT DEFAULT NULL;\n\nThen try *.setframe* again.\n\n_The schema must be updated first._ 🖤`)
+      return reply(
+        `❌ *SETFRAME FAILED*\n\n` +
+        `The profile columns don't exist in your database yet.\n\n` +
+        `Run this SQL in your *Supabase SQL Editor*:\n\n` +
+        `ALTER TABLE users\n` +
+        `  ADD COLUMN IF NOT EXISTS profile_frame INTEGER DEFAULT 1,\n` +
+        `  ADD COLUMN IF NOT EXISTS profile_pp TEXT DEFAULT NULL,\n` +
+        `  ADD COLUMN IF NOT EXISTS profile_bg TEXT DEFAULT NULL;\n\n` +
+        `Then try *.setframe* again.\n\n` +
+        `_The schema must be updated first._ 🖤`
+      )
     }
-    await reply(`✅ *FRAME EQUIPPED*\n\n🖼️ *Frame:* ${frame.name}\n🏷️ *Category:* ${frame.category}\n🔢 *ID:* #${frame.id}\n\nType *.p* to see it on your card.\n\n_Your shadow wears a new crown._ 🖤`)
+
+    await reply(
+      `✅ *FRAME EQUIPPED*\n\n` +
+      `🖼️ *Frame:* ${frame.name}\n` +
+      `🏷️ *Category:* ${frame.category}\n` +
+      `🔢 *ID:* #${frame.id}\n\n` +
+      `Type *.profile* to see it on your card.\n\n` +
+      `_Your shadow wears a new crown._ 🖤`
+    )
   },
-                                                                              }
+}
