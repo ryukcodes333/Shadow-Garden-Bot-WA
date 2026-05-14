@@ -208,21 +208,21 @@ module.exports = {
   },
 
   // ── Moderation ────────────────────────────────────────────────
-  async ban({ reply, msg, args, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Staff only.')
+  async ban({ reply, msg, args, isOwner, isMod, isGuardian }) {
+    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('⚠️ Usage: *.ban @user [reason]*')
     const reason = args.filter(a => !a.includes('@')).join(' ') || 'No reason given'
-    for (const j of mentioned) await db.updateUser(j.split('@')[0], { banned: true })
-    await reply(`🔨 *BANNED*\n\n${mentioned.map(j => `@${j.split('@')[0]}`).join(', ')}\nReason: ${reason}`)
+    for (const j of mentioned) await db.updateUser(j.split('@')[0].split(':')[0], { banned: true })
+    await reply(`🔨 *BANNED*\n\n${mentioned.map(j => `@${j.split('@')[0].split(':')[0]}`).join(', ')}\nReason: ${reason}`)
   },
 
-  async unban({ reply, msg, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Staff only.')
+  async unban({ reply, msg, isOwner, isMod, isGuardian }) {
+    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('⚠️ Usage: *.unban @user*')
-    for (const j of mentioned) await db.updateUser(j.split('@')[0], { banned: false })
-    await reply(`✅ *UNBANNED*\n\n${mentioned.map(j => `@${j.split('@')[0]}`).join(', ')}`)
+    for (const j of mentioned) await db.updateUser(j.split('@')[0].split(':')[0], { banned: false })
+    await reply(`✅ *UNBANNED*\n\n${mentioned.map(j => `@${j.split('@')[0].split(':')[0]}`).join(', ')}`)
   },
 
   async banlist({ reply, isOwner, isMod }) {
