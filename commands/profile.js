@@ -40,7 +40,7 @@ async function getImageBuffer(sock, msg) {
   )
 }
 
-// Search raw binary for the first embedded JPEG (SOI…EOI)
+// Search raw binary for the first embedded JPEG (SOI...EOI)
 function extractJpegFromBinary(buf) {
   let start = -1
   for (let i = 0; i < buf.length - 2; i++) {
@@ -55,7 +55,7 @@ function extractJpegFromBinary(buf) {
   return buf.slice(start, end)
 }
 
-// Download the raw video from a message — returns the mp4 buffer as-is.
+// Download the raw video from a message - returns the mp4 buffer as-is.
 async function getRawVideoBuffer(sock, msg) {
   const vidMsg =
     msg.message?.videoMessage ||
@@ -97,7 +97,6 @@ async function getRawVideoBuffer(sock, msg) {
 }
 
 // Use ffmpeg to extract the first frame of a video buffer as a PNG buffer.
-// Used when rendering profile cards where the bg/pp is a saved video.
 async function extractVideoFrame(videoBuf) {
   const tmpDir = os.tmpdir()
   const tmpIn  = path.join(tmpDir, `sgbot_vin_${Date.now()}.mp4`)
@@ -125,35 +124,69 @@ async function extractVideoFrame(videoBuf) {
 }
 
 // Upload a buffer to Supabase storage, return public URL
-async function uploadToStorage(buffer, path, mime = 'image/jpeg') {
+async function uploadToStorage(buffer, storagePath, mime = 'image/jpeg') {
   const supabase = getSupabase()
   const { error } = await supabase.storage
     .from('card-images')
-    .upload(path, buffer, { contentType: mime, upsert: true })
+    .upload(storagePath, buffer, { contentType: mime, upsert: true })
   if (error) throw new Error(error.message)
-  const { data } = supabase.storage.from('card-images').getPublicUrl(path)
+  const { data } = supabase.storage.from('card-images').getPublicUrl(storagePath)
   return data.publicUrl
 }
 
+// Build the .profile text layout for any user object
+function buildProfileText(u, phone) {
+  const xpNeeded = (u.level || 1) * 1000
+  const joinDate = u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Unknown'
+  return (
+    `👤 *USER PROFILE*\n\n` +
+    `🧑 *Name:* ${u.name || phone}\n` +
+    `🆔 *User ID:* ${phone}\n\n` +
+    `📊 *Level:* ${u.level || 1}\n` +
+    `🔥 *XP:* ${u.xp || 0} / ${xpNeeded}\n` +
+    `⭐ *Rank:* ${u.role || 'member'}\n\n` +
+    `💰 *Wallet:* ${Number(u.wallet || 0).toLocaleString()} coins\n` +
+    `🏦 *Bank:* ${Number(u.bank || 0).toLocaleString()} coins\n` +
+    `💎 *Gems:* ${u.gems || 0}\n\n` +
+    `📈 *Streak:* ${u.streak || 0} days\n` +
+    `🧠 *Title:* ${u.title || 'Newcomer'}\n\n` +
+    `🚫 *Banned:* ${u.banned ? 'Yes' : 'No'}\n` +
+    `📅 *Joined:* ${joinDate}\n\n` +
+    `_The system records everything... even what you don't notice._ 🖤`
+  )
+}
+
 module.exports = {
-  // ─── .p — image profile card ──────────────────────────────────────────────
+  // ─── .p — image profile card (quote someone to view their text profile) ─────
   async p({ sock, msg, jid, sender, user, reply, isOwner, isMod, isGuardian }) {
-    await reply('⏳ Generating your profile card…')
+    // If quoting someone's message, show THAT person's text profile
+    const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant
+    const mentioned         = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    const targetJid         = mentioned.length ? mentioned[0] : quotedParticipant || null
+    const targetPhone       = targetJid ? targetJid.split('@')[0].split(':')[0] : null
+
+    if (targetPhone && targetPhone !== sender) {
+      // Show target's profile as text (same layout as .profile)
+      const targetUser = await db.getOrCreateUser(targetPhone)
+      if (!targetUser) return reply('❌ Could not load that user\'s profile.')
+      return reply(buildProfileText(targetUser, targetPhone))
+    }
+
+    // No target - show own image profile card
+    await reply('⏳ Generating your profile card...')
 
     const u = user || await db.getOrCreateUser(sender)
     if (!u) return reply('❌ Could not load your profile. Make sure the database is set up.')
 
-    // Override displayed role using runtime permission flags so owner/mod/guardian
-    // always shows the correct badge even if the DB role column hasn't been set
+    // Override displayed role using runtime permission flags
     const effectiveRole = isOwner ? 'owner'
       : isMod                     ? 'mod'
       : isGuardian                ? 'guardian'
       : (u.role || 'member')
     const displayUser = { ...u, role: effectiveRole }
 
-    // Fetch custom bg + pp if set
-    let ppBuffer  = null
-    let bgBuffer  = null
+    let ppBuffer = null
+    let bgBuffer = null
 
     try {
       if (u.profile_pp) {
@@ -190,61 +223,40 @@ module.exports = {
       {
         image: cardBuffer,
         caption:
-          `🌑 *${u.name || sender}\'s Profile*\n\n` +
-          `⭐ Level ${u.level || 1}  |  🎭 ${u.role || 'member'}\n` +
+          `🌑 *${u.name || sender}'s Profile*\n\n` +
+          `⭐ Level ${u.level || 1}  |  🎭 ${effectiveRole}\n` +
           `💰 ${Number(u.wallet || 0).toLocaleString()} coins  •  💎 ${Number(u.gems || 0).toLocaleString()} gems\n` +
           `🃏 Cards: ${cardCount}\n` +
           `🖼️ Frame: ${frameName} (#${frameId})\n\n` +
-          `_Type .frames to browse all 30 frames_ 🖤`,
+          `_Quote a message to view that person's profile._ 🖤`,
       },
       { quoted: msg }
     )
   },
 
-  // ─── .profile — text profile ─────────────────────────────────────────────
+  // ─── .profile — text profile ──────────────────────────────────────────────
   async profile({ reply, sender, user, msg }) {
-    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    const targetPhone = mentioned.length ? mentioned[0].split('@')[0] : sender
+    const mentioned   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant
+    const targetJid   = mentioned.length ? mentioned[0] : quotedParticipant || null
+    const targetPhone = targetJid ? targetJid.split('@')[0].split(':')[0] : sender
+
     const u = (user && targetPhone === sender) ? user : await db.getOrCreateUser(targetPhone)
     if (!u) return reply('❌ Could not load profile.')
 
-    const xpNeeded = (u.level || 1) * 1000
-    const joinDate = u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Unknown'
-
-    await reply(
-      `👤 *USER PROFILE*\n\n` +
-      `🧑 *Name:* ${u.name || targetPhone}\n` +
-      `🆔 *User ID:* ${targetPhone}\n\n` +
-      `📊 *Level:* ${u.level || 1}\n` +
-      `🔥 *XP:* ${u.xp || 0} / ${xpNeeded}\n` +
-      `⭐ *Rank:* ${u.role || 'member'}\n\n` +
-      `💰 *Wallet:* ${u.wallet || 0} coins\n` +
-      `🏦 *Bank:* ${u.bank || 0} coins\n` +
-      `💎 *Gems:* ${u.gems || 0}\n\n` +
-      `🎮 *Games Won:* 0\n` +
-      `❌ *Games Lost:* 0\n\n` +
-      `📈 *Streak:* ${u.streak || 0} days\n` +
-      `⚡ *Status:* Active\n\n` +
-      `🧠 *Title:* ${u.title || 'Newcomer'}\n` +
-      `🎴 *Card Tier:* N/A\n\n` +
-      `🚫 *Banned:* ${u.banned ? 'Yes' : 'No'}\n` +
-      `📅 *Joined:* ${joinDate}\n` +
-      `🌍 *Registered:* ${u.created_at ? 'Yes' : 'No'}\n\n` +
-      `_The system records everything… even what you don't notice._ 🖤`
-    )
+    await reply(buildProfileText(u, targetPhone))
   },
 
   // ─── .setpp ───────────────────────────────────────────────────────────────
   async setpp({ sock, msg, jid, sender, user, reply, isOwner, isMod, isGuardian }) {
     const isStaff = isOwner || isMod || isGuardian
 
-    // Check for video first (staff only)
     const isVideoMsg =
       !!msg.message?.videoMessage ||
       !!msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage
 
     if (isVideoMsg && isStaff) {
-      await reply('⏳ Saving your video profile picture…')
+      await reply('⏳ Saving your video profile picture...')
       let videoBuf
       try {
         videoBuf = await getRawVideoBuffer(sock, msg)
@@ -273,7 +285,6 @@ module.exports = {
       return
     }
 
-    // Image path
     const buffer = await getImageBuffer(sock, msg)
 
     if (!buffer) {
@@ -288,7 +299,7 @@ module.exports = {
       )
     }
 
-    await reply('⏳ Uploading your profile picture…')
+    await reply('⏳ Uploading your profile picture...')
 
     try {
       const storagePath = `profiles/pp/${sender}.jpg`
@@ -309,7 +320,7 @@ module.exports = {
     } catch (err) {
       if (err.message && err.message.includes('row-level security')) {
         return reply(
-          `❌ *UPLOAD BLOCKED — RLS Policy Missing*\n\n` +
+          `❌ *UPLOAD BLOCKED - RLS Policy Missing*\n\n` +
           `Run this SQL in your *Supabase SQL Editor* once:\n\n` +
           `CREATE POLICY "allow_all_card_images"\n` +
           `ON storage.objects AS PERMISSIVE\n` +
@@ -323,17 +334,16 @@ module.exports = {
     }
   },
 
-  // ─── .setbg ───────────────────────────────────────────────────────────────
+  // ─── .setbg — sets the PROFILE CARD background (stored in profile_bg) ───────
   async setbg({ sock, msg, jid, sender, user, reply, isOwner, isMod, isGuardian }) {
     const isStaff = isOwner || isMod || isGuardian
 
-    // Check for video first (staff only)
     const isVideoMsg =
       !!msg.message?.videoMessage ||
       !!msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage
 
     if (isVideoMsg && isStaff) {
-      await reply('⏳ Saving your video background…')
+      await reply('⏳ Saving your video background...')
       let videoBuf
       try {
         videoBuf = await getRawVideoBuffer(sock, msg)
@@ -362,7 +372,6 @@ module.exports = {
       return
     }
 
-    // Image path
     const buffer = await getImageBuffer(sock, msg)
 
     if (!buffer) {
@@ -373,11 +382,11 @@ module.exports = {
         `🎨 *SET PROFILE BACKGROUND*\n\n` +
         `Send or quote a *JPG/PNG* image with *.setbg*\n\n` +
         `This sets the background of your profile card.\n\n` +
-        `_Any image works — landscapes, gradients, etc._ 🖤${staffNote}`
+        `_Any image works - landscapes, gradients, etc._ 🖤${staffNote}`
       )
     }
 
-    await reply('⏳ Uploading your background…')
+    await reply('⏳ Uploading your background...')
 
     try {
       const storagePath = `profiles/bg/${sender}.jpg`
@@ -398,7 +407,7 @@ module.exports = {
     } catch (err) {
       if (err.message && err.message.includes('row-level security')) {
         return reply(
-          `❌ *UPLOAD BLOCKED — RLS Policy Missing*\n\n` +
+          `❌ *UPLOAD BLOCKED - RLS Policy Missing*\n\n` +
           `Run this SQL in your *Supabase SQL Editor* once:\n\n` +
           `CREATE POLICY "allow_all_card_images"\n` +
           `ON storage.objects AS PERMISSIVE\n` +
@@ -420,14 +429,14 @@ module.exports = {
       return reply(
         `🖼️ *FRAMES CATALOG*\n\n` +
         `Usage:\n` +
-        `• *.frames* or *.frames 1* — Page 1 (frames 1–35, Basic)\n` +
-        `• *.frames 2* — Page 2 (frames 36–70, Anime)\n` +
-        `• *.frames 3* — Page 3 (frames 71–100, 3D Prestige)\n\n` +
+        `- *.frames* or *.frames 1* - Page 1 (frames 1-35, Basic)\n` +
+        `- *.frames 2* - Page 2 (frames 36-70, Anime)\n` +
+        `- *.frames 3* - Page 3 (frames 71-100, 3D Prestige)\n\n` +
         `_100 frames total across three pages._ 🖤`
       )
     }
 
-    await reply(`⏳ Generating frames catalog page ${page}…`)
+    await reply(`⏳ Generating frames catalog page ${page}...`)
 
     let catalog
     try {
@@ -439,36 +448,36 @@ module.exports = {
 
     const captions = {
       1:
-        `🖼️ *FRAMES COLLECTION — Page 1/3 (Basic)*\n\n` +
+        `🖼️ *FRAMES COLLECTION - Page 1/3 (Basic)*\n\n` +
         `*35 frames* across 7 categories:\n` +
-        `• Basic (1–5)  • Neon (6–10)  • Gradient (11–15)\n` +
-        `• Ornate (16–20)  • Nature (21–25)\n` +
-        `• Prestige (26–30)  • Extra (31–35)\n\n` +
-        `📖 *.frames 2* — Anime frames (36–70)\n` +
-        `📖 *.frames 3* — 3D Prestige frames (71–100)\n` +
-        `⚙️ *.setframe <id>* — Equip a frame\n\n` +
+        `- Basic (1-5)  - Neon (6-10)  - Gradient (11-15)\n` +
+        `- Ornate (16-20)  - Nature (21-25)\n` +
+        `- Prestige (26-30)  - Extra (31-35)\n\n` +
+        `📖 *.frames 2* - Anime frames (36-70)\n` +
+        `📖 *.frames 3* - 3D Prestige frames (71-100)\n` +
+        `⚙️ *.setframe <id>* - Equip a frame\n\n` +
         `_e.g. .setframe 14_ 🖤`,
 
       2:
-        `🎌 *FRAMES COLLECTION — Page 2/3 (Anime)*\n\n` +
-        `*35 anime & cartoon frames* (36–70):\n` +
-        `• Anime Basics (36–40)  • Anime Fantasy (41–45)\n` +
-        `• Anime Magic (46–50)  • Anime Nature (51–55)\n` +
-        `• Cyberpunk (56–60)  • Anime Prestige (61–65)\n` +
-        `• Anime Ultimate (66–70)\n\n` +
-        `📖 *.frames* — Page 1 (basic)  |  *.frames 3* — 3D frames\n` +
-        `⚙️ *.setframe <id>* — Equip a frame\n\n` +
+        `🎌 *FRAMES COLLECTION - Page 2/3 (Anime)*\n\n` +
+        `*35 anime & cartoon frames* (36-70):\n` +
+        `- Anime Basics (36-40)  - Anime Fantasy (41-45)\n` +
+        `- Anime Magic (46-50)  - Anime Nature (51-55)\n` +
+        `- Cyberpunk (56-60)  - Anime Prestige (61-65)\n` +
+        `- Anime Ultimate (66-70)\n\n` +
+        `📖 *.frames* - Page 1 (basic)  |  *.frames 3* - 3D frames\n` +
+        `⚙️ *.setframe <id>* - Equip a frame\n\n` +
         `_Cartoonish, anime-styled shadows await._ 🖤`,
 
       3:
-        `✨ *FRAMES COLLECTION — Page 3/3 (3D Prestige)*\n\n` +
-        `*30 three-dimensional prestige frames* (71–100):\n` +
-        `• Shadow Depth (71–80)  • Neon 3D (81–90)\n` +
-        `• Void Prism (91–100)\n\n` +
+        `✨ *FRAMES COLLECTION - Page 3/3 (3D Prestige)*\n\n` +
+        `*30 three-dimensional prestige frames* (71-100):\n` +
+        `- Shadow Depth (71-80)  - Neon 3D (81-90)\n` +
+        `- Void Prism (91-100)\n\n` +
         `💎 These frames feature: radial gradients, bevel edges,\n` +
         `   specular highlights, glow rings & accent gems.\n\n` +
-        `📖 *.frames* — Page 1  |  *.frames 2* — Anime\n` +
-        `⚙️ *.setframe <id>* — Equip a frame\n\n` +
+        `📖 *.frames* - Page 1  |  *.frames 2* - Anime\n` +
+        `⚙️ *.setframe <id>* - Equip a frame\n\n` +
         `_Only the strongest carry these marks._ 🖤`,
     }
 
@@ -486,15 +495,15 @@ module.exports = {
     if (!id || id < 1 || id > 100) {
       return reply(
         `🖼️ *SET FRAME*\n\n` +
-        `Usage: *.setframe <1–100>*\n\n` +
-        `• *.frames*   — Page 1 (frames 1–35, Basic)\n` +
-        `• *.frames 2* — Page 2 (frames 36–70, Anime)\n` +
-        `• *.frames 3* — Page 3 (frames 71–100, 3D Prestige)\n\n` +
+        `Usage: *.setframe <1-100>*\n\n` +
+        `- *.frames*   - Page 1 (frames 1-35, Basic)\n` +
+        `- *.frames 2* - Page 2 (frames 36-70, Anime)\n` +
+        `- *.frames 3* - Page 3 (frames 71-100, 3D Prestige)\n\n` +
         `_e.g. .setframe 88_ 🖤`
       )
     }
 
-    const frame = getFrame(id)
+    const frame  = getFrame(id)
     const result = await db.updateUser(sender, { profile_frame: id })
 
     if (!result) {
