@@ -421,30 +421,40 @@ const RARITY_BY_TIER = {
 
 async function getOrCreateShoobCard(shoobId, name, tier, series, imageUrl, price) {
   // Try to find existing card by external_id
-  const { data: existing } = await supabase
-    .from('cards')
-    .select('id')
-    .eq('external_id', shoobId)
-    .single()
-  if (existing) return existing
+  try {
+    const { data: existing } = await supabase
+      .from('cards').select('id').eq('external_id', shoobId).single()
+    if (existing) return existing
+  } catch {}
 
-  // Insert new card entry
+  // Fallback deduplication: find by image_url
+  if (imageUrl) {
+    try {
+      const { data: byUrl } = await supabase
+        .from('cards').select('id').eq('image_url', imageUrl).single()
+      if (byUrl) return byUrl
+    } catch {}
+  }
+
+  // Insert new card — try with external_id first
+  const base = {
+    name: name || 'Unknown',
+    tier: tier || 'T1',
+    series: series || 'Unknown Series',
+    price: price || 17500,
+    image_url: imageUrl || null,
+    rarity: RARITY_BY_TIER[tier] || 'Common',
+    uploaded_by: 'system',
+  }
   const { data, error } = await supabase
-    .from('cards')
-    .insert({
-      name: name || 'Unknown',
-      tier: tier || 'T1',
-      series: series || 'Unknown Series',
-      price: price || 17500,
-      image_url: imageUrl || null,
-      rarity: RARITY_BY_TIER[tier] || 'Common',
-      uploaded_by: 'system',
-      external_id: shoobId,
-    })
-    .select('id')
-    .single()
-  if (error) { console.error('getOrCreateShoobCard error:', error.message); return null }
-  return data
+    .from('cards').insert({ ...base, external_id: shoobId }).select('id').single()
+  if (!error && data) return data
+
+  // Fallback: insert without external_id (column may not exist in DB yet)
+  const { data: data2, error: error2 } = await supabase
+    .from('cards').insert(base).select('id').single()
+  if (error2) { console.error('getOrCreateShoobCard error:', error2.message); return null }
+  return data2
 }
 
 module.exports = {
