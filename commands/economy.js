@@ -178,30 +178,33 @@ module.exports = {
     await reply(`🔥 ${roasts[Math.floor(Math.random() * roasts.length)]}`)
   },
 
-  async richlist({ reply }) {
+  async richlist({ sock, msg, jid, reply }) {
     const rich = await db.getRichList(10)
     if (!rich.length) return reply('No users found yet.')
-    const medals = ['🥇', '🥈', '🥉']
-    const lines  = rich.map((u, i) => {
-      // Use name when it exists and differs from the raw phone/LID string
-      const hasRealName = u.name && u.name !== u.phone && !/^\d{10,}$/.test(u.name)
-      const display = hasRealName ? u.name : `@${u.phone}`
-      return `${medals[i] || `${i + 1}.`} ${display} — $${((u.wallet || 0) + (u.bank || 0)).toLocaleString()}`
-    })
-    await reply(`💎 *Rich List*\n\n${lines.join('\n')}`)
+    const medals  = ['🥇', '🥈', '🥉']
+    const mentions = rich.map(u => `${u.phone}@s.whatsapp.net`)
+    const lines   = rich.map((u, i) =>
+      `${medals[i] || `${i + 1}.`} @${u.phone} — $${((u.wallet || 0) + (u.bank || 0)).toLocaleString()}`
+    )
+    await sock.sendMessage(jid, {
+      text: `💎 *Rich List*\n\n${lines.join('\n')}`,
+      mentions,
+    }, { quoted: msg })
   },
   async richLg(ctx) { return module.exports.richlist(ctx) },
 
-  async leaderboard({ reply }) {
+  async leaderboard({ sock, msg, jid, reply }) {
     const board = await db.getLeaderboard(10)
     if (!board.length) return reply('Leaderboard is empty.')
-    const medals = ['🥇', '🥈', '🥉']
-    const lines  = board.map((u, i) => {
-      const hasRealName = u.name && u.name !== u.phone && !/^\d{10,}$/.test(u.name)
-      const display = hasRealName ? u.name : `@${u.phone}`
-      return `${medals[i] || `${i + 1}.`} ${display} — $${(u.wallet || 0).toLocaleString()}`
-    })
-    await reply(`🏆 *Leaderboard*\n\n${lines.join('\n')}`)
+    const medals   = ['🥇', '🥈', '🥉']
+    const mentions = board.map(u => `${u.phone}@s.whatsapp.net`)
+    const lines    = board.map((u, i) =>
+      `${medals[i] || `${i + 1}.`} @${u.phone} — $${(u.wallet || 0).toLocaleString()}`
+    )
+    await sock.sendMessage(jid, {
+      text: `🏆 *Leaderboard*\n\n${lines.join('\n')}`,
+      mentions,
+    }, { quoted: msg })
   },
   async lb(ctx) { return module.exports.leaderboard(ctx) },
 
