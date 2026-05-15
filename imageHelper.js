@@ -31,19 +31,28 @@ async function downloadImage(url) {
   }
 
   const buffer = Buffer.from(res.data)
-  if (buffer.length < 100) throw new Error('Downloaded file is too small - likely a broken or empty file.')
+  if (buffer.length < 100) throw new Error('Downloaded file is too small — likely a broken or empty file.')
 
   return { buffer, mimeType: mime }
 }
 
 /**
- * Sends a message with an image/GIF that MUST come from the given URL.
- * - GIFs are sent as video with gifPlayback:true so they animate in WhatsApp
- * - On ANY failure, sends an explicit error notification
+ * Sends a message with an image that MUST come from the given URL.
+ * - Downloads the image to a buffer first (reliable)
+ * - Sends as image with caption, quoting the trigger message
+ * - On ANY failure, sends an explicit error notification — never silent fallback
+ *
+ * @param {object} sock - Baileys socket
+ * @param {string} jid - Chat JID
+ * @param {object} msg - Original trigger message (for quoting)
+ * @param {string} imageUrl - The card image URL
+ * @param {string} caption - The text caption to send with the image
+ * @param {function} reply - The ctx.reply function (for error reporting)
+ * @returns {boolean} true if image was sent, false if it failed (error was reported)
  */
 async function sendWithImage(sock, jid, msg, imageUrl, caption, reply) {
   if (!imageUrl) {
-    await reply(`${caption}\n\n---------------\n\n⚠️ *IMAGE UNAVAILABLE*\nThis card has no image stored in the database.\n\n📌 Staff can re-upload it with *.upload*`)
+    await reply(`${caption}\n\n━━━━━━━━━━━━━━━\n\n⚠️ *IMAGE UNAVAILABLE*\nThis card has no image stored in the database.\n\n📌 Staff can re-upload it with *.upload*`)
     return false
   }
 
@@ -53,20 +62,19 @@ async function sendWithImage(sock, jid, msg, imageUrl, caption, reply) {
     buffer = result.buffer
     mimeType = result.mimeType
   } catch (err) {
-    await reply(`${caption}\n\n---------------\n\n❌ *IMAGE FAILED TO LOAD*\n📌 Reason: ${err.message}\n\n💡 Staff can fix this with *.upload*\n\n_Card info shown above is accurate - only the image failed._ 🖤`)
+    await reply(`${caption}\n\n━━━━━━━━━━━━━━━\n\n❌ *IMAGE FAILED TO LOAD*\n📌 Reason: ${err.message}\n\n💡 Staff can fix this with *.upload*\n\n_Card info shown above is accurate — only the image failed._ 🖤`)
     return false
   }
 
-  // GIF cards - send as animated video so WhatsApp plays them
-  const isGif = mimeType === 'image/gif' || imageUrl.toLowerCase().endsWith('.gif')
+  // GIF cards (stored as image/gif) — send as animated video
+  const isGif = mimeType === 'image/gif' || imageUrl.endsWith('.gif')
 
   try {
     if (isGif) {
-      // mimetype must be video/mp4 (not image/gif) for gifPlayback to work in WhatsApp
       await sock.sendMessage(jid, {
         video: buffer,
         gifPlayback: true,
-        mimetype: 'video/mp4',
+        mimetype: 'image/gif',
         caption,
       }, { quoted: msg })
     } else {
@@ -78,14 +86,7 @@ async function sendWithImage(sock, jid, msg, imageUrl, caption, reply) {
     }
     return true
   } catch (sendErr) {
-    // GIF fallback: try sending as plain image
-    if (isGif) {
-      try {
-        await sock.sendMessage(jid, { image: buffer, caption }, { quoted: msg })
-        return true
-      } catch {}
-    }
-    await reply(`${caption}\n\n---------------\n\n❌ *IMAGE SEND FAILED*\n📌 Reason: ${sendErr.message}\n\n_Card info shown above is accurate._ 🖤`)
+    await reply(`${caption}\n\n━━━━━━━━━━━━━━━\n\n❌ *IMAGE SEND FAILED*\n📌 Reason: ${sendErr.message}\n\n_Card info shown above is accurate._ 🖤`)
     return false
   }
 }
