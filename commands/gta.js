@@ -232,7 +232,12 @@ async function getGtaData(phone) {
 }
 
 async function saveGtaData(phone, gtaData) {
-  await db.updateUser(phone, { class_name: JSON.stringify(gtaData) })
+  try {
+    const result = await db.updateUser(phone, { class_name: JSON.stringify(gtaData) })
+    if (!result) console.error(`[GTA] saveGtaData: updateUser returned null for ${phone}`)
+  } catch (err) {
+    console.error(`[GTA] saveGtaData error for ${phone}:`, err.message)
+  }
 }
 
 function gtaRank(rp) {
@@ -263,6 +268,12 @@ async function fetchImageBuffer(url) {
 }
 
 async function sendImgOrText(sock, jid, msg, imgUrl, text, reply) {
+  // Try 1: direct URL — Baileys fetches it (faster, no wikia block)
+  try {
+    await sock.sendMessage(jid, { image: { url: imgUrl }, caption: text }, { quoted: msg })
+    return
+  } catch {}
+  // Try 2: fetch buffer ourselves
   try {
     const buf = await fetchImageBuffer(imgUrl)
     if (buf && buf.length > 500) {
@@ -270,6 +281,7 @@ async function sendImgOrText(sock, jid, msg, imgUrl, text, reply) {
       return
     }
   } catch {}
+  // Fallback: text only
   await reply(text)
 }
 
