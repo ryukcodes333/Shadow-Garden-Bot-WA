@@ -1,7 +1,7 @@
 const db = require('../database')
 
 const FANCY_STYLES = [
-  t => [...t].map(c => '𝓪𝓫𝓬𝓭𝓮𝓯𝓰𝓱𝓲𝓳𝓴𝓵𝓶𝓷𝓸𝓹𝓺𝓻𝓼𝓽𝓾𝓿𝔀𝔁𝔂𝔃'.split('')[c.toLowerCase().charCodeAt(0)-97] || c).join(''),
+  t => [...t].map(c => '\u{1D41A}\u{1D41B}\u{1D41C}\u{1D41D}\u{1D41E}\u{1D41F}\u{1D420}\u{1D421}\u{1D422}\u{1D423}\u{1D424}\u{1D425}\u{1D426}\u{1D427}\u{1D428}\u{1D429}\u{1D42A}\u{1D42B}\u{1D42C}\u{1D42D}\u{1D42E}\u{1D42F}\u{1D430}\u{1D431}\u{1D432}\u{1D433}'.split('').find((_, i) => i === c.toLowerCase().charCodeAt(0)-97) || c).join(''),
   t => [...t].map(c => '𝒂𝒃𝒄𝒅𝒆𝒇𝒈𝒉𝒊𝒋𝒌𝒍𝒎𝒏𝒐𝒑𝒒𝒓𝒔𝒕𝒖𝒗𝒘𝒙𝒚𝒛'.split('')[c.toLowerCase().charCodeAt(0)-97] || c).join(''),
   t => [...t].map(c => '𝕒𝕓𝕔𝕕𝕖𝕗𝕘𝕙𝕚𝕛𝕜𝕝𝕞𝕟𝕠𝕡𝕢𝕣𝕤𝕥𝕦𝕧𝕨𝕩𝕪𝕫'.split('')[c.toLowerCase().charCodeAt(0)-97] || c).join(''),
   t => [...t].map(c => '𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳'.split('')[c.toLowerCase().charCodeAt(0)-97] || c).join(''),
@@ -28,56 +28,56 @@ module.exports = {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     const target = mentioned.length ? mentioned[0].split('@')[0] : sender
     const pct = Math.floor(Math.random() * 101)
-    await reply(`🏳️‍🌈 *Gay Meter*\n\n👤 ${target}\n\n${'🌈'.repeat(Math.ceil(pct/10))}${'⬛'.repeat(10-Math.ceil(pct/10))}\n\n${pct}% gay`)
+    await reply(`🏳️‍🌈 *Gay Meter*\n\n👤 @${target}\n\n${'🌈'.repeat(Math.ceil(pct/10))}${'⬛'.repeat(10-Math.ceil(pct/10))}\n\n*${pct}%*`)
   },
   async lesbian({ reply, sender, msg }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     const target = mentioned.length ? mentioned[0].split('@')[0] : sender
     const pct = Math.floor(Math.random() * 101)
-    await reply(`🏳️‍🌈 *Lesbian Meter*\n\n👤 ${target}\n\n${pct}%`)
+    await reply(`🌸 *Lesbian Meter*\n\n👤 @${target}\n\n*${pct}%*`)
   },
   async simp({ reply, sender, msg }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     const target = mentioned.length ? mentioned[0].split('@')[0] : sender
     const pct = Math.floor(Math.random() * 101)
-    await reply(`😭 *Simp Meter*\n\n👤 ${target}\n\n${'❤️'.repeat(Math.ceil(pct/10))}${'🖤'.repeat(10-Math.ceil(pct/10))}\n\n${pct}%`)
+    await reply(`😭 *Simp Meter*\n\n👤 @${target}\n\n${'❤️'.repeat(Math.ceil(pct/10))}${'🖤'.repeat(10-Math.ceil(pct/10))}\n\n*${pct}%*`)
   },
   async match({ reply }) {
     const pct = Math.floor(Math.random() * 101)
-    await reply(`💘 ${pct}% match!\n\n${pct > 70 ? '🔥 Perfect!' : pct > 40 ? '💫 Decent' : '💔 Not really...'}`)
+    await reply(`💘 *Match Score*\n\n*${pct}%*\n\n${pct > 70 ? '🔥 Perfect match!' : pct > 40 ? '💫 Decent match' : '💔 Not really...'}`)
   },
   async ship({ reply, args }) {
     const parts = args.join(' ').split('x').map(s => s.trim()).filter(Boolean)
-    if (parts.length < 2) return reply('⚠️ Usage: .ship name1 x name2')
+    if (parts.length < 2) return reply('❌ Usage: `.ship name1 x name2`')
     const pct = Math.floor(Math.random() * 101)
     const ship = parts[0].slice(0, Math.ceil(parts[0].length/2)) + parts[1].slice(Math.floor(parts[1].length/2))
-    await reply(`💕 ${parts[0]} + ${parts[1]} = *${ship}*\n💘 ${pct}%`)
+    await reply(`💕 *Ship Name:* *${ship}*\n\n${parts[0]} + ${parts[1]}\n💘 *${pct}%* compatibility`)
   },
   async character({ reply, sender }) {
     const chars = ['The Chosen One', 'The Dark Villain', 'The Hidden Hero', 'The Loyal Friend', 'The Traitor', 'The Mysterious Stranger', 'The Guardian', 'The Fallen Angel']
-    await reply(`🎭 @${sender} — *${chars[Math.floor(Math.random() * chars.length)]}*`)
+    await reply(`🎭 *Character Role*\n\n@${sender} is...\n\n*${chars[Math.floor(Math.random() * chars.length)]}*`)
   },
   async pp({ reply, sender, msg }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     const target = mentioned.length ? mentioned[0].split('@')[0] : sender
     const size = Math.floor(Math.random() * 16)
-    await reply(`📏 *PP Size*\n\n👤 ${target}\n\n8${'='.repeat(size)}D\n\n${size} cm`)
+    await reply(`📏 *PP Size*\n\n👤 @${target}\n\n8${'='.repeat(size)}D\n\n*${size} cm*`)
   },
   async skill({ reply, sender }) {
     const skills = ['Shadow manipulation', 'Time bending', 'Mind reading', 'Invisibility', 'Fire control', 'Ice formation', 'Lightning strike', 'Shadow teleport']
     const lvl = Math.floor(Math.random() * 10) + 1
-    await reply(`⚡ @${sender} — ${skills[Math.floor(Math.random() * skills.length)]} Lv.${lvl}/10`)
+    await reply(`⚡ *Skill Check*\n\n@${sender}\n\n*${skills[Math.floor(Math.random() * skills.length)]}* — Lv.${lvl}/10`)
   },
   async duality({ reply, sender }) {
     const sides = [['Light', 'Dark'], ['Chaos', 'Order'], ['Creation', 'Destruction'], ['Love', 'Hate'], ['Peace', 'War']]
     const pair  = sides[Math.floor(Math.random() * sides.length)]
     const side1 = Math.floor(Math.random() * 101)
-    await reply(`☯️ @${sender}\n\n${pair[0]}: ${side1}%\n${pair[1]}: ${100-side1}%`)
+    await reply(`☯️ *Duality*\n\n@${sender}\n\n${pair[0]}: *${side1}%*\n${pair[1]}: *${100-side1}%*`)
   },
   async gen({ reply, args }) {
     const name  = args.join(' ') || 'Someone'
-    const stats = ['Power', 'Speed', 'Intelligence', 'Luck', 'Charm'].map(s => `${s}: ${Math.floor(Math.random() * 101)}%`).join('\n')
-    await reply(`🧬 *${name}*\n\n${stats}`)
+    const stats = ['Power', 'Speed', 'Intelligence', 'Luck', 'Charm'].map(s => `${s}: *${Math.floor(Math.random() * 101)}%*`).join('\n')
+    await reply(`🧬 *${name}'s Stats*\n\n${stats}`)
   },
   async pov({ reply }) {
     const povs = [
@@ -90,19 +90,19 @@ module.exports = {
     await reply(`🎬 *POV*\n\n${povs[Math.floor(Math.random() * povs.length)]}`)
   },
   async social({ reply, sender }) {
-    await reply(`📱 @${sender}\n\n😊 Friendliness: ${Math.floor(Math.random() * 101)}%\n💬 Chattiness: ${Math.floor(Math.random() * 101)}%\n😎 Coolness: ${Math.floor(Math.random() * 101)}%`)
+    await reply(`📱 *Social Stats*\n\n@${sender}\n\n😊 Friendliness: *${Math.floor(Math.random() * 101)}%*\n💬 Chattiness: *${Math.floor(Math.random() * 101)}%*\n😎 Coolness: *${Math.floor(Math.random() * 101)}%*`)
   },
   async relation({ reply, msg, sender, args }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     const target    = mentioned.length ? mentioned[0].split('@')[0] : args[0] || '???'
     const relations = ['Best Friends', 'Rivals', 'Siblings', 'Strangers', 'Soulmates', 'Enemies', 'Allies']
-    await reply(`🔗 @${sender} & @${target}\n\n💫 *${relations[Math.floor(Math.random() * relations.length)]}*`)
+    await reply(`🔗 *Relationship*\n\n@${sender} & @${target}\n\n💫 *${relations[Math.floor(Math.random() * relations.length)]}*`)
   },
   async compliment({ reply, msg, sender }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     const target    = mentioned.length ? mentioned[0].split('@')[0] : sender
     const compliments = ['absolutely brilliant', 'incredibly powerful', 'a true shadow guardian', 'destined for greatness', 'an inspiration to all']
-    await reply(`💬 @${target} is *${compliments[Math.floor(Math.random() * compliments.length)]}*!`)
+    await reply(`💬 @${target} is *${compliments[Math.floor(Math.random() * compliments.length)]}*! ✨`)
   },
   async wyr({ reply }) {
     const wyrs = [
@@ -112,7 +112,7 @@ module.exports = {
       'Know when you will die OR how you will die?',
       'Unlimited money with no friends OR great friends with no money?',
     ]
-    await reply(`🤔 *Would You Rather*\n\n${wyrs[Math.floor(Math.random() * wyrs.length)]}`)
+    await reply(`🤔 *Would You Rather?*\n\n${wyrs[Math.floor(Math.random() * wyrs.length)]}`)
   },
   async truth({ reply }) {
     const truths = [
@@ -145,53 +145,51 @@ module.exports = {
       "Why don't eggs tell jokes? They'd crack each other up! 🥚",
       "What do you call cheese that isn't yours? Nacho cheese! 🧀",
     ]
-    await reply(`😂 ${jokes[Math.floor(Math.random() * jokes.length)]}`)
+    await reply(`😂 *Joke!*\n\n${jokes[Math.floor(Math.random() * jokes.length)]}`)
   },
   async '8ball'({ reply, args }) {
     const question = args.join(' ')
-    if (!question) return reply('⚠️ Usage: .8ball <question>')
+    if (!question) return reply('❌ Usage: `.8ball <question>`')
     const answers = ['Yes, definitely.', 'No way.', 'Ask again later.', 'It is certain.', "Don't count on it.", 'Most likely.', 'Outlook not so good.', 'Without a doubt.', 'Very doubtful.', 'Signs point to yes.']
-    await reply(`🎱 *${question}*\n\n${answers[Math.floor(Math.random() * answers.length)]}`)
+    await reply(`🎱 *${question}*\n\n_${answers[Math.floor(Math.random() * answers.length)]}_`)
   },
   async roll({ reply, args }) {
     const sides = parseInt(args[0]) || 6
     const count = parseInt(args[1]) || 1
     const rolls = [...Array(Math.min(count, 10))].map(() => Math.floor(Math.random() * sides) + 1)
     const total = rolls.reduce((a, b) => a + b, 0)
-    await reply(`🎲 ${count}d${sides}: *${rolls.join(', ')}* — Total: ${total}`)
+    await reply(`🎲 *Dice Roll*\n\n${count}d${sides}: *${rolls.join(', ')}*\nTotal: *${total}*`)
   },
   async choose({ reply, args }) {
     const choices = args.join(' ').split('|').map(c => c.trim()).filter(Boolean)
-    if (!choices.length) return reply('⚠️ Usage: .choose a | b | c')
-    await reply(`🎯 *${choices[Math.floor(Math.random() * choices.length)]}*`)
+    if (!choices.length) return reply('❌ Usage: `.choose a | b | c`')
+    await reply(`🎯 *The answer is...*\n\n*${choices[Math.floor(Math.random() * choices.length)]}*`)
   },
   async flip({ reply }) {
-    await reply(`🪙 *${Math.random() > 0.5 ? 'Heads' : 'Tails'}*`)
+    await reply(`🪙 *Coin Flip!*\n\n*${Math.random() > 0.5 ? 'Heads' : 'Tails'}*`)
   },
   async reverse({ reply, args }) {
     const text = args.join(' ')
-    if (!text) return reply('⚠️ Usage: .reverse <text>')
+    if (!text) return reply('❌ Usage: `.reverse <text>`')
     await reply(text.split('').reverse().join(''))
   },
   async fancy({ reply, args }) {
     const n    = parseInt(args[0])
     const text = args.slice(1).join(' ')
     if (!n || !text) {
-      const sample  = 'Alpha'
-      const preview = FANCY_STYLES.slice(0, 10).map((fn, i) => `${i+1}  ${fn(sample)}`).join('\n')
-      return reply(`✨ *Fancy Styles*\n\nSample: ${sample}\n\n${preview}\n\nUsage: .fancy <number> <text>`)
+      return reply('✨ *Fancy Styles*\n\nUsage: `.fancy <1-10> <text>`\n\nStyles: 1=Script 2=Italic 3=Double 4=Bold 5=SansBold 6=SansItalic 7=Fraktur 8=Circles 9=SmallCaps 10=Strike')
     }
     await reply(`✨ ${applyFancy(n, text)}`)
   },
   async password({ reply, args }) {
     const len  = Math.min(parseInt(args[0]) || 12, 32)
     const pass = generatePassword(len)
-    await reply(`🔐 \`${pass}\`\n\n📏 Length: ${len}`)
+    await reply(`🔐 *Generated Password*\n\n\`${pass}\`\n\n📏 Length: ${len}`)
   },
   async pass(ctx) { return module.exports.password(ctx) },
   async qr({ sock, msg, jid, reply, args }) {
     const text = args.join(' ')
-    if (!text) return reply('⚠️ Usage: .qr <text>')
+    if (!text) return reply('❌ Usage: `.qr <text>`')
     try {
       const QRCode = require('qrcode')
       const buffer = await QRCode.toBuffer(text, { width: 300, margin: 2 })
@@ -208,7 +206,7 @@ module.exports = {
       'The shortest war in history lasted 38-45 minutes.',
       'Bananas are berries, but strawberries are not.',
     ]
-    await reply(`💡 ${facts[Math.floor(Math.random() * facts.length)]}`)
+    await reply(`💡 *Random Fact*\n\n${facts[Math.floor(Math.random() * facts.length)]}`)
   },
   async roast({ reply, msg, sender }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
@@ -233,6 +231,6 @@ module.exports = {
       { q: 'What is the largest ocean?', a: 'Pacific', choices: 'A) Atlantic\nB) Indian\nC) Arctic\nD) Pacific' },
     ]
     const q = questions[Math.floor(Math.random() * questions.length)]
-    await reply(`🧠 *Trivia*\n\n${q.q}\n\n${q.choices}\n\n_Answer: ||${q.a}||_`)
+    await reply(`🧠 *Trivia!*\n\n${q.q}\n\n${q.choices}\n\n_Answer: ||${q.a}||_`)
   },
 }

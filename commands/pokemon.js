@@ -125,6 +125,8 @@ async function fetchPokeData(nameOrId) {
     }
   } catch {}
 
+  const getStat = (name) => (poke.stats || []).find(s => s?.stat?.name === name)?.base_stat || 45
+
   return {
     id:          poke.id,
     name:        capName(poke.name),
@@ -134,6 +136,10 @@ async function fetchPokeData(nameOrId) {
     weight:      ((poke.weight || 0) / 10).toFixed(1),
     moves:       (poke.moves || []).slice(0, 5).map(m => capName(m?.move?.name)),
     abilities:   (poke.abilities || []).map(a => capName(a?.ability?.name)),
+    hp:          getStat('hp'),
+    attack:      getStat('attack'),
+    defense:     getStat('defense'),
+    speed:       getStat('speed'),
     location,
     description,
     catchRate:   Math.round((catchRate / 255) * 100),
@@ -142,21 +148,49 @@ async function fetchPokeData(nameOrId) {
 }
 
 // ── Captions ──────────────────────────────────────────────────────
-function buildSpawnCaption(data) {
-  const { rarity, emoji } = getRarity(data.baseXp)
+const WEATHER_BOOSTS = ['Sunny ☀️', 'Rainy 🌧️', 'Windy 🌬️', 'Cloudy ⛅', 'Snowy ❄️', 'Foggy 🌫️', 'Stormy ⚡']
+const MOODS = ['curious', 'aggressive', 'playful', 'timid', 'confused', 'hungry', 'sleepy', 'excited']
+const STATUSES = ['Wild 🟢', 'Weakened 🔴', 'Energized ⚡', 'Cautious 👀', 'Raging 🔥']
+
+function buildSpawnCaption(data, extras = {}) {
+  const level   = extras.level   || randInt(2, 50)
+  const weather = extras.weather || WEATHER_BOOSTS[Math.floor(Math.random() * WEATHER_BOOSTS.length)]
+  const mood    = extras.mood    || MOODS[Math.floor(Math.random() * MOODS.length)]
+  const status  = extras.status  || STATUSES[Math.floor(Math.random() * STATUSES.length)]
+  const maxHp   = data.hp || 45
+  const curHp   = Math.floor(maxHp * (0.5 + Math.random() * 0.5))
+  const pokeball  = extras.pokeball  ?? randInt(1, 8)
+  const greatball = extras.greatball ?? randInt(0, 4)
+  const ultraball = extras.ultraball ?? randInt(0, 2)
+  const berry     = extras.berry     ?? randInt(0, 5)
+  const ability = (data.abilities && data.abilities.length) ? data.abilities[0] : 'Unknown'
+
   return (
-    `🎊 *A wild Pokémon has appeared!*\n\n` +
-    `🆔 *Poke ID:* ${data.id}\n` +
-    `🔖 *Name:* ${data.name}\n\n` +
-    `📏 *Height:* ${data.height} m\n` +
-    `⚖️ *Weight:* ${data.weight} kg\n\n` +
-    `🔄 *Type:* ${data.types.join(' / ')}\n` +
-    `🌍 *Location:* ${data.location}\n\n` +
-    `🎮 *Moves:*\n${data.moves.map(m => m).join('\n')}\n\n` +
-    `📊 *Base Experience:* ${data.baseXp}\n` +
-    `⭐ *Rarity:* ${emoji} ${rarity.charAt(0).toUpperCase() + rarity.slice(1)}\n\n` +
-    `🧬 *Possible Abilities:*\n${data.abilities.join('\n')}\n\n` +
-    `💡 *Hint:*\n> Use *#catch <pokeslot> | <ball type>* to catch this pokemon`
+    `🎊 *A wild Pokémon has appeared!* 🎊\n\n` +
+    `*📛 Name:* ${data.name}\n` +
+    `*✨ Level:* ${level}\n` +
+    `*⚡ Type:* ${data.types.join(' / ')}\n` +
+    `*🔥 Ability:* ${ability}\n` +
+    `*❤️ HP:* ${curHp}/${maxHp}\n` +
+    `*⚔️ Attack:* ${data.attack || 50}\n` +
+    `*🛡️ Defense:* ${data.defense || 45}\n` +
+    `*💨 Speed:* ${data.speed || 45}\n\n` +
+    `*📍 Location:* ${data.location}\n` +
+    `*🌦️ Weather Boost:* ${weather}\n` +
+    `*✨ Status:* ${status}\n\n` +
+    `👀 The wild ${data.name} is staring at you… it looks ${mood}.\n\n` +
+    `💭 It might flee if you hesitate too long!\n\n` +
+    `*🎒 Your Items:*\n` +
+    `*  🟡 Poké Ball × ${pokeball}*\n` +
+    `*  🔵 Great Ball × ${greatball}*\n` +
+    `*  🔴 Ultra Ball × ${ultraball}*\n` +
+    `*  🍓 Berry × ${berry}*\n\n` +
+    `🌀 What will you do?\n\n` +
+    `> .catch - Catch the Pokemon\n` +
+    `> .battle - Battle the Pokemon\n` +
+    `> .bag - Use items or buffs\n` +
+    `> .Inspect - Get more info about ${data.name}\n` +
+    `> .run - Escape safely (maybe…)`
   )
 }
 

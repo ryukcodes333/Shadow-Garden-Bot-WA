@@ -340,15 +340,7 @@ module.exports = {
     const saved = await db.updateUser(sender, { class_name: chosen, skill_xp: JSON.stringify({}) })
 
     if (!saved) {
-      return reply(
-        `❌ *CLASS SAVE FAILED*\n\n` +
-        `The \`class_name\` or \`skill_xp\` column is missing from your database.\n\n` +
-        `Run this SQL once in your *Supabase SQL Editor* and then try again:\n\n` +
-        `ALTER TABLE users\n` +
-        `  ADD COLUMN IF NOT EXISTS class_name TEXT DEFAULT NULL,\n` +
-        `  ADD COLUMN IF NOT EXISTS skill_xp TEXT DEFAULT '{}';\n\n` +
-        `_The schema must exist before the shadow can walk its path._ 🖤`
-      )
+      return reply(`❌ *CLASS SAVE FAILED*\n\nCould not save your class to the database. Please try again later. 🖤`)
     }
 
     return reply(

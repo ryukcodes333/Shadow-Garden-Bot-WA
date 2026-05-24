@@ -16,13 +16,17 @@ function checkWin(board, player) {
 module.exports = {
   async ttt({ sock, msg, jid, senderJid, sender, reply, args }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: .ttt @user')
+    if (!mentioned.length) return reply('❌ Usage: `.ttt @user`')
     const p2 = mentioned[0]
     if (p2 === senderJid) return reply('❌ You can\'t play against yourself!')
     const game = { board: [1,2,3,4,5,6,7,8,9], players: [senderJid, p2], turn: 0, id: Date.now() }
     tttBoards[jid] = game
     await sock.sendMessage(jid, {
-      text: `🎮 *TIC TAC TOE*\n\n👤 @${sender} ❌ vs @${p2.split('@')[0]} ⭕\n\n${renderTTT(game.board)}\n\n⚔️ Turn: @${sender} (❌)\n💡 Use .play <1-9>`,
+      text:
+        `🎮 *Tic Tac Toe!*\n\n` +
+        `👤 @${sender} ❌ vs @${p2.split('@')[0]} ⭕\n\n` +
+        `${renderTTT(game.board)}\n\n` +
+        `⚔️ Turn: @${sender} (❌)\n💡 Use \`.play <1-9>\``,
       mentions: [senderJid, p2]
     })
   },
@@ -32,10 +36,10 @@ module.exports = {
     if (!game) {
       const unoGame = await db.getGame(jid, 'uno')
       if (unoGame) return require('./uno').unoplay({ sock, msg, jid, senderJid, sender, reply, args })
-      return reply('❌ No active game. Start one with .ttt @user')
+      return reply('❌ No active game. Start one with `.ttt @user`')
     }
     const pos = parseInt(args[0]) - 1
-    if (isNaN(pos) || pos < 0 || pos > 8) return reply('⚠️ Enter a number 1-9')
+    if (isNaN(pos) || pos < 0 || pos > 8) return reply('❌ Enter a number 1-9')
     const currentPlayer = game.players[game.turn]
     if (senderJid !== currentPlayer) return reply('⚠️ It\'s not your turn!')
     if (typeof game.board[pos] !== 'number') return reply('❌ That position is taken!')
@@ -46,7 +50,7 @@ module.exports = {
       const reward = 150
       await db.updateUser(sender, { wallet: ((await db.getOrCreateUser(sender)).wallet || 0) + reward })
       return sock.sendMessage(jid, {
-        text: `🏆 *WINNER: @${sender}*\n\n${renderTTT(game.board)}\n\n💰 +${reward} coins!`,
+        text: `🏆 *WINNER: @${sender}!*\n\n${renderTTT(game.board)}\n\n💰 +$${reward} coins!`,
         mentions: [senderJid]
       })
     }
@@ -58,20 +62,24 @@ module.exports = {
     const nextPlayer = game.players[game.turn]
     const nextSym = game.turn === 0 ? '❌' : '⭕'
     await sock.sendMessage(jid, {
-      text: `🎮 *TIC TAC TOE*\n\n${renderTTT(game.board)}\n\n⚔️ Turn: @${nextPlayer.split('@')[0]} (${nextSym})\n💡 .play <1-9>`,
+      text: `🎮 *Tic Tac Toe*\n\n${renderTTT(game.board)}\n\n⚔️ Turn: @${nextPlayer.split('@')[0]} (${nextSym})\n💡 \`.play <1-9>\``,
       mentions: [nextPlayer]
     })
   },
 
   async wcg({ sock, msg, jid, senderJid, sender, reply }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: .wcg @user')
+    if (!mentioned.length) return reply('❌ Usage: `.wcg @user`')
     const p2 = mentioned[0]
     const starters = ['apple', 'elephant', 'tiger', 'rabbit', 'night', 'tree', 'eagle', 'dark', 'shadow']
     const startWord = starters[Math.floor(Math.random() * starters.length)]
     wcgGames[jid] = { players: [senderJid, p2], turn: 0, lastWord: startWord, chain: [startWord], id: Date.now() }
     await sock.sendMessage(jid, {
-      text: `🎮 *WORD CHAIN*\n\n👤 @${sender} vs @${p2.split('@')[0]}\n\n📌 Rule: Each word must start with the last letter of the previous word.\n\n🧠 First Word: *${startWord}*\n⚔️ Turn: @${p2.split('@')[0]}`,
+      text:
+        `🎮 *Word Chain!*\n\n` +
+        `👤 @${sender} vs @${p2.split('@')[0]}\n\n` +
+        `📌 Each word must start with the last letter of the previous word.\n\n` +
+        `🧠 First Word: *${startWord}*\n⚔️ Turn: @${p2.split('@')[0]}`,
       mentions: [senderJid, p2]
     })
   },
@@ -89,7 +97,11 @@ module.exports = {
       const winner = opponent.split('@')[0]
       await db.updateUser(winner, { wallet: ((await db.getOrCreateUser(winner)).wallet || 0) + 200 })
       return sock.sendMessage(jid, {
-        text: `🏆 *WINNER: @${winner}*\n\n📊 Chain: ${game.chain.join(' → ')}\n\n🎁 +200 coins\n\n❌ @${sender} failed — "${word}" doesn't start with "${game.lastWord[game.lastWord.length - 1]}"`,
+        text:
+          `🏆 *WINNER: @${winner}!*\n\n` +
+          `📊 Chain: ${game.chain.join(' → ')}\n` +
+          `🎁 +$200 coins\n\n` +
+          `❌ @${sender} failed — "*${word}*" doesn't start with "*${game.lastWord[game.lastWord.length - 1]}*"`,
         mentions: [opponent, senderJid]
       })
     }
@@ -98,7 +110,11 @@ module.exports = {
     game.turn = game.turn === 0 ? 1 : 0
     const next = game.players[game.turn]
     await sock.sendMessage(jid, {
-      text: `✅ *${word}*\n\n⚔️ Turn: @${next.split('@')[0]}\nNext letter: *${word[word.length - 1].toUpperCase()}*\nChain: ${game.chain.slice(-5).join(' → ')}`,
+      text:
+        `✅ *${word}*\n\n` +
+        `⚔️ Turn: @${next.split('@')[0]}\n` +
+        `Next letter: *${word[word.length - 1].toUpperCase()}*\n` +
+        `Chain: ${game.chain.slice(-5).join(' → ')}`,
       mentions: [next]
     })
   },
@@ -106,13 +122,16 @@ module.exports = {
   async stopgame({ sock, jid, reply, senderJid, isOwner }) {
     delete tttBoards[jid]
     delete wcgGames[jid]
-    await db.endGame && (await db.getGame(jid, 'uno'))?.id && await db.endGame((await db.getGame(jid, 'uno')).id)
+    try {
+      const unoGame = await db.getGame(jid, 'uno')
+      if (unoGame?._id) await db.endGame(unoGame._id)
+    } catch {}
     await reply('✅ All active games in this group have been stopped.')
   },
 
   async startbattle({ sock, msg, jid, sender, senderJid, reply }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: .startbattle @user')
+    if (!mentioned.length) return reply('❌ Usage: `.startbattle @user`')
     const target = mentioned[0]
     const myAtk = Math.floor(Math.random() * 30) + 20
     const theirAtk = Math.floor(Math.random() * 30) + 20
@@ -121,17 +140,29 @@ module.exports = {
     const winner = myFinalHp > theirFinalHp ? sender : target.split('@')[0]
     await db.updateUser(winner, { wallet: ((await db.getOrCreateUser(winner)).wallet || 0) + 300, xp: ((await db.getOrCreateUser(winner)).xp || 0) + 100 })
     await sock.sendMessage(jid, {
-      text: `⚔️ *BATTLE*\n\n@${sender} vs @${target.split('@')[0]}\n\n💥 @${sender} dealt ${myAtk} dmg\n💥 @${target.split('@')[0]} dealt ${theirAtk} dmg\n\n❤️ @${sender}: ${myFinalHp}/100 HP\n❤️ @${target.split('@')[0]}: ${theirFinalHp}/100 HP\n\n🏆 Winner: @${winner} — +300 coins!`,
+      text:
+        `⚔️ *Battle!*\n\n` +
+        `@${sender} vs @${target.split('@')[0]}\n\n` +
+        `💥 @${sender} dealt *${myAtk}* dmg\n` +
+        `💥 @${target.split('@')[0]} dealt *${theirAtk}* dmg\n\n` +
+        `❤️ @${sender}: *${myFinalHp}/100 HP*\n` +
+        `❤️ @${target.split('@')[0]}: *${theirFinalHp}/100 HP*\n\n` +
+        `🏆 *Winner: @${winner}* — +$300 coins!`,
       mentions: [senderJid, target]
     })
   },
 
   async c4({ sock, msg, jid, sender, senderJid, reply }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: .c4 @user')
+    if (!mentioned.length) return reply('❌ Usage: `.c4 @user`')
     const p2 = mentioned[0]
     await sock.sendMessage(jid, {
-      text: `🎮 *CONNECT 4*\n\n👤 @${sender} 🔴 vs @${p2.split('@')[0]} 🟡\n\n⬛⬛⬛⬛⬛⬛⬛\n⬛⬛⬛⬛⬛⬛⬛\n⬛⬛⬛⬛⬛⬛⬛\n⬛⬛⬛⬛⬛⬛⬛\n⬛⬛⬛⬛⬛⬛⬛\n⬛⬛⬛⬛⬛⬛⬛\n1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣\n\n⚔️ Turn: @${sender} 🔴\n💡 Use .drop <1-7>`,
+      text:
+        `🎮 *Connect 4!*\n\n` +
+        `👤 @${sender} 🔴 vs @${p2.split('@')[0]} 🟡\n\n` +
+        `⬛⬛⬛⬛⬛⬛⬛\n⬛⬛⬛⬛⬛⬛⬛\n⬛⬛⬛⬛⬛⬛⬛\n⬛⬛⬛⬛⬛⬛⬛\n⬛⬛⬛⬛⬛⬛⬛\n⬛⬛⬛⬛⬛⬛⬛\n` +
+        `1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣\n\n` +
+        `⚔️ Turn: @${sender} 🔴\n💡 Use \`.drop <1-7>\``,
       mentions: [senderJid, p2]
     })
   },

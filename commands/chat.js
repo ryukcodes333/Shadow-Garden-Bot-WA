@@ -71,32 +71,21 @@ function parseDuration(str) {
   return n * (map[u] || 0)
 }
 
+const db = require('../database')
+
 async function getSuspension(supabase, phone) {
-  try {
-    phone = phone.split('@')[0].split(':')[0]
-    const result = await supabase.from('suspensions').select('*').eq('phone', phone).single()
-    const data = result.data
-    if (!data) return null
-    if (new Date(data.suspended_until) <= new Date()) {
-      await supabase.from('suspensions').delete().eq('phone', phone).catch(function() {})
-      return null
-    }
-    return data
-  } catch (e) { return null }
+  // supabase param kept for backward compat — now uses MongoDB
+  return db.getSuspension(phone)
 }
 
 async function setSuspension(supabase, phone, durationMs, reason, by) {
-  phone = phone.split('@')[0].split(':')[0]
-  const until = new Date(Date.now() + durationMs).toISOString()
-  await supabase.from('suspensions').upsert(
-    { phone: phone, suspended_until: until, reason: reason || 'No reason given', suspended_by: by },
-    { onConflict: 'phone' }
-  )
+  // supabase param kept for backward compat — now uses MongoDB
+  await db.addSuspension(phone, reason, new Date(Date.now() + durationMs), by)
 }
 
 async function removeSuspension(supabase, phone) {
-  phone = phone.split('@')[0].split(':')[0]
-  await supabase.from('suspensions').delete().eq('phone', phone)
+  // supabase param kept for backward compat — now uses MongoDB
+  await db.removeSuspension(phone)
 }
 
 module.exports = {

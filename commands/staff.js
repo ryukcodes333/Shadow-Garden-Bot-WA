@@ -29,11 +29,9 @@ module.exports = {
 
   // ── .mods — always use actual participant JIDs ─────────────────
   async mods({ sock, jid, msg, reply, isGroup }) {
-    const { data: mods }      = await db.supabase.from('users').select('phone,name').eq('role', 'mod')
-    const { data: guardians } = await db.supabase.from('users').select('phone,name').eq('role', 'guardian')
-
-    const modList      = mods      || []
-    const guardianList = guardians || []
+    const allStaff     = await db.getMods()
+    const modList      = allStaff.filter(u => u.role === 'mod')
+    const guardianList = allStaff.filter(u => u.role === 'guardian')
 
     // Build phoneToJid map from current group to get real JIDs (avoids LID display)
     const phoneToJid = isGroup ? await buildPhoneMap(sock, jid) : {}
@@ -68,54 +66,54 @@ module.exports = {
 
   // ── Role management ───────────────────────────────────────────
   async addmod({ reply, sock, jid, msg, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Only owner or mods can add mods.')
+    if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.addmod @user*')
+    if (!mentioned.length) return reply('❌ Usage: `.addmod @user`')
     for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0], { role: STAFF_ROLES.MOD })
     const names = mentioned.map(j => `@${j.split('@')[0]}`).join(', ')
     await sock.sendMessage(jid, { text: `✅ *MOD ADDED*\n\n${names} is now a *Moderator*.`, mentions: mentioned }, { quoted: msg })
   },
 
   async removemod({ reply, sock, jid, msg, isOwner }) {
-    if (!isOwner) return reply('⚠️ Owner only.')
+    if (!isOwner) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.removemod @user*')
+    if (!mentioned.length) return reply('❌ Usage: `.removemod @user`')
     for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0], { role: 'member' })
     const names = mentioned.map(j => `@${j.split('@')[0]}`).join(', ')
     await sock.sendMessage(jid, { text: `✅ *MOD REMOVED*\n\n${names} is no longer a moderator.`, mentions: mentioned }, { quoted: msg })
   },
 
   async addguardian({ reply, sock, jid, msg, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Only owner or mods can add guardians.')
+    if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.addguardian @user*')
+    if (!mentioned.length) return reply('❌ Usage: `.addguardian @user`')
     for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0], { role: STAFF_ROLES.GUARDIAN })
     const names = mentioned.map(j => `@${j.split('@')[0]}`).join(', ')
     await sock.sendMessage(jid, { text: `✅ *GUARDIAN ADDED*\n\n${names} is now a *Guardian*.`, mentions: mentioned }, { quoted: msg })
   },
 
   async removeguardian({ reply, sock, jid, msg, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Only owner or mods can remove guardians.')
+    if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.removeguardian @user*')
+    if (!mentioned.length) return reply('❌ Usage: `.removeguardian @user`')
     for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0], { role: 'member' })
     const names = mentioned.map(j => `@${j.split('@')[0]}`).join(', ')
     await sock.sendMessage(jid, { text: `✅ *GUARDIAN REMOVED*\n\n${names} is no longer a guardian.`, mentions: mentioned }, { quoted: msg })
   },
 
   async recruit({ sock, jid, msg, reply, isOwner, isMod, isGuardian }) {
-    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.recruit @user*')
+    if (!mentioned.length) return reply('❌ Usage: `.recruit @user`')
     for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0], { role: STAFF_ROLES.CARD_MAKER })
     const names = mentioned.map(j => `@${j.split('@')[0]}`).join(', ')
     await sock.sendMessage(jid, { text: `🎴 *CARD MAKER RECRUITED*\n\n${names} can now upload cards.`, mentions: mentioned }, { quoted: msg })
   },
 
   async firerecruit({ sock, jid, msg, reply, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.firerecruit @user*')
+    if (!mentioned.length) return reply('❌ Usage: `.firerecruit @user`')
     for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0], { role: 'member' })
     const names = mentioned.map(j => `@${j.split('@')[0]}`).join(', ')
     await sock.sendMessage(jid, { text: `❌ *CARD MAKER REMOVED*\n\n${names} can no longer upload cards.`, mentions: mentioned }, { quoted: msg })
@@ -123,11 +121,11 @@ module.exports = {
 
   // ── Economy ───────────────────────────────────────────────────
   async ac({ reply, sock, jid, msg, args, isOwner, isMod, isGuardian }) {
-    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.ac <amount> @user*')
+    if (!mentioned.length) return reply('❌ Usage: `.ac <amount> @user`')
     const amount = parseInt(args.find(a => !isNaN(parseInt(a))))
-    if (!amount || amount <= 0) return reply('⚠️ Enter a valid amount.')
+    if (!amount || amount <= 0) return reply('❌ Enter a valid amount.')
     const phone  = mentioned[0].split('@')[0]
     const tu     = await db.getOrCreateUser(phone)
     const newBal = (tu.wallet || 0) + amount
@@ -136,11 +134,11 @@ module.exports = {
   },
 
   async rc({ reply, sock, jid, msg, args, isOwner, isMod, isGuardian }) {
-    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.rc <amount> @user*')
+    if (!mentioned.length) return reply('❌ Usage: `.rc <amount> @user`')
     const amount = parseInt(args.find(a => !isNaN(parseInt(a))))
-    if (!amount || amount <= 0) return reply('⚠️ Enter a valid amount.')
+    if (!amount || amount <= 0) return reply('❌ Enter a valid amount.')
     const phone  = mentioned[0].split('@')[0]
     const tu     = await db.getOrCreateUser(phone)
     const deduct = Math.min(amount, tu.wallet || 0)
@@ -149,26 +147,26 @@ module.exports = {
   },
 
   async resetbal({ reply, msg, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.resetbal @user*')
+    if (!mentioned.length) return reply('❌ Usage: `.resetbal @user`')
     await db.updateUser(mentioned[0].split('@')[0], { wallet: 0, bank: 0 })
     await reply(`✅ Balance reset for @${mentioned[0].split('@')[0]}.`)
   },
 
   async reset({ reply, msg, isOwner }) {
-    if (!isOwner) return reply('⚠️ Owner only.')
+    if (!isOwner) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.reset @user*')
+    if (!mentioned.length) return reply('❌ Usage: `.reset @user`')
     const phone = mentioned[0].split('@')[0]
     await db.updateUser(phone, { wallet: 0, bank: 0, xp: 0, level: 1, streak: 0, gems: 0, banned: false })
     await reply(`🔄 *USER RESET*\n\n@${phone} fully reset.`)
   },
 
   async addinv({ reply, sock, jid, msg, args, isOwner, isMod, isGuardian }) {
-    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.addinv @user <item>*')
+    if (!mentioned.length) return reply('❌ Usage: `.addinv @user <item>`')
     const item  = args.filter(a => !a.includes('@')).join(' ')
     const phone = mentioned[0].split('@')[0]
     try { await db.addItem(phone, item, 1) } catch {}
@@ -177,8 +175,8 @@ module.exports = {
 
   // ── Cards ─────────────────────────────────────────────────────
   async spawncard({ sock, jid, msg, reply, isOwner, isMod, isGuardian }) {
-    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
-    const { data: cards } = await db.supabase.from('cards').select('*').order('id', { ascending: false }).limit(50)
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
+    const cards = await db.getCards()
     if (!cards || !cards.length) return reply('❌ No cards in database.')
     const card = cards[Math.floor(Math.random() * cards.length)]
     const text = `🎴 *CARD SPAWNED!*\n\n📛 *Name:* ${card.name}\n⭐ *Tier:* ${card.tier}\n💰 *Price:* $${(card.price || 0).toLocaleString()}\n\n_First to claim wins it!_ 🖤`
@@ -191,42 +189,42 @@ module.exports = {
   },
 
   async us({ reply, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     await reply('ℹ️ Use *.upload* command to add card images via the full upload flow.')
   },
 
   async shoob({ reply, args, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const name = args[0]; const tier = args[1]?.toUpperCase()
     if (!name || !tier) return reply('⚠️ Usage: *.shoob <name> <tier>*')
     await reply(`✅ Shoob card *${name}* (${tier}) recorded.`)
   },
 
   async frame({ reply, args, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     await reply(`✅ Frame *${args[0] || '?'}* noted. Use the full admin panel to manage frames.`)
   },
 
   // ── Moderation ────────────────────────────────────────────────
   async ban({ reply, msg, args, isOwner, isMod, isGuardian }) {
-    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.ban @user [reason]*')
+    if (!mentioned.length) return reply('❌ Usage: `.ban @user [reason]`')
     const reason = args.filter(a => !a.includes('@')).join(' ') || 'No reason given'
     for (const j of mentioned) await db.updateUser(j.split('@')[0].split(':')[0], { banned: true })
     await reply(`🔨 *BANNED*\n\n${mentioned.map(j => `@${j.split('@')[0].split(':')[0]}`).join(', ')}\nReason: ${reason}`)
   },
 
   async unban({ reply, msg, isOwner, isMod, isGuardian }) {
-    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.unban @user*')
+    if (!mentioned.length) return reply('❌ Usage: `.unban @user`')
     for (const j of mentioned) await db.updateUser(j.split('@')[0].split(':')[0], { banned: false })
     await reply(`✅ *UNBANNED*\n\n${mentioned.map(j => `@${j.split('@')[0].split(':')[0]}`).join(', ')}`)
   },
 
   async banlist({ reply, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const banned = await db.getBannedUsers()
     if (!banned.length) return reply('✅ No banned users.')
     const list = banned.map((u, i) => `${i + 1}. ${u.name || u.phone} (${u.phone})`).join('\n')
@@ -234,7 +232,7 @@ module.exports = {
   },
 
   async disable({ reply, args, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const cmd    = args[0]?.toLowerCase()
     const reason = args.slice(1).join(' ') || 'Disabled by staff'
     if (!cmd) return reply('⚠️ Usage: *.disable <command> [reason]*')
@@ -243,7 +241,7 @@ module.exports = {
   },
 
   async enable({ reply, args, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const cmd = args[0]?.toLowerCase()
     if (!cmd) return reply('⚠️ Usage: *.enable <command>*')
     await db.enableCommand(cmd)
@@ -251,7 +249,7 @@ module.exports = {
   },
 
   async addrole({ reply, sock, jid, msg, args, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length || !args[0]) return reply('⚠️ Usage: *.addrole @user <role>*\n\nRoles: mod, guardian, member, card_maker')
     const role  = args.find(a => !a.includes('@'))?.toLowerCase()
@@ -263,7 +261,7 @@ module.exports = {
   },
 
   async addpremium({ reply, sock, jid, msg, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('⚠️ Usage: *.addpremium @user*')
     for (const jidM of mentioned) {
@@ -277,7 +275,7 @@ module.exports = {
   async addprem(ctx) { return module.exports.addpremium(ctx) },
 
   async removepremium({ reply, msg, isOwner }) {
-    if (!isOwner) return reply('⚠️ Owner only.')
+    if (!isOwner) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('⚠️ Usage: *.removepremium @user*')
     for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0], { premium: false })
@@ -287,12 +285,12 @@ module.exports = {
 
   // ── Bot management ────────────────────────────────────────────
   async logs({ reply, isOwner }) {
-    if (!isOwner) return reply('⚠️ Owner only.')
+    if (!isOwner) return reply('*🚫 Access Denied*')
     await reply(`📊 *ADMIN LOGS*\n\nCheck your server console / hosting dashboard for full logs.`)
   },
 
   async transfer({ reply, msg, isOwner }) {
-    if (!isOwner) return reply('⚠️ Owner only.')
+    if (!isOwner) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (mentioned.length < 2) return reply('⚠️ Usage: *.transfer @old @new*')
     const oldPhone = mentioned[0].split('@')[0]
@@ -304,43 +302,43 @@ module.exports = {
   },
 
   async post({ sock, jid, reply, args, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const text = args.join(' ')
     if (!text) return reply('⚠️ Usage: *.post <message>*')
     await sock.sendMessage(jid, { text: `📣 *SHADOW GARDEN ANNOUNCEMENT*\n\n${text}\n\n— *Shadow Garden Staff* 🖤` })
   },
 
   async broadcast({ sock, reply, jid, args, isOwner }) {
-    if (!isOwner) return reply('⚠️ Owner only.')
+    if (!isOwner) return reply('*🚫 Access Denied*')
     const message = args.join(' ')
     if (!message) return reply('⚠️ Usage: *.broadcast <message>*')
     await sock.sendMessage(jid, { text: `📢 *BROADCAST*\n\n${message}\n\n— *Shadow Garden* 🖤` })
   },
 
   async announce({ sock, jid, reply, args, isOwner, isMod }) {
-    if (!isOwner && !isMod) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const text = args.join(' ')
     if (!text) return reply('⚠️ Usage: *.announce <message>*')
     await sock.sendMessage(jid, { text: `📢 *ANNOUNCEMENT*\n\n${text}\n\n_Shadow Garden Official_ 🖤` })
   },
 
   async dbstatus({ reply, isOwner, isMod, isGuardian }) {
-    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
     try {
       const users = await db.getUserCount()
-      const { count: cardCount } = await db.supabase.from('cards').select('*', { count: 'exact', head: true })
-      await reply(`🗄️ *DATABASE STATUS*\n\n✅ Connected\n\n👥 Users: ${users}\n🎴 Cards: ${cardCount || 0}`)
+      const cards = await db.getCards()
+      await reply(`🗄️ *DATABASE STATUS*\n\n✅ Connected (MongoDB)\n\n👥 Users: ${users}\n🎴 Cards: ${cards.length || 0}`)
     } catch (err) {
       await reply(`❌ *DB ERROR*\n\n${err.message}`)
     }
   },
 
   async give({ sock, msg, jid, reply, args, isOwner, isMod, isGuardian }) {
-    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('⚠️ Usage: *.give @user <amount>*')
     const amount = parseInt(args.find(a => !isNaN(parseInt(a))))
-    if (!amount || amount <= 0) return reply('⚠️ Valid amount required.')
+    if (!amount || amount <= 0) return reply('❌ Valid amount required.')
     const phone = mentioned[0].split('@')[0]
     const tu    = await db.getOrCreateUser(phone)
     await db.updateUser(phone, { wallet: (tu.wallet || 0) + amount })
@@ -349,11 +347,11 @@ module.exports = {
   async givecoins(ctx) { return module.exports.give(ctx) },
 
   async take({ sock, msg, jid, reply, args, isOwner }) {
-    if (!isOwner) return reply('⚠️ Owner only.')
+    if (!isOwner) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('⚠️ Usage: *.take @user <amount>*')
     const amount = parseInt(args.find(a => !isNaN(parseInt(a))))
-    if (!amount || amount <= 0) return reply('⚠️ Valid amount required.')
+    if (!amount || amount <= 0) return reply('❌ Valid amount required.')
     const phone  = mentioned[0].split('@')[0]
     const tu     = await db.getOrCreateUser(phone)
     const deduct = Math.min(amount, tu.wallet || 0)
@@ -362,7 +360,7 @@ module.exports = {
   },
 
   async resetuser({ reply, msg, isOwner }) {
-    if (!isOwner) return reply('⚠️ Owner only.')
+    if (!isOwner) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('⚠️ Usage: *.resetuser @user*')
     const phone = mentioned[0].split('@')[0]
@@ -375,13 +373,13 @@ module.exports = {
   },
 
   async setprefix({ reply, isOwner }) {
-    if (!isOwner) return reply('⚠️ Owner only.')
+    if (!isOwner) return reply('*🚫 Access Denied*')
     await reply('ℹ️ Prefix is hardcoded as *.* — contact dev to change.')
   },
 
   // ── Staff menu ────────────────────────────────────────────────
   async staffmenu({ reply, isOwner, isMod, isGuardian }) {
-    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
     await reply(
       `╭─『 👑 *Staff Menu* 』\n│\n` +
       `│ 💰 *Economy*\n│ *.ac <amount> @user* — add cash\n│ *.rc <amount> @user* — remove cash\n│ *.resetbal @user* — reset balance\n│ *.reset @user* — full reset\n│ *.addinv @user <item>* — add inventory item\n│\n` +

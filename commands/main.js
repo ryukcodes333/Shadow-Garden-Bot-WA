@@ -45,143 +45,259 @@ async function buildPhoneMap(sock, jid) {
 
 module.exports = {
 
-  async menu({ sock, msg, jid, sender }) {
+  async menu({ sock, msg, jid, sender, pushName }) {
+    const userName = pushName || sender || 'Traveller'
     const menuText =
-      `┏❐✦ *sʜᴀᴅᴏᴡ ɢᴀʀᴅᴇɴ* ✦❐\n` +
-      `┃» *ʙᴏᴛ ɴᴀᴍᴇ* : Alpha\n` +
-      `┃» *ᴜsᴇʀɴᴀᴍᴇ* : Ryuk\n` +
-      `┃» *ᴄᴏʀᴇ* : Alpha\n` +
-      `┃» *ᴅᴇᴠᴇʟᴏᴘᴇʀ* : Ryuk\n` +
-      `┃» *ᴠᴇʀsɪᴏɴ* : ${BOT_VERSION}\n` +
-      `┃» *ᴍᴏᴅᴇ* : Public\n` +
-      `┃» *ᴘʀᴇғɪx* : [ . ]\n` +
-      `┃» *ᴜᴘᴛɪᴍᴇ* : ${uptimeWAT()}\n` +
-      `┃» *ᴅᴀᴛᴇ* : ${dateStr()}\n` +
-      `┗❐\n\n` +
+      `Hᴇʏʏʏʏʏ ${userName}... ɪ'ᴍ Aǫᴜᴀ ꜰʀᴏᴍ ᴛʜᴇ 𝐊𝚯𝐍𝚯𝐒𝐔𝐁𝚫 ᴄᴏᴍᴜɴɪᴛʏ ɴɪᴄᴇ ᴛᴏ ᴍᴇᴇᴛ ʏᴏᴜ!\n\n` +
+      `Cʜᴇᴄᴋ ʙᴇʟᴏᴡ ғᴏʀ ᴀᴠᴀɪʟᴀʙʟᴇ ᴄᴏᴍᴍᴀɴᴅs ✦\n\n` +
 
-      `┏❐ 🌑 sʜᴀᴅᴏᴡ ɢᴀʀᴅᴇɴ\n` +
-      `┃ 🌑 ᴏғғɪᴄɪᴀʟ\n` +
-      `┃ ├ .support\n┃ ├ .addbot\n┃ ├ .website\n` +
-      `┃ ├ .community\n┃ ├ .help\n┃ ├ .info\n┃ └ .uptime\n` +
-      `┗❐\n\n` +
+      `*⚙️ ADMIN ⚙️*\n` +
+      `┃\n` +
+      `┃ ⤷ .kick @user\n` +
+      `┃ ⤷ .mute @user\n` +
+      `┃ ⤷ .unmute @user\n` +
+      `┃ ⤷ .warn @user\n` +
+      `┃ ⤷ .warnings @user\n` +
+      `┃ ⤷ .clearwarns @user\n` +
+      `┃ ⤷ .promote @user\n` +
+      `┃ ⤷ .demote @user\n` +
+      `┃ ⤷ .ban @user\n` +
+      `┃ ⤷ .unban @user\n` +
+      `┃ ⤷ .addmod @user\n` +
+      `┃ ⤷ .removemod @user\n` +
+      `┃ ⤷ .lockgroup\n` +
+      `┃ ⤷ .unlockgroup\n` +
+      `┃ ⤷ .setname <name>\n` +
+      `┃ ⤷ .setdesc <description>\n` +
+      `┃ ⤷ .setpp (reply image)\n` +
+      `┃ ⤷ .tagall\n` +
+      `┃ ⤷ .hidetag <message>\n` +
+      `┃ ⤷ .delete (reply msg)\n` +
+      `┃ ⤷ .antilink on/off\n` +
+      `┃ ⤷ .antispam on/off\n` +
+      `┃ ⤷ .welcome on/off\n` +
+      `┃ ⤷ .goodbye on/off\n` +
+      `┃ ⤷ .autoreply on/off\n` +
+      `┃ ⤷ .active\n` +
+      `┃ ⤷ .resetlink\n` +
+      `┃ ⤷ .revoke\n` +
+      `┃ ⤷ .invitelink\n` +
+      `┃ ⤷ .stafflist\n` +
+      `┃ ⤷ .myrole\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-      `┏❐ 📋 ᴍᴀɪɴ\n` +
-      `┃ 📋 ᴍᴀɪɴ ᴄᴏᴍᴍᴀɴᴅs\n` +
-      `┃ ├ .menu\n┃ ├ .ping\n┃ ├ .afk\n┃ ├ .runtime\n` +
-      `┃ ├ .speed\n┃ ├ .repo\n┃ ├ .script\n┃ ├ .vv\n` +
-      `┃ ├ .vv2\n┃ └ .enc\n` +
-      `┗❐\n\n` +
+      `*💰 ECONOMY 💰*\n` +
+      `┃\n` +
+      `┃ ⤷ .balance / .bal\n` +
+      `┃ ⤷ .wallet\n` +
+      `┃ ⤷ .bank\n` +
+      `┃ ⤷ .deposit <amount>\n` +
+      `┃ ⤷ .withdraw <amount>\n` +
+      `┃ ⤷ .pay @user <amount>\n` +
+      `┃ ⤷ .daily\n` +
+      `┃ ⤷ .fish\n` +
+      `┃ ⤷ .dig\n` +
+      `┃ ⤷ .weekly\n` +
+      `┃ ⤷ .monthly\n` +
+      `┃ ⤷ .work\n` +
+      `┃ ⤷ .beg\n` +
+      `┃ ⤷ .crime\n` +
+      `┃ ⤷ .rob @user\n` +
+      `┃ ⤷ .heist\n` +
+      `┃ ⤷ .market\n` +
+      `┃ ⤷ .buy <item>\n` +
+      `┃ ⤷ .sell <item>\n` +
+      `┃ ⤷ .inventory / .inv\n` +
+      `┃ ⤷ .use <item>\n` +
+      `┃ ⤷ .gift @user <item>\n` +
+      `┃ ⤷ .topmoney\n` +
+      `┃ ⤷ .topbank\n` +
+      `┃ ⤷ .cooldowns / .cds\n` +
+      `┃ ⤷ .profile / .p\n` +
+      `┃ ⤷ .rank\n` +
+      `┃ ⤷ .xp\n` +
+      `┃ ⤷ .achievements\n` +
+      `┃ ⤷ .quests\n` +
+      `┃ ⤷ .claim\n` +
+      `┃ ⤷ .bonus\n` +
+      `┃ ⤷ .upgrade\n` +
+      `┃ ⤷ .prestige\n` +
+      `┃ ⤷ .bankupgrade\n` +
+      `┃ ⤷ .withdrawall\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-      `┏❐ ⚙️ ᴀᴅᴍɪɴ\n` +
-      `┃ ⚙️ ɢʀᴏᴜᴘ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ\n` +
-      `┃ ├ .kick\n┃ ├ .delete\n┃ ├ .promote\n┃ ├ .demote\n` +
-      `┃ ├ .mute\n┃ ├ .unmute\n┃ ├ .hidetag\n┃ ├ .tagall\n` +
-      `┃ ├ .groupinfo\n┃ ├ .groupstats\n┃ ├ .activity\n` +
-      `┃ ├ .active\n┃ ├ .inactive\n┃ ├ .open\n┃ ├ .close\n` +
-      `┃ ├ .welcome\n┃ ├ .setwelcome\n┃ ├ .leave\n┃ ├ .setleave\n` +
-      `┃ ├ .antilink\n┃ ├ .antispam\n┃ ├ .antibot\n` +
-      `┃ ├ .warn\n┃ ├ .resetwarn\n┃ ├ .blacklist\n┃ └ .checkadmin\n` +
-      `┗❐\n\n` +
+      `*🎲 GAMBLING 🎲*\n` +
+      `┃\n` +
+      `┃ ⤷ .coinflip <amount>\n` +
+      `┃ ⤷ .slots <amount>\n` +
+      `┃ ⤷ .blackjack <amount>\n` +
+      `┃ ⤷ .roulette <amount>\n` +
+      `┃ ⤷ .dice <amount>\n` +
+      `┃ ⤷ .lottery\n` +
+      `┃ ⤷ .bet <amount>\n` +
+      `┃ ⤷ .highlow <amount>\n` +
+      `┃ ⤷ .crash <amount>\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-      `┏❐ 💰 ᴇᴄᴏɴᴏᴍʏ\n` +
-      `┃ 💰 ᴇᴄᴏɴᴏᴍʏ ᴄᴏᴍᴍᴀɴᴅs\n` +
-      `┃ ├ .bal\n┃ ├ .balance\n┃ ├ .gems\n┃ ├ .daily\n` +
-      `┃ ├ .withdraw\n┃ ├ .deposit\n┃ ├ .donate\n┃ ├ .work\n` +
-      `┃ ├ .dig\n┃ ├ .fish\n┃ ├ .beg\n┃ ├ .richlist\n` +
-      `┃ ├ .leaderboard\n┃ ├ .shop\n┃ ├ .buy\n┃ ├ .inv\n┃ └ .sell\n` +
-      `┗❐\n\n` +
+      `*🎉 FUN 🎉*\n` +
+      `┃\n` +
+      `┃ ⤷ .joke\n` +
+      `┃ ⤷ .meme\n` +
+      `┃ ⤷ .quote\n` +
+      `┃ ⤷ .fact\n` +
+      `┃ ⤷ .8ball <question>\n` +
+      `┃ ⤷ .truth\n` +
+      `┃ ⤷ .dare\n` +
+      `┃ ⤷ .ship @user @user\n` +
+      `┃ ⤷ .rate @user\n` +
+      `┃ ⤷ .roast @user\n` +
+      `┃ ⤷ .compliment @user\n` +
+      `┃ ⤷ .pick <option1/option2>\n` +
+      `┃ ⤷ .reverse <text>\n` +
+      `┃ ⤷ .fliptext <text>\n` +
+      `┃ ⤷ .emojify <text>\n` +
+      `┃ ⤷ .rps <rock/paper/scissors>\n` +
+      `┃ ⤷ .wouldyourather\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-      `┏❐ 🎴 ᴄᴀʀᴅ sʏsᴛᴇᴍ\n` +
-      `┃ 🎴 ᴄᴀʀᴅ ᴄᴏᴍᴍᴀɴᴅs\n` +
-      `┃ ├ .collection\n┃ ├ .coll\n┃ ├ .deck\n┃ ├ .card\n┃ ├ .ci\n` +
-      `┃ ├ .mycolls\n┃ ├ .cardlb\n┃ ├ .get\n┃ ├ .stardust\n┃ ├ .vs\n` +
-      `┃ ├ .cg\n┃ ├ .sellc\n┃ ├ .tc\n┃ ├ .accept\n┃ ├ .decline\n` +
-      `┃ ├ .ctd\n┃ ├ .lc\n┃ ├ .lcd\n┃ ├ .retrieve\n` +
-      `┃ ├ .auction\n┃ ├ .myauc\n┃ └ .listauc\n` +
-      `┗❐\n\n` +
+      `*💞 INTERACTIONS 💞*\n` +
+      `┃\n` +
+      `┃ ⤷ .hug @user\n` +
+      `┃ ⤷ .kiss @user\n` +
+      `┃ ⤷ .pat @user\n` +
+      `┃ ⤷ .slap @user\n` +
+      `┃ ⤷ .punch @user\n` +
+      `┃ ⤷ .bite @user\n` +
+      `┃ ⤷ .cuddle @user\n` +
+      `┃ ⤷ .poke @user\n` +
+      `┃ ⤷ .tickle @user\n` +
+      `┃ ⤷ .wave @user\n` +
+      `┃ ⤷ .highfive @user\n` +
+      `┃ ⤷ .stare @user\n` +
+      `┃ ⤷ .blush\n` +
+      `┃ ⤷ .smile\n` +
+      `┃ ⤷ .cry\n` +
+      `┃ ⤷ .laugh\n` +
+      `┃ ⤷ .dance\n` +
+      `┃ ⤷ .angry\n` +
+      `┃ ⤷ .sleep\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-      `┏❐ 🎮 ɢᴀᴍᴇs\n` +
-      `┃ 🎮 ɢᴀᴍᴇ ᴄᴏᴍᴍᴀɴᴅs\n` +
-      `┃ ├ .ttt\n┃ ├ .c4\n┃ ├ .wcg\n┃ ├ .wordchain\n` +
-      `┃ ├ .truth\n┃ ├ .dare\n┃ ├ .8ball\n┃ ├ .flip\n` +
-      `┃ ├ .dice\n┃ ├ .math\n┃ ├ .trivia\n┃ ├ .rps\n` +
-      `┃ ├ .slots\n┃ ├ .casino\n┃ ├ .roulette\n┃ ├ .horse\n` +
-      `┃ ├ .spin\n┃ ├ .startbattle\n┃ └ .stopgame\n` +
-      `┗❐\n\n` +
+      `*🎮 GAMES 🎮*\n` +
+      `┃\n` +
+      `┃ ⤷ .tictactoe @user\n` +
+      `┃ ⤷ .hangman\n` +
+      `┃ ⤷ .quiz\n` +
+      `┃ ⤷ .trivia\n` +
+      `┃ ⤷ .mathquiz\n` +
+      `┃ ⤷ .wordgame\n` +
+      `┃ ⤷ .riddle\n` +
+      `┃ ⤷ .guessnumber\n` +
+      `┃ ⤷ .fasttype\n` +
+      `┃ ⤷ .minesweeper\n` +
+      `┃ ⤷ .snake\n` +
+      `┃ ⤷ .2048\n` +
+      `┃ ⤷ .duel @user\n` +
+      `┃ ⤷ .arcade\n` +
+      `┃ ⤷ .leaderboard\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-      `┏❐ 📜 ᴘᴏᴋᴇ́ᴍᴏɴ sʏsᴛᴇᴍ\n` +
-      `┃ 📜 ᴘᴏᴋᴇ́ᴍᴏɴ ᴄᴏᴍᴍᴀɴᴅs\n` +
-      `┃ ├ #phelp\n┃ ├ #start\n┃ ├ #hunt\n┃ ├ #catch\n` +
-      `┃ ├ #party\n┃ ├ #team\n┃ ├ #pc\n┃ ├ #dex\n` +
-      `┃ ├ #trainer\n┃ ├ #mart\n┃ ├ #mbuy\n┃ └ #use\n` +
-      `┗❐\n\n` +
+      `*🐾 POKÉMONS 🐾*\n` +
+      `┃\n` +
+      `┃ ⤷ .pokemon\n` +
+      `┃ ⤷ .party\n` +
+      `┃ ⤷ .pc\n` +
+      `┃ ⤷ .starter\n` +
+      `┃ ⤷ .catch\n` +
+      `┃ ⤷ .hunt\n` +
+      `┃ ⤷ .battle @user\n` +
+      `┃ ⤷ .heal\n` +
+      `┃ ⤷ .evolve <pokemon>\n` +
+      `┃ ⤷ .release <pokemon>\n` +
+      `┃ ⤷ .rename <pokemon> <name>\n` +
+      `┃ ⤷ .buddy <pokemon>\n` +
+      `┃ ⤷ .feed <pokemon>\n` +
+      `┃ ⤷ .train <pokemon>\n` +
+      `┃ ⤷ .moves <pokemon>\n` +
+      `┃ ⤷ .pokeshop\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-      `┏❐ ⚔️ ʀᴘɢ\n` +
-      `┃ ⚔️ ʀᴘɢ ᴄᴏᴍᴍᴀɴᴅs\n` +
-      `┃ ├ .rpg\n┃ ├ .selectclass\n┃ ├ .skillinfo\n┃ ├ .dungeon\n` +
-      `┃ ├ .attack\n┃ ├ .heavy\n┃ ├ .defend\n┃ ├ .special\n` +
-      `┃ ├ .heal\n┃ ├ .flee\n┃ ├ .adventure\n┃ ├ .quest\n┃ └ .raid\n` +
-      `┗❐\n\n` +
+      `*⬇️ DOWNLOADER ⬇️*\n` +
+      `┃\n` +
+      `┃ ⤷ .play <song>\n` +
+      `┃ ⤷ .ytmp3 <link>\n` +
+      `┃ ⤷ .ytmp4 <link>\n` +
+      `┃ ⤷ .tiktok <link>\n` +
+      `┃ ⤷ .instagram <link>\n` +
+      `┃ ⤷ .facebook <link>\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-      `┏❐ 🏰 ɢᴜɪʟᴅs\n` +
-      `┃ 🏰 ɢᴜɪʟᴅ ᴄᴏᴍᴍᴀɴᴅs\n` +
-      `┃ ├ .guild create\n┃ ├ .guild join\n┃ ├ .guild leave\n` +
-      `┃ ├ .guild info\n┃ ├ .guild list\n┃ ├ .guildbattle\n` +
-      `┃ ├ .guildleaderboard\n┃ ├ .guildraid\n┃ ├ .raidjoin\n┃ └ .raidattack\n` +
-      `┗❐\n\n` +
+      `*⚔️ RPG ⚔️*\n` +
+      `┃\n` +
+      `┃ ⤷ .rpg\n` +
+      `┃ ⤷ .stats\n` +
+      `┃ ⤷ .hunt\n` +
+      `┃ ⤷ .boss\n` +
+      `┃ ⤷ .raid\n` +
+      `┃ ⤷ .dungeon\n` +
+      `┃ ⤷ .quest\n` +
+      `┃ ⤷ .equip <item>\n` +
+      `┃ ⤷ .unequip <item>\n` +
+      `┃ ⤷ .skills\n` +
+      `┃ ⤷ .craft <item>\n` +
+      `┃ ⤷ .forge\n` +
+      `┃ ⤷ .shop\n` +
+      `┃ ⤷ .prestige\n` +
+      `┃ ⤷ .rparty\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-      `┏❐ 🤖 ᴀɪ\n` +
-      `┃ 🤖 ᴀɪ ᴄᴏᴍᴍᴀɴᴅs\n` +
-      `┃ ├ .ai\n┃ ├ .chatgpt\n┃ ├ .gpt\n┃ ├ .gemini\n` +
-      `┃ ├ .llama\n┃ ├ .deepseek\n┃ ├ .mistral\n┃ ├ .groq\n` +
-      `┃ ├ .flux\n┃ ├ .pixart\n┃ ├ .sdxl\n┃ ├ .pollinations\n` +
-      `┃ ├ .playground\n┃ └ .aidetect\n` +
-      `┗❐\n\n` +
+      `*🏰 GUILD 🏰*\n` +
+      `┃\n` +
+      `┃ ⤷ .createguild <name>\n` +
+      `┃ ⤷ .guild\n` +
+      `┃ ⤷ .guildinfo\n` +
+      `┃ ⤷ .joinguild <name>\n` +
+      `┃ ⤷ .leaveguild\n` +
+      `┃ ⤷ .invite @user\n` +
+      `┃ ⤷ .kickmember @user\n` +
+      `┃ ⤷ .guildtop\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-      `┏❐ 🖼️ sᴛɪᴄᴋᴇʀs\n` +
-      `┃ 🖼️ sᴛɪᴄᴋᴇʀ ᴄᴏᴍᴍᴀɴᴅs\n` +
-      `┃ ├ .s\n┃ ├ .sticker\n┃ ├ .take\n┃ ├ .steal\n┃ ├ .toimg\n` +
-      `┃ ├ .qc\n┃ ├ .emojimix\n┃ ├ .smeme\n┃ ├ .pat\n┃ ├ .slap\n` +
-      `┃ ├ .hug\n┃ ├ .kiss\n┃ ├ .bite\n┃ ├ .bonk\n┃ └ .dance\n` +
-      `┗❐\n\n` +
-
-      `┏❐ 🎭 ᴀɴɪᴍᴇ\n` +
-      `┃ 🎭 ᴀɴɪᴍᴇ ᴄᴏᴍᴍᴀɴᴅs\n` +
-      `┃ ├ .waifu\n┃ ├ .neko\n┃ ├ .animesearch\n┃ ├ .animekill\n` +
-      `┃ ├ .animebite\n┃ ├ .animewave\n┃ ├ .animewink\n┃ ├ .animebonk\n` +
-      `┃ ├ .megumin\n┃ ├ .mikasa\n┃ ├ .naruto\n┃ ├ .sasuke\n` +
-      `┃ ├ .itachi\n┃ ├ .madara\n┃ ├ .gojo\n┃ ├ .nezuko\n` +
-      `┃ ├ .kurumi\n┃ ├ .onepiece\n┃ └ .yumeko\n` +
-      `┗❐\n\n` +
-
-      `┏❐ 🔧 ᴜᴛɪʟɪᴛʏ\n` +
-      `┃ 🔧 ᴜᴛɪʟɪᴛʏ ᴄᴏᴍᴍᴀɴᴅs\n` +
-      `┃ ├ .currency\n┃ ├ .convert\n┃ ├ .translate\n┃ ├ .tr\n` +
-      `┃ ├ .calc\n┃ ├ .calculate\n┃ ├ .tts\n┃ ├ .say\n` +
-      `┃ ├ .tourl\n┃ ├ .tinyurl\n┃ ├ .shorturl\n┃ ├ .tovn\n` +
-      `┃ ├ .readmore\n┃ ├ .qr\n┃ ├ .qrcode\n┃ ├ .readqr\n` +
-      `┃ ├ .lyrics\n┃ ├ .movie\n┃ ├ .ytsearch\n┃ ├ .google\n` +
-      `┃ ├ .weather\n┃ ├ .wiki\n┃ ├ .news\n┃ ├ .ssweb\n┃ └ .myip\n` +
-      `┗❐\n\n` +
-
-      `┏❐ 🖼️ ɪᴍᴀɢᴇ\n` +
-      `┃ 🖼️ ɪᴍᴀɢᴇ ᴛᴏᴏʟs\n` +
-      `┃ ├ .removebg\n┃ ├ .nobg\n┃ ├ .enhance\n┃ ├ .remini\n` +
-      `┃ ├ .upscale\n┃ ├ .toanime\n┃ ├ .cartoon\n┃ ├ .carbon\n` +
-      `┃ ├ .jail\n┃ ├ .gun\n┃ ├ .city\n┃ ├ .night\n┃ ├ .sunset\n┃ └ .rain\n` +
-      `┗❐\n\n` +
-
-      `┏❐ 📥 ᴅᴏᴡɴʟᴏᴀᴅ\n` +
-      `┃ 📥 ᴅᴏᴡɴʟᴏᴀᴅ ᴄᴏᴍᴍᴀɴᴅs\n` +
-      `┃ ├ .ytmp4\n┃ ├ .ytmp3\n┃ ├ .tiktok\n┃ ├ .instagram\n` +
-      `┃ ├ .facebook\n┃ ├ .twitter\n┃ ├ .threads\n┃ ├ .capcut\n` +
-      `┃ ├ .mediafire\n┃ ├ .apk\n┃ ├ .pinterest\n┃ └ .wallpaper\n` +
-      `┗❐\n\n` +
-
-      `┏❐ 📜 ɪɴꜰᴏ\n` +
-      `┃ 📜 ɪɴꜰᴏ ᴄᴏᴍᴍᴀɴᴅs\n` +
-      `┃ ├ .law\n┃ ├ .pbenefits\n┃ ├ .mods\n┃ ├ .report\n┃ └ .leaderboard\n` +
-      `┗❐`
+      `*🎴 CARDS 🎴*\n` +
+      `┃\n` +
+      `┃ ⤷ .collection / .coll\n` +
+      `┃ ⤷ .deck\n` +
+      `┃ ⤷ .card\n` +
+      `┃ ⤷ .ci\n` +
+      `┃ ⤷ .mycolls\n` +
+      `┃ ⤷ .cardlb\n` +
+      `┃ ⤷ .get\n` +
+      `┃ ⤷ .stardust\n` +
+      `┃ ⤷ .vs\n` +
+      `┃ ⤷ .cg\n` +
+      `┃ ⤷ .sellc\n` +
+      `┃ ⤷ .tc\n` +
+      `┃ ⤷ .accept\n` +
+      `┃ ⤷ .decline\n` +
+      `┃ ⤷ .ctd\n` +
+      `┃ ⤷ .lc\n` +
+      `┃ ⤷ .lcd\n` +
+      `┃ ⤷ .retrieve\n` +
+      `┃ ⤷ .auction\n` +
+      `┃ ⤷ .myauc\n` +
+      `┃ ⤷ .listauc\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━`
 
     if (fs.existsSync(MENU_IMAGE)) {
       await sock.sendMessage(jid, { image: { url: MENU_IMAGE }, caption: menuText }, { quoted: msg })
@@ -198,7 +314,7 @@ module.exports = {
 
   async speed({ sock, msg, jid }) {
     const start = Date.now()
-    const s1 = await sock.sendMessage(jid, { text: '⚡ Testing...' }, { quoted: msg })
+    await sock.sendMessage(jid, { text: '⚡ Testing...' }, { quoted: msg })
     await sock.sendMessage(jid, { text: `⚡ Done in ${Date.now() - start}ms` }, { quoted: msg })
   },
 
@@ -215,7 +331,7 @@ module.exports = {
   },
 
   async script({ reply }) {
-    await reply(`📜 Shadow Garden Bot v${BOT_VERSION}\nDev: Ryuk`)
+    await reply(`📜 Konosuba Community Bot v${BOT_VERSION}`)
   },
 
   async vv({ sock, msg, jid, reply }) {
@@ -273,11 +389,11 @@ module.exports = {
     const mem        = process.memoryUsage()
     await sock.sendMessage(jid, {
       text:
-        `📌 *BOT INFORMATION*\n\n🤖 *Name:* ${global.botName || 'Shadow Garden Bot'}\n⚙️ *Version:* ${BOT_VERSION}\n` +
+        `📌 *BOT INFORMATION*\n\n🤖 *Name:* ${global.botName || 'Konosuba Bot'}\n⚙️ *Version:* ${BOT_VERSION}\n` +
         `📡 *Status:* Online\n⚡ *Speed:* ${ping} ms\n\n` +
         `👥 *Users:* ${userCount}\n🏠 *Groups:* ${groupCount}\n` +
         `🧠 *RAM:* ${(mem.heapUsed / 1024 / 1024).toFixed(1)} MB\n\n` +
-        `📊 *Uptime:* ${uptime()}\n👤 *Dev:* Ryuk`
+        `📊 *Uptime:* ${uptime()}`
     }, { quoted: msg })
   },
 
@@ -335,7 +451,7 @@ module.exports = {
 
   async law({ reply }) {
     await reply(
-      `📜 *SHADOW GARDEN LAWS AND REGULATIONS* 📜\n\n*(All members must comply with these rules at all times)*\n\n` +
+      `📜 *KONOSUBA COMMUNITY LAWS AND REGULATIONS* 📜\n\n*(All members must comply with these rules at all times)*\n\n` +
       `⚖️ *BASIC RULES*\n\n` +
       `1. Respect all Moderators, Guardians, and Staff at all times.\n\n` +
       `2. Maintain proper behavior in all community spaces.\n\n` +
@@ -370,7 +486,7 @@ module.exports = {
 
   async pbenefits({ reply }) {
     await reply(
-      `『 𝗦𝗛𝗔𝗗𝗢𝗪 𝗚𝗔𝗥𝗗𝗘𝗡 𝗣𝗥𝗘𝗠𝗜𝗨𝗠 』 ◈════════════════════◈\n\n` +
+      `『 𝗞𝗢𝗡𝗢𝗦𝗨𝗕𝗔 𝗣𝗥𝗘𝗠𝗜𝗨𝗠 』 ◈════════════════════◈\n\n` +
       `✨ *PREMIUM BENEFITS*\n\n` +
       `💰 *Instant Reward*\n\nReceive 500,000 coins deposited into your bank upon activation.\n\n` +
       `⚡ *Boosted Efficiency*\n\n75% cooldown reduction on all bot commands.\n(Excludes daily reward commands.)\n\n` +
@@ -378,12 +494,11 @@ module.exports = {
       `🏷️ *Personalization Perks*\n\nCustom mention sticker for your profile.\n\nAnimated profile & background effects.\n\nAnimated card deck backgrounds.\n\n` +
       `◈════════════════════◈\n\n` +
       `🛒 *HOW TO PURCHASE PREMIUM*\n\n` +
-      `1. Be aware that Premium requires payment to activate.\n\n` +
-      `2. Use: *.mods* to contact staff.\n\n` +
-      `3. A moderator will respond with full purchase instructions.\n\n` +
-      `4. Follow the official steps to complete your purchase.\n\n` +
+      `1. Use: *.mods* to contact staff.\n\n` +
+      `2. A moderator will respond with full purchase instructions.\n\n` +
+      `3. Follow the official steps to complete your purchase.\n\n` +
       `◈════════════════════◈\n\n` +
-      `📌 All transactions must be handled only by official staff members.\nDo not trust unofficial sellers or third parties.\n\n` +
+      `📌 All transactions must be handled only by official staff members.\n\n` +
       `◈════════════════════◈`
     )
   },
@@ -420,31 +535,30 @@ module.exports = {
   },
 
   async modlist({ sock, jid, msg, reply, isGroup }) {
-    const { data: mods }      = await db.supabase.from('users').select('phone,name').eq('role', 'mod')
-    const { data: guardians } = await db.supabase.from('users').select('phone,name').eq('role', 'guardian')
+    const staffUsers = await db.getMods().catch(() => [])
+    const mods      = (staffUsers || []).filter(u => u.role === 'mod')
+    const guardians = (staffUsers || []).filter(u => u.role === 'guardian')
 
-    const modList      = mods      || []
-    const guardianList = guardians || []
-    const phoneToJid   = isGroup ? await buildPhoneMap(sock, jid) : {}
+    const phoneToJid = isGroup ? await buildPhoneMap(sock, jid) : {}
 
     const allMentions = [
-      ...modList.map(u => phoneToJid[u.phone] || `${u.phone}@s.whatsapp.net`),
-      ...guardianList.map(u => phoneToJid[u.phone] || `${u.phone}@s.whatsapp.net`),
+      ...mods.map(u => phoneToJid[u.phone] || `${u.phone}@s.whatsapp.net`),
+      ...guardians.map(u => phoneToJid[u.phone] || `${u.phone}@s.whatsapp.net`),
     ]
 
-    const modLines = modList.length
-      ? modList.map((u, i) => {
+    const modLines = mods.length
+      ? mods.map((u, i) => {
           const resolved   = phoneToJid[u.phone] || `${u.phone}@s.whatsapp.net`
           const displayNum = resolved.split('@')[0].split(':')[0]
-          return `│   ${i === modList.length - 1 ? '└──' : '├──'} @${displayNum}`
+          return `│   ${i === mods.length - 1 ? '└──' : '├──'} @${displayNum}`
         }).join('\n')
       : '│   └── None'
 
-    const guardianLines = guardianList.length
-      ? guardianList.map((u, i) => {
+    const guardianLines = guardians.length
+      ? guardians.map((u, i) => {
           const resolved   = phoneToJid[u.phone] || `${u.phone}@s.whatsapp.net`
           const displayNum = resolved.split('@')[0].split(':')[0]
-          return `     ${i === guardianList.length - 1 ? '└──' : '├──'} @${displayNum}`
+          return `     ${i === guardians.length - 1 ? '└──' : '├──'} @${displayNum}`
         }).join('\n')
       : '     └── None'
 
@@ -512,14 +626,21 @@ module.exports = {
 
   async dbstatus({ reply, isOwner }) {
     if (!isOwner) return reply('⚠️ Owner only.')
-    const tables = ['users','groups','warnings','afk','messages','cooldowns','inventory','cards','user_cards','user_pokemon','games','guilds','guild_members','blacklist','disabled_commands']
-    const results = await Promise.all(tables.map(async t => {
-      try {
-        const { count, error } = await db.supabase.from(t).select('*', { count: 'exact', head: true })
-        return { t, ok: !error, count: count || 0 }
-      } catch { return { t, ok: false } }
-    }))
-    const lines = results.map(r => `${r.ok ? '✅' : '❌'} ${r.t}${r.ok ? ` (${r.count})` : ' — MISSING'}`).join('\n')
-    await reply(`🗄️ *DB STATUS*\n\n${lines}\n\n📊 ${results.filter(r => r.ok).length}/${tables.length} ready`)
+    const collections = ['users','groups','warnings','afk','messages','cooldowns','inventory','cards','usercards','userpokemons','games','guilds','guildmembers','blacklists','disabledcommands']
+    try {
+      const db_module = require('../database')
+      const mongoose  = db_module.mongoose
+      const counts = await Promise.all(collections.map(async c => {
+        try {
+          const col = mongoose.connection.db?.collection(c)
+          const n   = col ? await col.countDocuments() : '?'
+          return { c, ok: true, n }
+        } catch { return { c, ok: false } }
+      }))
+      const lines = counts.map(r => `${r.ok ? '✅' : '❌'} ${r.c}${r.ok ? ` (${r.n})` : ' — error'}`).join('\n')
+      await reply(`🗄️ *DB STATUS (MongoDB)*\n\n${lines}`)
+    } catch (e) {
+      await reply(`❌ DB error: ${e.message}`)
+    }
   },
 }

@@ -312,7 +312,7 @@ module.exports = {
   async join({ sock, reply, args, isOwner, isMod, isGuardian }) {
     if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
     const link = args[0]
-    if (!link) return reply('⚠️ Usage: *.join <invite link>*\n\nExample: .join https://chat.whatsapp.com/AbCd1234')
+    if (!link) return reply('❌ Usage: *.join <invite link>*\n\nExample: .join https://chat.whatsapp.com/AbCd1234')
     try {
       const code = link.includes('chat.whatsapp.com/')
         ? link.split('chat.whatsapp.com/')[1].split(/[?/ ]/)[0]
@@ -485,7 +485,7 @@ module.exports = {
   async rob({ sock, msg, jid, sender, user, reply }) {
     const u = user || await db.getOrCreateUser(sender)
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.rob @user*')
+    if (!mentioned.length) return reply('❌ Usage: *.rob @user*')
 
     const cdLeft = await db.getCooldown(sender, 'rob').catch(() => 0)
     if (cdLeft > 0) {
@@ -567,7 +567,7 @@ module.exports = {
   async launder({ sock, msg, jid, sender, user, args, reply }) {
     const u = user || await db.getOrCreateUser(sender)
     const amount = parseInt(args[0])
-    if (!amount || amount < 500) return reply('⚠️ Usage: *.launder <amount>*\n\nMinimum: 500 Bnhz')
+    if (!amount || amount < 500) return reply('❌ Usage: *.launder <amount>*\n\nMinimum: 500 Bnhz')
     if (amount > (u.wallet || 0)) return reply(`❌ Not enough! You have *${(u.wallet||0).toLocaleString()} Bnhz*`)
 
     const fee     = Math.floor(amount * 0.25)
@@ -1356,10 +1356,10 @@ module.exports = {
   // ─── .replist ─────────────────────────────────────────────────────────────────
   async replist({ sock, msg, jid, reply }) {
     await reply('⭐ *Fetching rep leaderboard...*')
-    const { data } = await db.supabase.from('users').select('name,phone,reputation').order('reputation', { ascending: false }).limit(10)
+    const data = await require('../database').getLeaderboard(10)
     if (!data || !data.length) return reply('❌ No rep data found.')
     const medals = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟']
-    const lines  = data.map((u, i) => `${medals[i]} *${u.name || u.phone}* — ${u.reputation || 0} ⭐`).join('\n')
+    const lines  = data.map((u, i) => `${medals[i]} *${u.name || u.phone}* — ${u.reputation || u.xp || 0} ⭐`).join('\n')
     await sock.sendMessage(jid, {
       text: `⭐ *REP LEADERBOARD — TOP 10*\n━━━━━━━━━━━━━━━━━━━━\n\n${lines}\n\n━━━━━━━━━━━━━━━━━━━━\n_Build your legacy._ 🖤`
     }, { quoted: msg })
@@ -1813,7 +1813,7 @@ module.exports = {
   async resetstreak({ msg, reply, isOwner, isMod, isGuardian }) {
     if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
     const mentioned   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.resetstreak @user*')
+    if (!mentioned.length) return reply('❌ Usage: *.resetstreak @user*')
     const targetPhone = mentioned[0].split('@')[0].split(':')[0]
     await db.updateUser(targetPhone, { streak: 0 })
     await reply(`✅ Streak reset for *${targetPhone}*.`)
@@ -1823,7 +1823,7 @@ module.exports = {
   async refund({ msg, args, reply, isOwner, isMod }) {
     if (!isOwner && !isMod) return reply('⚠️ Mod/Owner only.')
     const mentioned   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.refund @user <amount>*')
+    if (!mentioned.length) return reply('❌ Usage: *.refund @user <amount>*')
     const targetPhone = mentioned[0].split('@')[0].split(':')[0]
     const amount      = parseInt(args.find(a => /^\d+$/.test(a)))
     if (!amount || amount < 1) return reply('❌ Provide a valid amount.')
@@ -1837,7 +1837,7 @@ module.exports = {
   // ─── .remap <prefix> [Owner] ──────────────────────────────────────────────────
   async remap({ args, reply, isOwner }) {
     if (!isOwner) return reply('⚠️ Owner only.')
-    if (!args.length) return reply('⚠️ Usage: *.remap <new_prefix>*\n\nExample: *.remap !*')
+    if (!args.length) return reply('❌ Usage: *.remap <new_prefix>*\n\nExample: *.remap !*')
     const newPrefix = args[0].trim().slice(0, 3)
     if (!newPrefix) return reply('❌ Invalid prefix.')
     global.prefix = newPrefix

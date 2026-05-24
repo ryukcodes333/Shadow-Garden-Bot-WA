@@ -6,13 +6,7 @@ const os = require('os')
 const path = require('path')
 const fs = require('fs')
 
-const { createClient } = require('@supabase/supabase-js')
-function getSupabase() {
-  return createClient(
-    process.env.SUPABASE_URL || 'https://uwpcfhrbffhegfvxmxoa.supabase.co',
-    process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cGNmaHJiZmZoZWdmdnhteG9hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NDUwMTgsImV4cCI6MjA5MzMyMTAxOH0.jvqoR2I0-irG1Xbh36eTMfmHFJYK-6Bo0IxIyVclQmA'
-  )
-}
+// MongoDB-based image storage — stores images as base64 data URLs in the user document
 
 // Download an attached or quoted image from a message, returns buffer or null
 async function getImageBuffer(sock, msg) {
@@ -124,15 +118,10 @@ async function extractVideoFrame(videoBuf) {
   }
 }
 
-// Upload a buffer to Supabase storage, return public URL
-async function uploadToStorage(buffer, path, mime = 'image/jpeg') {
-  const supabase = getSupabase()
-  const { error } = await supabase.storage
-    .from('card-images')
-    .upload(path, buffer, { contentType: mime, upsert: true })
-  if (error) throw new Error(error.message)
-  const { data } = supabase.storage.from('card-images').getPublicUrl(path)
-  return data.publicUrl
+// Store image buffer as base64 data URL (saved directly in MongoDB user document)
+async function uploadToStorage(buffer, storagePath, mime = 'image/jpeg') {
+  const base64 = buffer.toString('base64')
+  return `data:${mime};base64,${base64}`
 }
 
 module.exports = {
@@ -307,19 +296,7 @@ module.exports = {
         { quoted: msg }
       )
     } catch (err) {
-      if (err.message && err.message.includes('row-level security')) {
-        return reply(
-          `❌ *UPLOAD BLOCKED — RLS Policy Missing*\n\n` +
-          `Run this SQL in your *Supabase SQL Editor* once:\n\n` +
-          `CREATE POLICY "allow_all_card_images"\n` +
-          `ON storage.objects AS PERMISSIVE\n` +
-          `FOR ALL TO public\n` +
-          `USING (bucket_id = 'card-images')\n` +
-          `WITH CHECK (bucket_id = 'card-images');\n\n` +
-          `Then try *.setpp* again. 🖤`
-        )
-      }
-      await reply(`❌ Failed to upload profile picture: ${err.message}`)
+      await reply(`❌ Failed to save profile picture: ${err.message}`)
     }
   },
 
@@ -396,19 +373,7 @@ module.exports = {
         { quoted: msg }
       )
     } catch (err) {
-      if (err.message && err.message.includes('row-level security')) {
-        return reply(
-          `❌ *UPLOAD BLOCKED — RLS Policy Missing*\n\n` +
-          `Run this SQL in your *Supabase SQL Editor* once:\n\n` +
-          `CREATE POLICY "allow_all_card_images"\n` +
-          `ON storage.objects AS PERMISSIVE\n` +
-          `FOR ALL TO public\n` +
-          `USING (bucket_id = 'card-images')\n` +
-          `WITH CHECK (bucket_id = 'card-images');\n\n` +
-          `Then try *.setbg* again. 🖤`
-        )
-      }
-      await reply(`❌ Failed to upload background: ${err.message}`)
+      await reply(`❌ Failed to save background: ${err.message}`)
     }
   },
 
@@ -498,17 +463,7 @@ module.exports = {
     const result = await db.updateUser(sender, { profile_frame: id })
 
     if (!result) {
-      return reply(
-        `❌ *SETFRAME FAILED*\n\n` +
-        `The profile columns don't exist in your database yet.\n\n` +
-        `Run this SQL in your *Supabase SQL Editor*:\n\n` +
-        `ALTER TABLE users\n` +
-        `  ADD COLUMN IF NOT EXISTS profile_frame INTEGER DEFAULT 1,\n` +
-        `  ADD COLUMN IF NOT EXISTS profile_pp TEXT DEFAULT NULL,\n` +
-        `  ADD COLUMN IF NOT EXISTS profile_bg TEXT DEFAULT NULL;\n\n` +
-        `Then try *.setframe* again.\n\n` +
-        `_The schema must be updated first._ 🖤`
-      )
+      return reply('❌ Could not update frame. Make sure your profile exists. Try `.p` first.')
     }
 
     await reply(

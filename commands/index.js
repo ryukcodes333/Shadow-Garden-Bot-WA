@@ -23,7 +23,7 @@ const profileCmds     = require('./profile')
 const aiCmds          = require('./ai')
 const utilityCmds     = require('./utility')
 const imagesCmds      = require('./images')
-const { alphaChatReply, getSuspension } = require('./chat')
+const { alphaChatReply } = require('./chat')
 
 const PREFIX      = global.prefix   || '.'
 const POKE_PREFIX = '#'
@@ -225,7 +225,7 @@ async function handleMessage(sock, msg) {
 
   // ── Suspension check (sender) ─────────────────────────────────
   if (!isOwner && cmd !== 'p' && cmd !== 'profile') {
-    const suspension = await getSuspension(db.supabase, sender).catch(() => null)
+    const suspension = await db.getSuspension(sender).catch(() => null)
     if (suspension) {
       const until = new Date(suspension.suspended_until).toLocaleString('en-US', {
         month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
@@ -246,7 +246,7 @@ async function handleMessage(sock, msg) {
     const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     for (const mJid of mentions) {
       const mPhone = mJid.split('@')[0].split(':')[0]
-      const mSusp = await getSuspension(db.supabase, mPhone).catch(() => null)
+      const mSusp = await db.getSuspension(mPhone).catch(() => null)
       if (mSusp) {
         const until = new Date(mSusp.suspended_until).toLocaleString('en-US', {
           month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
@@ -293,7 +293,7 @@ async function handleMessage(sock, msg) {
 
   if (!user && !NO_DB_CMDS.has(cmd)) {
     return reply(
-      `⚠️ *Database Not Set Up*\n\nSupabase tables haven't been created yet.\nRun *setup.sql* in your Supabase SQL Editor to fix this.`
+      `⚠️ *Database Not Set Up*\n\nMongoDB is not connected.\nCheck your MONGO_URI environment variable.`
     )
   }
 

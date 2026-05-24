@@ -4,17 +4,15 @@ module.exports = {
   async bet({ reply, sender, user, args }) {
     const u = user || await db.getOrCreateUser(sender)
     const amount = parseInt(args[0])
-    if (!amount || amount <= 0) return reply('⚠️ Usage: .bet <amount>')
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough coins! You have $${u.wallet || 0}`)
+    if (!amount || amount <= 0) return reply('❌ Usage: `.bet <amount>`')
+    if (amount > (u.wallet || 0)) return reply(`❌ Not enough coins! Wallet: $${(u.wallet || 0).toLocaleString()}`)
     const roll = Math.random()
     const win  = roll > 0.5
     const multiplier = win ? (roll > 0.9 ? 3 : roll > 0.75 ? 2 : 1.5) : 0
     const net  = win ? Math.floor(amount * multiplier) - amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
-    if (win) {
-      return reply(`🎲 *WIN!*\n\n💰 $${amount} × ${multiplier} → +$${Math.floor(amount * multiplier)}\n💵 Balance: $${((u.wallet || 0) + net).toLocaleString()}`)
-    }
-    return reply(`🎲 *LOST*\n\n💸 -$${amount}\n💵 Balance: $${((u.wallet || 0) - amount).toLocaleString()}`)
+    if (win) return reply(`🎲 *WIN!*\n\n$${amount} × ${multiplier} → *+$${Math.floor(amount * multiplier)}*\n💵 Balance: $${((u.wallet || 0) + net).toLocaleString()}`)
+    return reply(`🎲 *LOST*\n\n-$${amount}\n💵 Balance: $${((u.wallet || 0) - amount).toLocaleString()}`)
   },
 
   async cf({ reply, sender, user, args }) {
@@ -22,17 +20,17 @@ module.exports = {
     const choice = args[0]?.toLowerCase()
     const amount = parseInt(args[1])
     if (!['heads', 'tails', 'h', 't'].includes(choice) || !amount || amount <= 0) {
-      return reply('⚠️ Usage: .cf heads/tails <amount>')
+      return reply('❌ Usage: `.cf heads/tails <amount>`')
     }
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! You have $${u.wallet || 0}`)
+    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! Wallet: $${(u.wallet || 0).toLocaleString()}`)
     const flip       = Math.random() > 0.5 ? 'heads' : 'tails'
     const normalised = choice === 'h' ? 'heads' : choice === 't' ? 'tails' : choice
     const win        = normalised === flip
     const net        = win ? amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     return reply(
-      `🪙 *Coin Flip*\n\n` +
-      `Your bet: ${normalised.toUpperCase()} | Result: ${flip.toUpperCase()}\n\n` +
+      `🪙 *Coin Flip!*\n\n` +
+      `Your bet: *${normalised.toUpperCase()}* | Result: *${flip.toUpperCase()}*\n\n` +
       `${win ? `✅ +$${amount}` : `❌ -$${amount}`}\n` +
       `💵 $${((u.wallet || 0) + net).toLocaleString()}`
     )
@@ -41,8 +39,8 @@ module.exports = {
   async slots({ reply, sender, user, args }) {
     const u      = user || await db.getOrCreateUser(sender)
     const amount = parseInt(args[0])
-    if (!amount || amount <= 0) return reply('⚠️ Usage: .slots <amount>')
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! You have $${u.wallet || 0}`)
+    if (!amount || amount <= 0) return reply('❌ Usage: `.slots <amount>`')
+    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! Wallet: $${(u.wallet || 0).toLocaleString()}`)
     const symbols  = ['🍒', '🍋', '🍇', '⭐', '💎', '🔔', '🃏']
     const reels    = [0, 1, 2].map(() => symbols[Math.floor(Math.random() * symbols.length)])
     let multiplier = 0, label = 'No Match'
@@ -56,7 +54,7 @@ module.exports = {
     const net = multiplier > 0 ? Math.floor(amount * multiplier) - amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     return reply(
-      `🎰 *Slots*\n\n│ ${reels[0]} │ ${reels[1]} │ ${reels[2]} │\n\n` +
+      `🎰 *Slots!*\n\n│ ${reels[0]} │ ${reels[1]} │ ${reels[2]} │\n\n` +
       `${multiplier > 0 ? `🏆 ${label} — +$${Math.floor(amount * multiplier)}` : `❌ Miss — -$${amount}`}\n` +
       `💵 $${((u.wallet || 0) + net).toLocaleString()}`
     )
@@ -68,16 +66,16 @@ module.exports = {
     const amount = parseInt(args[0])
     const guess  = parseInt(args[1])
     if (!amount || !guess || guess < 1 || guess > 6) {
-      return reply('⚠️ Usage: .dice <amount> <guess 1-6>')
+      return reply('❌ Usage: `.dice <amount> <guess 1-6>`')
     }
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough coins!`)
+    if (amount > (u.wallet || 0)) return reply(`❌ Not enough coins! Wallet: $${(u.wallet || 0).toLocaleString()}`)
     const roll = Math.floor(Math.random() * 6) + 1
     const win  = roll === guess
     const net  = win ? amount * 5 - amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     return reply(
-      `🎲 *Dice*\n\nGuess: ${guess} | Rolled: *${roll}*\n\n` +
-      `${win ? `🏆 Correct! +$${amount * 5} (5x)` : `❌ Wrong! -$${amount}`}\n` +
+      `🎲 *Dice Roll!*\n\nGuess: ${guess} | Rolled: *${roll}*\n\n` +
+      `${win ? `🏆 Correct! *+$${amount * 5}* (×5)` : `❌ Wrong! -$${amount}`}\n` +
       `💵 $${((u.wallet || 0) + net).toLocaleString()}`
     )
   },
@@ -87,9 +85,9 @@ module.exports = {
     const amount = parseInt(args[1]) || parseInt(args[0])
     const choice = (args[0]?.toLowerCase() === args[0] && isNaN(parseInt(args[0]))) ? args[0].toLowerCase() : null
     if (!choice || !['rock', 'paper', 'scissors', 'r', 'p', 's'].includes(choice)) {
-      return reply('⚠️ Usage: .rps <rock/paper/scissors> <amount>')
+      return reply('❌ Usage: `.rps <rock/paper/scissors> <amount>`')
     }
-    if (!amount || amount <= 0 || amount > (u.wallet || 0)) return reply(`❌ Invalid amount. You have $${u.wallet || 0}`)
+    if (!amount || amount <= 0 || amount > (u.wallet || 0)) return reply(`❌ Invalid amount. Wallet: $${(u.wallet || 0).toLocaleString()}`)
     const map        = { r: 'rock', p: 'paper', s: 'scissors' }
     const playerMove = map[choice] || choice
     const moves      = ['rock', 'paper', 'scissors']
@@ -101,8 +99,8 @@ module.exports = {
     const net = result === 'win' ? amount : result === 'draw' ? 0 : -amount
     if (result !== 'draw') await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     return reply(
-      `🪨📄✂️ *RPS*\n\nYou: ${emojis[playerMove]} | Bot: ${emojis[botMove]}\n\n` +
-      `${result === 'win' ? `🏆 WIN! +$${amount}` : result === 'draw' ? `🤝 Draw` : `❌ Lose! -$${amount}`}\n` +
+      `🪨📄✂️ *Rock Paper Scissors!*\n\nYou: ${emojis[playerMove]} | Bot: ${emojis[botMove]}\n\n` +
+      `${result === 'win' ? `🏆 WIN! *+$${amount}*` : result === 'draw' ? `🤝 Draw` : `❌ Lose! -$${amount}`}\n` +
       `💵 $${((u.wallet || 0) + net).toLocaleString()}`
     )
   },
@@ -110,8 +108,8 @@ module.exports = {
   async blackjack({ reply, sender, user, args }) {
     const u      = user || await db.getOrCreateUser(sender)
     const amount = parseInt(args[0])
-    if (!amount || amount <= 0) return reply('⚠️ Usage: .blackjack <amount>')
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! You have $${u.wallet || 0}`)
+    if (!amount || amount <= 0) return reply('❌ Usage: `.blackjack <amount>`')
+    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! Wallet: $${(u.wallet || 0).toLocaleString()}`)
     const card       = () => Math.min(Math.floor(Math.random() * 13) + 1, 10)
     const playerCards = [card(), card()]
     const dealerCards = [card(), card()]
@@ -125,11 +123,11 @@ module.exports = {
     const net = result === 'win' ? amount : result === 'draw' ? 0 : -amount
     if (result !== 'draw') await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     return reply(
-      `🃏 *Blackjack*\n\n` +
+      `🃏 *Blackjack!*\n\n` +
       `🎴 You: ${playerCards.join('+')} = *${playerSum}*\n` +
       `🤖 Dealer: ${dealerCards.join('+')} = *${dealerSum}*\n\n` +
       `${playerBust ? '💥 BUST! ' : dealerBust ? '💥 Dealer BUST! ' : ''}` +
-      `${result === 'win' ? `🏆 WIN! +$${amount}` : result === 'draw' ? `🤝 Push` : `❌ Lose -$${amount}`}\n` +
+      `${result === 'win' ? `🏆 WIN! *+$${amount}*` : result === 'draw' ? `🤝 Push` : `❌ Lose -$${amount}`}\n` +
       `💵 $${((u.wallet || 0) + net).toLocaleString()}`
     )
   },
@@ -139,8 +137,8 @@ module.exports = {
   async poker({ reply, sender, user, args }) {
     const u      = user || await db.getOrCreateUser(sender)
     const amount = parseInt(args[0])
-    if (!amount || amount <= 0) return reply('⚠️ Usage: .poker <amount>')
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! You have $${u.wallet || 0}`)
+    if (!amount || amount <= 0) return reply('❌ Usage: `.poker <amount>`')
+    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! Wallet: $${(u.wallet || 0).toLocaleString()}`)
     const suits  = ['♠️', '♥️', '♦️', '♣️']
     const values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
     const deck   = suits.flatMap(s => values.map(v => `${v}${s}`))
@@ -153,8 +151,8 @@ module.exports = {
     const net  = mult > 0 ? Math.floor(amount * mult) - amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     return reply(
-      `🂡 *Poker*\n\n🃏 ${hand.join(' ')}\n\n🎯 ${handName}\n` +
-      `${mult > 0 ? `🏆 WIN! ${mult}x → +$${Math.floor(amount * mult)}` : `❌ No win — -$${amount}`}\n` +
+      `🂡 *Poker!*\n\n🃏 ${hand.join(' ')}\n\n🎯 ${handName}\n` +
+      `${mult > 0 ? `🏆 WIN! ×${mult} → *+$${Math.floor(amount * mult)}*` : `❌ No win — -$${amount}`}\n` +
       `💵 $${((u.wallet || 0) + net).toLocaleString()}`
     )
   },
@@ -162,8 +160,8 @@ module.exports = {
   async spin({ reply, sender, user, args }) {
     const u      = user || await db.getOrCreateUser(sender)
     const amount = parseInt(args[0])
-    if (!amount || amount <= 0) return reply('⚠️ Usage: .spin <amount>')
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough coins!`)
+    if (!amount || amount <= 0) return reply('❌ Usage: `.spin <amount>`')
+    if (amount > (u.wallet || 0)) return reply(`❌ Not enough coins! Wallet: $${(u.wallet || 0).toLocaleString()}`)
     const outcomes = [
       { label: '💀 Bankrupt', mult: 0 },
       { label: '💸 ×0.5',    mult: 0.5 },
@@ -177,7 +175,7 @@ module.exports = {
     const net    = Math.floor(amount * result.mult) - amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     return reply(
-      `🎡 *Wheel Spin*\n\n🎯 *${result.label}*\n\n` +
+      `🎡 *Wheel Spin!*\n\n🎯 *${result.label}*\n\n` +
       `${net >= 0 ? `💰 +$${net}` : `💸 -$${Math.abs(net)}`}\n` +
       `💵 $${((u.wallet || 0) + net).toLocaleString()}`
     )
@@ -188,9 +186,9 @@ module.exports = {
     const bet    = args[0]?.toLowerCase()
     const amount = parseInt(args[1])
     if (!bet || !amount || amount <= 0) {
-      return reply('⚠️ Usage: .roulette <red/black/green/odd/even/number> <amount>\n\nExample: .roulette red 500')
+      return reply('❌ Usage: `.roulette <red/black/green/odd/even/number> <amount>`\n\nExample: `.roulette red 500`')
     }
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! You have $${u.wallet || 0}`)
+    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! Wallet: $${(u.wallet || 0).toLocaleString()}`)
     const num    = Math.floor(Math.random() * 37)
     const color  = num === 0 ? 'green' : num % 2 === 0 ? 'black' : 'red'
     const emoji  = color === 'green' ? '🟢' : color === 'red' ? '🔴' : '⚫'
@@ -204,10 +202,10 @@ module.exports = {
     const net = win ? Math.floor(amount * mult) - amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     return reply(
-      `🎰 *Roulette*\n\n` +
+      `🎰 *Roulette!*\n\n` +
       `${emoji} Ball landed on: *${num}* (${color})\n` +
       `Your bet: *${bet}*\n\n` +
-      `${win ? `🏆 WIN! ×${mult} → +$${Math.floor(amount * mult)}` : `❌ Lose -$${amount}`}\n` +
+      `${win ? `🏆 WIN! ×${mult} → *+$${Math.floor(amount * mult)}*` : `❌ Lose -$${amount}`}\n` +
       `💵 $${((u.wallet || 0) + net).toLocaleString()}`
     )
   },
@@ -217,21 +215,20 @@ module.exports = {
     const horse  = parseInt(args[0])
     const amount = parseInt(args[1])
     if (!horse || horse < 1 || horse > 6 || !amount || amount <= 0) {
-      return reply('⚠️ Usage: .horse <1-6> <amount>\n\nPick a horse (1-6) and bet!')
+      return reply('❌ Usage: `.horse <1-6> <amount>`\n\nPick a horse (1-6) and bet!')
     }
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! You have $${u.wallet || 0}`)
-    const horses   = ['🐴', '🐴', '🐴', '🐴', '🐴', '🐴']
+    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! Wallet: $${(u.wallet || 0).toLocaleString()}`)
     const winner   = Math.floor(Math.random() * 6) + 1
     const odds     = [1.5, 2, 2.5, 3, 4, 5]
     const horseOdd = odds[Math.floor(Math.random() * odds.length)]
     const win      = winner === horse
     const net      = win ? Math.floor(amount * horseOdd) - amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
-    const raceLines = horses.map((h, i) => `${h} Horse ${i + 1}${i + 1 === winner ? ' 🏁' : ''}`).join('\n')
+    const raceLines = [1,2,3,4,5,6].map(i => `🐴 Horse ${i}${i === winner ? ' 🏁' : ''}`).join('\n')
     return reply(
-      `🏇 *Horse Race*\n\n${raceLines}\n\n` +
-      `Your pick: Horse ${horse}\nWinner: Horse ${winner}\n\n` +
-      `${win ? `🏆 WIN! ×${horseOdd} → +$${Math.floor(amount * horseOdd)}` : `❌ Lose -$${amount}`}\n` +
+      `🏇 *Horse Race!*\n\n${raceLines}\n\n` +
+      `Your pick: Horse ${horse} | Winner: Horse ${winner}\n\n` +
+      `${win ? `🏆 WIN! ×${horseOdd} → *+$${Math.floor(amount * horseOdd)}*` : `❌ Lose -$${amount}`}\n` +
       `💵 $${((u.wallet || 0) + net).toLocaleString()}`
     )
   },
@@ -239,12 +236,12 @@ module.exports = {
   async jackpot({ reply, sender, user, args }) {
     const u      = user || await db.getOrCreateUser(sender)
     const amount = parseInt(args[0])
-    if (!amount || amount <= 0) return reply('⚠️ Usage: .jackpot <amount>')
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough coins!`)
+    if (!amount || amount <= 0) return reply('❌ Usage: `.jackpot <amount>`')
+    if (amount > (u.wallet || 0)) return reply(`❌ Not enough coins! Wallet: $${(u.wallet || 0).toLocaleString()}`)
     const win = Math.random() < 0.05
     const net = win ? amount * 50 - amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
-    if (win) return reply(`💥 *JACKPOT!!!*\n\n🌟 50x → +$${amount * 50}\n💵 $${((u.wallet || 0) + net).toLocaleString()}`)
+    if (win) return reply(`💥 *JACKPOT!!!*\n\n🌟 ×50 → *+$${amount * 50}*\n💵 $${((u.wallet || 0) + net).toLocaleString()}`)
     return reply(`🎰 *Jackpot Miss*\n\n-$${amount} (5% chance)\n💵 $${((u.wallet || 0) - amount).toLocaleString()}`)
   },
 
@@ -253,9 +250,9 @@ module.exports = {
     const amount = parseInt(args[1]) || parseInt(args[0])
     const choice = isNaN(parseInt(args[0])) ? args[0]?.toLowerCase() : null
     if (!choice || !['high', 'low', 'h', 'l'].includes(choice) || !amount || amount <= 0) {
-      return reply('⚠️ Usage: .highlow high/low <amount>')
+      return reply('❌ Usage: `.highlow high/low <amount>`')
     }
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough coins!`)
+    if (amount > (u.wallet || 0)) return reply(`❌ Not enough coins! Wallet: $${(u.wallet || 0).toLocaleString()}`)
     const card     = Math.floor(Math.random() * 13) + 1
     const isHigh   = card > 7
     const guessHigh = choice === 'high' || choice === 'h'
@@ -263,8 +260,8 @@ module.exports = {
     const net      = win ? amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     return reply(
-      `🃏 *High or Low*\n\nGuess: ${guessHigh ? 'HIGH' : 'LOW'} | Card: *${card}*\n\n` +
-      `${win ? `🏆 WIN! +$${amount}` : `❌ Lose -$${amount}`}\n` +
+      `🃏 *High or Low!*\n\nGuess: *${guessHigh ? 'HIGH' : 'LOW'}* | Card: *${card}*\n\n` +
+      `${win ? `🏆 WIN! *+$${amount}*` : `❌ Lose -$${amount}`}\n` +
       `💵 $${((u.wallet || 0) + net).toLocaleString()}`
     )
   },
@@ -279,15 +276,14 @@ module.exports = {
       { q: 'What is H2O?', a: 'Water', choices: 'A) Hydrogen\nB) Oxygen\nC) Water\nD) Helium' },
       { q: 'How many sides does a hexagon have?', a: '6', choices: 'A) 5\nB) 6\nC) 7\nD) 8' },
       { q: 'What is the largest ocean?', a: 'Pacific', choices: 'A) Atlantic\nB) Indian\nC) Arctic\nD) Pacific' },
-      { q: 'What color are bananas?', a: 'Yellow', choices: 'A) Blue\nB) Red\nC) Yellow\nD) Green' },
     ]
     const q = questions[Math.floor(Math.random() * questions.length)]
-    await reply(`🧠 *Trivia*\n\n${q.q}\n\n${q.choices}\n\n_Answer: ${q.a}_`)
+    await reply(`🧠 *Trivia!*\n\n${q.q}\n\n${q.choices}\n\n_Answer: ${q.a}_`)
   },
 
   async math({ reply, args }) {
     const expr = args.join(' ').replace(/[^0-9+\-*/().%\s]/g, '')
-    if (!expr) return reply('⚠️ Usage: .math <expression>\n\nExample: .math 100 * 3.5 / 2')
+    if (!expr) return reply('❌ Usage: `.math <expression>`\n\nExample: `.math 100 * 3.5 / 2`')
     try {
       const result = Function(`"use strict"; return (${expr})`)()
       if (!isFinite(result)) return reply(`❌ Result is not finite`)
