@@ -287,14 +287,24 @@ async function handleMessage(sock, msg) {
     'roulette','horse','casino','dice',
     'removebg','nobg','enhance','remini','upscale','night','sunset','rain','city','gun','jail','toanime','cartoon','carbon',
     'suspend','unsuspend','suspendlist',
+    // ── new-user / registration commands always allowed ──────────
+    'register','reg','start','p','profile','bal','balance','help','menu',
   ])
 
   const reply = (text) => sock.sendMessage(jid, { text }, { quoted: msg })
 
-  if (!user && !NO_DB_CMDS.has(cmd)) {
+  // ── Real DB connectivity check (not a user-existence check) ───
+  const isDbReady = db.mongoose.connection.readyState === 1
+
+  if (!isDbReady && !NO_DB_CMDS.has(cmd)) {
     return reply(
-      `⚠️ *Database Not Set Up*\n\nMongoDB is not connected.\nCheck your MONGO_URI environment variable.`
+      `⏳ *Database Connecting...*\n\nThe bot is still connecting to the database.\nPlease wait a moment and try again!`
     )
+  }
+
+  // If DB is ready but user wasn't fetched (race condition on startup), retry once
+  if (isDbReady && !user) {
+    try { user = await db.getOrCreateUser(sender, msg.pushName || sender) } catch {}
   }
 
   const ctx = {
