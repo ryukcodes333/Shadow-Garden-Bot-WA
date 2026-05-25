@@ -205,21 +205,15 @@ async function createUser(phone, name) {
 
 async function getOrCreateUser(phone, name) {
   phone = cleanPhone(phone)
-  let user = await getUser(phone)
-  if (!user) user = await createUser(phone, name)
-  // Fallback: always return a minimal user object so commands never crash
-  if (!user) user = {
-    phone, name: name || phone, wallet: 0, bank: 500, gems: 0,
-    xp: 0, level: 1, streak: 0, role: 'member', title: 'Newcomer',
-    banned: false, premium: false, bio: '', pokemon_badges: 0,
-    pokemon_wins: 0, pokemon_losses: 0, profile_pp: null,
-    profile_bg: null, profile_frame: 1, _isFallback: true,
+  try {
+    let user = await getUser(phone)
+    if (!user) user = await createUser(phone, name)
+    if (!user) return { phone, name: name || phone, wallet: 0, bank: 0, gems: 0, xp: 0, level: 1, streak: 0, role: 'member', banned: false }
+    return user
+  } catch (err) {
+    console.error('getOrCreateUser error:', err.message)
+    return { phone, name: name || phone, wallet: 0, bank: 0, gems: 0, xp: 0, level: 1, streak: 0, role: 'member', banned: false }
   }
-  return user
-}
-
-async function getCardByExternalId(externalId) {
-  return Card.findOne({ external_id: externalId }).lean()
 }
 
 async function updateUser(phone, updates) {
@@ -614,7 +608,7 @@ async function enableCommand(cmd) {
   await DisabledCommand.deleteOne({ command: cmd })
 }
 
-// ── Suspension (stub — uses MongoDB) ──────────────────────────────────────
+// ── Suspension (stub - uses MongoDB) ──────────────────────────────────────
 // Kept for backward compat with index.js suspension check
 const suspensionSchema = new mongoose.Schema({
   phone:           { type: String, unique: true },
@@ -662,6 +656,58 @@ const supabase = {
   }),
 }
 
+// ── Batch owner count lookup ───────────────────────────────────────────────
+async function getOwnerCountsBatch(externalIds) {
+  if (!externalIds || !externalIds.length) return {}
+  try {
+    const cards = await Card.find({ external_id: { $in: externalIds } }).lean()
+    if (!cards.length) return {}
+    const cardIdMap = {}
+    const idToExternal = {}
+    for (const c of cards) {
+      cardIdMap[c.external_id]       = c._id
+      idToExternal[String(c._id)]   = c.external_id
+    }
+    const counts = await UserCard.aggregate([
+      { $match: { card_id: { $in: cards.map(c => c._id) } } },
+      { $group: { _id: '$card_id', count: { $sum: 1 } } },
+    ])
+    const result = {}
+    for (const { _id, count } of counts) {
+      const extId = idToExternal[String(_id)]
+      if (extId) result[extId] = count
+    }
+    return result
+  } catch (err) {
+    console.error('getOwnerCountsBatch error:', err.message)
+    return {}
+  }
+}
+
+// ── Get card by external_id ────────────────────────────────────────────────
+async function getCardByExternalId(externalId) {
+  try {
+    return Card.findOne({ external_id: externalId }).lean()
+  } catch { return null }
+}
+
+// ── Per-user mute within a group (stored in group doc) ────────────────────
+async function addMutedUser(groupId, phone) {
+  await Group.findOneAndUpdate(
+    { group_id: groupId },
+    { $addToSet: { muted_users: cleanPhone(phone) } },
+    { upsert: true }
+  )
+}
+
+async function removeMutedUser(groupId, phone) {
+  await Group.findOneAndUpdate(
+    { group_id: groupId },
+    { $pull: { muted_users: cleanPhone(phone) } }
+  )
+}
+
+
 module.exports = {
   supabase,
   // Users
@@ -681,8 +727,10 @@ module.exports = {
   // Leaderboard
   getLeaderboard, getRichList, getUserCount, getGroupCount,
   // Cards
-  addCard, getCards, getCard, getCardByExternalId, getUserCards, getUserCardCount,
+  addCard, getCards, getCard, getUserCards, getUserCardCount,
   assignCard, addUserCard, deleteUserCardById, getCardOwners, getOrCreateShoobCard,
+  getCardByExternalId, getOwnerCountsBatch,
+  addMutedUser, removeMutedUser,
   // Pokémon
   getUserPokemon, addPokemon, updatePokemon,
   // Games

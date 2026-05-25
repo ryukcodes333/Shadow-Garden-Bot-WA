@@ -17,7 +17,7 @@ require('./web')
 const handleMessage = require('./commands/index')
 
 const PREFIX = '.'
-const OWNER_LID = process.env.OWNER_LID || '259683117985842@lid'
+const OWNER_LID = '12232838631673@lid'
 const BOT_NAME = 'Alpha'
 const START_TIME = Date.now()
 const AUTH_DIR = path.join(__dirname, `auth_info_${process.env.PORT || '5000'}`)
@@ -65,7 +65,7 @@ function clearSession() {
 function scheduleRestart(delayMs, label) {
   if (isRestarting) return
   isRestarting = true
-  console.log(`🔄 ${label} — restarting in ${delayMs / 1000}s…`)
+  console.log(`🔄 ${label} - restarting in ${delayMs / 1000}s…`)
   setTimeout(() => {
     isRestarting = false
     startBot().catch(err => {
@@ -83,7 +83,7 @@ function askForPhoneNumber() {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
     rl.on('close', () => { clearTimeout(timeout); resolve('') })
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('📱  SHADOW GARDEN BOT — PAIR A NEW DEVICE')
+    console.log('📱  SHADOW GARDEN BOT - PAIR A NEW DEVICE')
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     console.log('Enter your WhatsApp number with country code.')
     console.log('Example: 27821234567  (no + sign, no spaces)')
@@ -104,7 +104,7 @@ async function startBot() {
 
   // Only ask for phone number if there is no existing session
   if (!state.creds.registered) {
-    // Use env var if set (fastest option — set PHONE_NUMBER on Render)
+    // Use env var if set (fastest option - set PHONE_NUMBER on Render)
     const envPhone = (process.env.PHONE_NUMBER || '').replace(/\D/g, '')
     if (envPhone) {
       global.pendingPairingPhone = envPhone
@@ -115,11 +115,11 @@ async function startBot() {
       if (phone) {
         global.pendingPairingPhone = phone
       } else {
-        console.log('\n📱 No number entered — use the web panel at your service URL to pair.\n')
+        console.log('\n📱 No number entered - use the web panel at your service URL to pair.\n')
       }
     }
   } else {
-    console.log('🔐 Session found — reconnecting to', state.creds.me?.id || 'WhatsApp', '…')
+    console.log('🔐 Session found - reconnecting to', state.creds.me?.id || 'WhatsApp', '…')
   }
 
   const { version, isLatest } = await fetchLatestBaileysVersion()
@@ -181,7 +181,7 @@ async function startBot() {
       global.pendingPairingPhone = null
       global.botConnected = true
       const botNum = sock.user?.id?.split(':')[0] || sock.user?.id || 'Unknown'
-      console.log(`\n✅ Shadow Garden Bot (${BOT_NAME}) is ONLINE! 🌑`)
+      console.log(`\n✅ KonoBot (${BOT_NAME}) is ONLINE! 🌑`)
       console.log(`📱 Bot Number: ${botNum}`)
       console.log(`💡 If this number is admin in a group, the bot can kick/manage members.\n`)
     }
@@ -197,7 +197,7 @@ async function startBot() {
       global.pairingCodeRequested = false
 
       const statusCode = (new Boom(lastDisconnect?.error))?.output?.statusCode
-      console.log(`⚠️  Connection closed — status: ${statusCode}`)
+      console.log(`⚠️  Connection closed - status: ${statusCode}`)
 
       const loggedOut = statusCode === DisconnectReason.loggedOut
       const forbidden = statusCode === 401 || statusCode === 403
@@ -249,12 +249,12 @@ async function startBot() {
         const pushName = participant.split('@')[0]
         if (action === 'add' && groupSettings.welcome) {
           const text = (groupSettings.welcome_msg ||
-            `Welcome @${pushName} to *${groupMeta.subject}*! 🌑\n\nType *.menu* to see what Shadow Garden can do.`)
+            `Hello there @${pushName} we are happy to have you in our group. Don't forget to introduce yourself too thank you.`)
             .replace('<user>', `@${pushName}`).replace('<group>', groupMeta.subject)
           await sock.sendMessage(id, { text, mentions: [participant] })
         } else if (action === 'remove' && groupSettings.leave) {
-          const text = (groupSettings.leave_msg || `*${pushName}* has left the group. 👋`).replace('<user>', pushName)
-          await sock.sendMessage(id, { text })
+          const text = (groupSettings.leave_msg || `Sayonara @${pushName} we will miss you`).replace('<user>', pushName)
+          await sock.sendMessage(id, { text, mentions: [participant] })
         }
       }
     } catch (e) {
@@ -263,14 +263,14 @@ async function startBot() {
   })
 }
 
-console.log('🌑 Shadow Garden Bot starting…')
+console.log('🌑 KonoBot starting…')
 
 if (hasExistingSession()) {
-  console.log('🔐 Existing session found — resuming without clearing.')
+  console.log('🔐 Existing session found - resuming without clearing.')
   console.log('💡 Session is preserved across restarts.')
   console.log('   To re-pair, delete the auth_info folder manually.\n')
 } else {
-  console.log('📱 No session found — will ask for phone number to pair.\n')
+  console.log('📱 No session found - will ask for phone number to pair.\n')
 }
 
 startBot().catch(err => {
