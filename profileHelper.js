@@ -333,7 +333,7 @@ function buildFrameElements(frame, cx, cy, r, uid) {
     }
 
     case 'image': {
-      // 3D image frame — render a vivid layered ring using the frame's palette
+      // 3D image frame - render a vivid layered ring using the frame's palette
       const gid   = `imgGrad-${uid}`
       const gid2  = `imgRim-${uid}`
       const light  = frame.light  || '#ffffff'
@@ -408,7 +408,7 @@ function blend(hex1, hex2, t) {
 }
 
 // ─── 3D IMAGE FRAME SVG GENERATOR ────────────────────────────────────────────
-// NOTE: Uses NO SVG <filter> elements — libvips/Sharp only supports gradients
+// NOTE: Uses NO SVG <filter> elements - libvips/Sharp only supports gradients
 // and basic shapes. The 3D illusion is achieved with layered circles.
 function buildImageFrameSvg(frame) {
   const SIZE  = 300
@@ -538,7 +538,7 @@ function buildImageFrameSvg(frame) {
   <path d="M ${CX - 62},${CY - 92} A ${MID_R - 8},${MID_R - 8} 0 0 1 ${CX - 92},${CY - 62}"
     fill="none" stroke="white" stroke-width="7" stroke-linecap="round" opacity="0.30"/>
 
-  <!-- Simulated inner glow (no filter — just slightly wider transparent ring) -->
+  <!-- Simulated inner glow (no filter - just slightly wider transparent ring) -->
   <circle cx="${CX}" cy="${CY}" r="${innerGlow1}" fill="none" stroke="${glowC}" stroke-width="5" opacity="0.22"/>
   <circle cx="${CX}" cy="${CY}" r="${innerGlow1}" fill="none" stroke="${glowC}" stroke-width="2" opacity="0.40"/>
 
@@ -671,7 +671,7 @@ function buildStatsSvg(user, frameName) {
     text-anchor="middle" font-family="Liberation Sans,sans-serif">Frame: ${fname}  |  ${phone}</text>
 
   <text x="${AV_CX}" y="510" fill="#272740" font-size="12" font-weight="bold"
-    text-anchor="middle" font-family="Liberation Sans,sans-serif">Shadow Garden  -  Alpha</text>
+    text-anchor="middle" font-family="Liberation Sans,sans-serif">Konosuba  -  Alpha</text>
 </svg>`
 }
 
@@ -873,7 +873,7 @@ async function generateFrameCatalog(page = 1) {
     allDefs += defs
     allCells += circles
 
-    // ID badge — 3D pill
+    // ID badge - 3D pill
     allCells += `<rect x="${cx - 13}" y="${cy + r + 5}" width="26" height="17" fill="url(#idBadge)" rx="8"/>`
     // Badge highlight
     allCells += `<rect x="${cx - 12}" y="${cy + r + 6}" width="24" height="7" fill="rgba(255,255,255,0.15)" rx="6"/>`

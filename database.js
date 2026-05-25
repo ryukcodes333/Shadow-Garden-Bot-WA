@@ -205,15 +205,9 @@ async function createUser(phone, name) {
 
 async function getOrCreateUser(phone, name) {
   phone = cleanPhone(phone)
-  try {
-    let user = await getUser(phone)
-    if (!user) user = await createUser(phone, name)
-    if (!user) return { phone, name: name || phone, wallet: 0, bank: 0, gems: 0, xp: 0, level: 1, streak: 0, role: 'member', banned: false }
-    return user
-  } catch (err) {
-    console.error('getOrCreateUser error:', err.message)
-    return { phone, name: name || phone, wallet: 0, bank: 0, gems: 0, xp: 0, level: 1, streak: 0, role: 'member', banned: false }
-  }
+  let user = await getUser(phone)
+  if (!user) user = await createUser(phone, name)
+  return user
 }
 
 async function updateUser(phone, updates) {
@@ -656,58 +650,6 @@ const supabase = {
   }),
 }
 
-// ── Batch owner count lookup ───────────────────────────────────────────────
-async function getOwnerCountsBatch(externalIds) {
-  if (!externalIds || !externalIds.length) return {}
-  try {
-    const cards = await Card.find({ external_id: { $in: externalIds } }).lean()
-    if (!cards.length) return {}
-    const cardIdMap = {}
-    const idToExternal = {}
-    for (const c of cards) {
-      cardIdMap[c.external_id]       = c._id
-      idToExternal[String(c._id)]   = c.external_id
-    }
-    const counts = await UserCard.aggregate([
-      { $match: { card_id: { $in: cards.map(c => c._id) } } },
-      { $group: { _id: '$card_id', count: { $sum: 1 } } },
-    ])
-    const result = {}
-    for (const { _id, count } of counts) {
-      const extId = idToExternal[String(_id)]
-      if (extId) result[extId] = count
-    }
-    return result
-  } catch (err) {
-    console.error('getOwnerCountsBatch error:', err.message)
-    return {}
-  }
-}
-
-// ── Get card by external_id ────────────────────────────────────────────────
-async function getCardByExternalId(externalId) {
-  try {
-    return Card.findOne({ external_id: externalId }).lean()
-  } catch { return null }
-}
-
-// ── Per-user mute within a group (stored in group doc) ────────────────────
-async function addMutedUser(groupId, phone) {
-  await Group.findOneAndUpdate(
-    { group_id: groupId },
-    { $addToSet: { muted_users: cleanPhone(phone) } },
-    { upsert: true }
-  )
-}
-
-async function removeMutedUser(groupId, phone) {
-  await Group.findOneAndUpdate(
-    { group_id: groupId },
-    { $pull: { muted_users: cleanPhone(phone) } }
-  )
-}
-
-
 module.exports = {
   supabase,
   // Users
@@ -729,8 +671,6 @@ module.exports = {
   // Cards
   addCard, getCards, getCard, getUserCards, getUserCardCount,
   assignCard, addUserCard, deleteUserCardById, getCardOwners, getOrCreateShoobCard,
-  getCardByExternalId, getOwnerCountsBatch,
-  addMutedUser, removeMutedUser,
   // Pokémon
   getUserPokemon, addPokemon, updatePokemon,
   // Games
