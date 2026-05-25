@@ -117,7 +117,7 @@ module.exports = {
       `├ *.setpp <video>* — video PP [Staff/Premium]\n│\n` +
       `├─── ⚙️ *OWNER*\n` +
       `├ *.setwin <0-100>* — set global win rate\n│\n` +
-      `╰─ _Shadow Garden — Always Evolving_ 🖤`
+      `╰─ _Konosuba — Always Evolving_ 🖤`
     )
   },
 
@@ -328,7 +328,7 @@ module.exports = {
   async exit({ sock, jid, reply, isOwner, isMod, isGuardian, isGroup }) {
     if (!isGroup) return reply('❌ Use this inside a group.')
     if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
-    await reply(`👋 *Bot leaving this group...*\n\n_Goodbye from Shadow Garden._ 🖤`)
+    await reply(`👋 *Bot leaving this group...*\n\n_Goodbye from Konosuba._ 🖤`)
     setTimeout(async () => { try { await sock.groupLeave(jid) } catch {} }, 2000)
   },
 
@@ -688,7 +688,7 @@ module.exports = {
       `━━━━━━━━━━━━━━━━━━━━\n\n` +
       lines + '\n\n' +
       `━━━━━━━━━━━━━━━━━━━━\n` +
-      `_Shadow Garden Financial Elite_ 🖤`
+      `_Konosuba Financial Elite_ 🖤`
 
     const iP = 'luxury penthouse gold coins money stacks elite wealthy lifestyle cinematic art ultra HD'
     try {
@@ -1154,7 +1154,7 @@ module.exports = {
 
   // ─── .rate <thing> ────────────────────────────────────────────────────────────
   async rate({ args, reply, pushName }) {
-    if (!args.length) return reply('⭐ Usage: *.rate <anything>*\n\nExample: *.rate Shadow Garden*')
+    if (!args.length) return reply('⭐ Usage: *.rate <anything>*\n\nExample: *.rate Konosuba*')
     const thing  = args.join(' ')
     const score  = Math.floor(Math.random() * 11)
     const bars   = ['█'.repeat(score) + '░'.repeat(10 - score)]
@@ -1180,7 +1180,7 @@ module.exports = {
       `${topic}? AGAIN? At this point I'm convinced it's personal.`,
       `If I have to deal with ${topic} one more time, I am logging off permanently. Enough is enough.`,
     ]
-    await reply(`😤 *RANT MODE*\n\n🎤 "${rand(RANTS)}"\n\n_Shadow Garden Rant Hotline — always open._ 🖤`)
+    await reply(`😤 *RANT MODE*\n\n🎤 "${rand(RANTS)}"\n\n_Konosuba Rant Hotline — always open._ 🖤`)
   },
 
   // ─── .riddle ──────────────────────────────────────────────────────────────────
@@ -1223,7 +1223,7 @@ module.exports = {
       'Wombats produce cube-shaped poop. The only animal known to do so.',
       'There are more stars in the universe than grains of sand on all of Earth\'s beaches.',
     ]
-    await reply(`🎲 *RANDOM FACT*\n\n💡 _${rand(FACTS)}_\n\n_Shadow Garden — knowledge is power._ 🖤`)
+    await reply(`🎲 *RANDOM FACT*\n\n💡 _${rand(FACTS)}_\n\n_Konosuba — knowledge is power._ 🖤`)
   },
 
   // ─── .roll <NdN> ──────────────────────────────────────────────────────────────
@@ -1296,7 +1296,7 @@ module.exports = {
     const HOOKS = [
       'Yeah, yeah, uh',
       'Listen up, pay attention',
-      'Shadow Garden on the beat',
+      'Konosuba on the beat',
       'No cap, straight facts',
       'They don\'t want this smoke',
     ]
@@ -1314,7 +1314,7 @@ module.exports = {
       `"${bars}"\n\n` +
       `_${rand(OUTROS).replace('${pushName}', pushName || 'Unknown')}_\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
-      `🎵 _Shadow Garden Records_ 🖤`
+      `🎵 _Konosuba Records_ 🖤`
     )
   },
 

@@ -101,7 +101,7 @@ module.exports = {
           `🏆 *WINNER: @${winner}!*\n\n` +
           `📊 Chain: ${game.chain.join(' → ')}\n` +
           `🎁 +$200 coins\n\n` +
-          `❌ @${sender} failed — "*${word}*" doesn't start with "*${game.lastWord[game.lastWord.length - 1]}*"`,
+          `❌ @${sender} failed - "*${word}*" doesn't start with "*${game.lastWord[game.lastWord.length - 1]}*"`,
         mentions: [opponent, senderJid]
       })
     }
@@ -147,7 +147,7 @@ module.exports = {
         `💥 @${target.split('@')[0]} dealt *${theirAtk}* dmg\n\n` +
         `❤️ @${sender}: *${myFinalHp}/100 HP*\n` +
         `❤️ @${target.split('@')[0]}: *${theirFinalHp}/100 HP*\n\n` +
-        `🏆 *Winner: @${winner}* — +$300 coins!`,
+        `🏆 *Winner: @${winner}* - +$300 coins!`,
       mentions: [senderJid, target]
     })
   },

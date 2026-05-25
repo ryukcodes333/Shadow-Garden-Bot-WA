@@ -375,9 +375,9 @@ module.exports = {
       const QRCode = require('qrcode')
       const canvas = `https://api.quotable.io/random`
       const res    = await axios.get(canvas, { timeout: 8000 })
-      await reply(`💬 *Quote Card*\n\n_${text}_\n\n— Shadow Garden`)
+      await reply(`💬 *Quote Card*\n\n_${text}_\n\n— Konosuba`)
     } catch {
-      await reply(`💬 _${text}_\n\n— Shadow Garden`)
+      await reply(`💬 _${text}_\n\n— Konosuba`)
     }
   },
 

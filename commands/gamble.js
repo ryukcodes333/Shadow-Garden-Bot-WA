@@ -55,7 +55,7 @@ module.exports = {
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     return reply(
       `🎰 *Slots!*\n\n│ ${reels[0]} │ ${reels[1]} │ ${reels[2]} │\n\n` +
-      `${multiplier > 0 ? `🏆 ${label} — +$${Math.floor(amount * multiplier)}` : `❌ Miss — -$${amount}`}\n` +
+      `${multiplier > 0 ? `🏆 ${label} - +$${Math.floor(amount * multiplier)}` : `❌ Miss - -$${amount}`}\n` +
       `💵 $${((u.wallet || 0) + net).toLocaleString()}`
     )
   },
@@ -152,7 +152,7 @@ module.exports = {
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     return reply(
       `🂡 *Poker!*\n\n🃏 ${hand.join(' ')}\n\n🎯 ${handName}\n` +
-      `${mult > 0 ? `🏆 WIN! ×${mult} → *+$${Math.floor(amount * mult)}*` : `❌ No win — -$${amount}`}\n` +
+      `${mult > 0 ? `🏆 WIN! ×${mult} → *+$${Math.floor(amount * mult)}*` : `❌ No win - -$${amount}`}\n` +
       `💵 $${((u.wallet || 0) + net).toLocaleString()}`
     )
   },

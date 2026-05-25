@@ -210,7 +210,7 @@ module.exports = {
     const count    = globalLottery.entries.size
     const required = globalLottery.required
 
-    await sendPollResult(sock, jid, `🎰 Lottery Pools In Shadow Garden`, [
+    await sendPollResult(sock, jid, `🎰 Lottery Pools In Konosuba`, [
       { optionName: `Required`,             optionVoteCount: required },
       { optionName: `Current Participants`, optionVoteCount: count },
     ])

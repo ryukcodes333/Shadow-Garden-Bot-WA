@@ -4,7 +4,7 @@ const { downloadMediaMessage } = require('@whiskeysockets/baileys')
 const GROQ_KEY = process.env.GROQ_KEY || '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'
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
-const SYSTEM_PROMPT = `You are Alpha, the AI assistant for Shadow Garden WhatsApp Bot. Be helpful, concise, and friendly. Don't be overly formal. Keep responses short and readable on WhatsApp.`
+const SYSTEM_PROMPT = `You are Alpha, the AI assistant for Konosuba WhatsApp Bot. Be helpful, concise, and friendly. Don't be overly formal. Keep responses short and readable on WhatsApp.`
 
 async function askGroq(prompt, model = 'llama-3.3-70b-versatile') {
   const res = await axios.post(GROQ_URL, {
@@ -223,60 +223,60 @@ module.exports = {
     try {
       const buf = await genImage('mikasa ackerman attack on titan anime art beautiful dramatic', 'flux')
       await sock.sendMessage(jid, { image: buf, caption: '⚔️ Mikasa Ackerman' }, { quoted: msg })
-    } catch { await sock.sendMessage(jid, { text: '⚔️ Mikasa Ackerman — Attack on Titan' }, { quoted: msg }) }
+    } catch { await sock.sendMessage(jid, { text: '⚔️ Mikasa Ackerman - Attack on Titan' }, { quoted: msg }) }
   },
   async naruto({ sock, msg, jid }) {
     try {
       const buf = await genImage('naruto uzumaki anime art naruto shippuden nine tails chakra dramatic', 'flux')
       await sock.sendMessage(jid, { image: buf, caption: '🍥 Naruto Uzumaki' }, { quoted: msg })
-    } catch { await sock.sendMessage(jid, { text: '🍥 Naruto Uzumaki — Naruto' }, { quoted: msg }) }
+    } catch { await sock.sendMessage(jid, { text: '🍥 Naruto Uzumaki - Naruto' }, { quoted: msg }) }
   },
   async sasuke({ sock, msg, jid }) {
     try {
       const buf = await genImage('sasuke uchiha anime art sharingan rinnegan dark dramatic cool', 'flux')
       await sock.sendMessage(jid, { image: buf, caption: '⚡ Sasuke Uchiha' }, { quoted: msg })
-    } catch { await sock.sendMessage(jid, { text: '⚡ Sasuke Uchiha — Naruto' }, { quoted: msg }) }
+    } catch { await sock.sendMessage(jid, { text: '⚡ Sasuke Uchiha - Naruto' }, { quoted: msg }) }
   },
   async itachi({ sock, msg, jid }) {
     try {
       const buf = await genImage('itachi uchiha anime art akatsuki mangekyou sharingan cool dramatic', 'flux')
       await sock.sendMessage(jid, { image: buf, caption: '🌙 Itachi Uchiha' }, { quoted: msg })
-    } catch { await sock.sendMessage(jid, { text: '🌙 Itachi Uchiha — Naruto' }, { quoted: msg }) }
+    } catch { await sock.sendMessage(jid, { text: '🌙 Itachi Uchiha - Naruto' }, { quoted: msg }) }
   },
   async madara({ sock, msg, jid }) {
     try {
       const buf = await genImage('madara uchiha anime art rinnegan powerful god-like dramatic dark', 'flux')
       await sock.sendMessage(jid, { image: buf, caption: '👁️ Madara Uchiha' }, { quoted: msg })
-    } catch { await sock.sendMessage(jid, { text: '👁️ Madara Uchiha — Naruto' }, { quoted: msg }) }
+    } catch { await sock.sendMessage(jid, { text: '👁️ Madara Uchiha - Naruto' }, { quoted: msg }) }
   },
   async gojo({ sock, msg, jid }) {
     try {
       const buf = await genImage('satoru gojo jujutsu kaisen anime art blindfold infinity domain expansion cool', 'flux')
       await sock.sendMessage(jid, { image: buf, caption: '✨ Satoru Gojo' }, { quoted: msg })
-    } catch { await sock.sendMessage(jid, { text: '✨ Satoru Gojo — Jujutsu Kaisen' }, { quoted: msg }) }
+    } catch { await sock.sendMessage(jid, { text: '✨ Satoru Gojo - Jujutsu Kaisen' }, { quoted: msg }) }
   },
   async nezuko({ sock, msg, jid }) {
     try {
       const buf = await genImage('nezuko kamado demon slayer anime art cute pink eyes bamboo mouth', 'flux')
       await sock.sendMessage(jid, { image: buf, caption: '🎋 Nezuko Kamado' }, { quoted: msg })
-    } catch { await sock.sendMessage(jid, { text: '🎋 Nezuko Kamado — Demon Slayer' }, { quoted: msg }) }
+    } catch { await sock.sendMessage(jid, { text: '🎋 Nezuko Kamado - Demon Slayer' }, { quoted: msg }) }
   },
   async kurumi({ sock, msg, jid }) {
     try {
       const buf = await genImage('kurumi tokisaki date a live anime art gothic clock eyes dark beautiful', 'flux')
       await sock.sendMessage(jid, { image: buf, caption: '🕐 Kurumi Tokisaki' }, { quoted: msg })
-    } catch { await sock.sendMessage(jid, { text: '🕐 Kurumi Tokisaki — Date A Live' }, { quoted: msg }) }
+    } catch { await sock.sendMessage(jid, { text: '🕐 Kurumi Tokisaki - Date A Live' }, { quoted: msg }) }
   },
   async onepiece({ sock, msg, jid }) {
     try {
       const buf = await genImage('luffy one piece anime art gear fifth sun god nika dramatic powerful', 'flux')
       await sock.sendMessage(jid, { image: buf, caption: '☠️ One Piece' }, { quoted: msg })
-    } catch { await sock.sendMessage(jid, { text: '☠️ One Piece — Luffy' }, { quoted: msg }) }
+    } catch { await sock.sendMessage(jid, { text: '☠️ One Piece - Luffy' }, { quoted: msg }) }
   },
   async yumeko({ sock, msg, jid }) {
     try {
       const buf = await genImage('yumeko jabami kakegurui anime art red eyes gambling beautiful intense', 'flux')
       await sock.sendMessage(jid, { image: buf, caption: '🎲 Yumeko Jabami' }, { quoted: msg })
-    } catch { await sock.sendMessage(jid, { text: '🎲 Yumeko Jabami — Kakegurui' }, { quoted: msg }) }
+    } catch { await sock.sendMessage(jid, { text: '🎲 Yumeko Jabami - Kakegurui' }, { quoted: msg }) }
   },
 }

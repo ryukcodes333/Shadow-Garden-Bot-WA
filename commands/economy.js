@@ -3,29 +3,14 @@ const db = require('../database')
 const DAILY_COINS = [200, 350, 500, 750, 1000]
 const DAILY_GEMS  = [5, 10, 15, 20, 30]
 const SHOP_ITEMS  = {
-  sword:      { name: 'Sword',           price: 500,   type: 'weapon',   emoji: '⚔️' },
-  shield:     { name: 'Shield',          price: 400,   type: 'weapon',   emoji: '🛡️' },
-  bow:        { name: 'Bow',             price: 350,   type: 'weapon',   emoji: '🏹' },
-  dagger:     { name: 'Dagger',          price: 300,   type: 'weapon',   emoji: '🗡️' },
-  axe:        { name: 'Battle Axe',      price: 650,   type: 'weapon',   emoji: '🪓' },
-  staff_wep:  { name: 'Magic Staff',     price: 700,   type: 'weapon',   emoji: '🪄' },
-  spear:      { name: 'Spear',           price: 550,   type: 'weapon',   emoji: '🔱' },
-  armor:      { name: 'Iron Armor',      price: 800,   type: 'armor',    emoji: '🥋' },
-  helmet:     { name: 'Steel Helmet',    price: 450,   type: 'armor',    emoji: '⛑️' },
-  boots:      { name: 'Shadow Boots',    price: 380,   type: 'armor',    emoji: '👟' },
-  potion:     { name: 'Health Potion',   price: 100,   type: 'consumable',emoji: '🧪' },
-  elixir:     { name: 'Mana Elixir',     price: 120,   type: 'consumable',emoji: '💙' },
-  energy:     { name: 'Energy Drink',    price: 80,    type: 'consumable',emoji: '⚡' },
-  antidote:   { name: 'Antidote',        price: 90,    type: 'consumable',emoji: '💊' },
-  bomb:       { name: 'Shadow Bomb',     price: 200,   type: 'consumable',emoji: '💣' },
-  ticket:     { name: 'Luck Ticket',     price: 150,   type: 'tool',     emoji: '🎟️' },
-  pickaxe:    { name: 'Pickaxe',         price: 280,   type: 'tool',     emoji: '⛏️' },
-  fishingrod: { name: 'Fishing Rod',     price: 220,   type: 'tool',     emoji: '🎣' },
-  map:        { name: 'Treasure Map',    price: 500,   type: 'tool',     emoji: '🗺️' },
-  lantern:    { name: 'Shadow Lantern',  price: 180,   type: 'tool',     emoji: '🏮' },
-  ring:       { name: 'Power Ring',      price: 950,   type: 'accessory',emoji: '💍' },
-  amulet:     { name: 'Mana Amulet',     price: 850,   type: 'accessory',emoji: '📿' },
-  cloak:      { name: 'Shadow Cloak',    price: 1200,  type: 'accessory',emoji: '🧣' },
+  sword:    { name: 'Sword',         price: 500,  type: 'weapon',  emoji: '⚔️' },
+  shield:   { name: 'Shield',        price: 400,  type: 'weapon',  emoji: '🛡️' },
+  bow:      { name: 'Bow',           price: 350,  type: 'weapon',  emoji: '🏹' },
+  potion:   { name: 'Health Potion', price: 100,  type: 'item',    emoji: '🍎' },
+  energy:   { name: 'Energy Drink',  price: 80,   type: 'item',    emoji: '⚡' },
+  ticket:   { name: 'Luck Ticket',   price: 150,  type: 'item',    emoji: '🎟️' },
+  vip:      { name: 'VIP Pass',      price: 50,   type: 'premium', emoji: '👑', gems: true },
+  mythicbox:{ name: 'Mythic Box',    price: 100,  type: 'premium', emoji: '🌌', gems: true },
 }
 
 const CD_DAILY = 24 * 3600
@@ -52,19 +37,15 @@ module.exports = {
     const total = (u.wallet || 0) + (u.bank || 0)
     await sock.sendMessage(jid, {
       text:
-        `*💰 ACCOUNT BALANCE 💰*\n\n` +
-        `*🏦 Bank:* \`\`\`${(u.bank || 0).toLocaleString()}\`\`\`\n` +
-        `*👛 Wallet:* \`\`\`${(u.wallet || 0).toLocaleString()}\`\`\`\n\n` +
-        `*💫 Total:* \`\`\`${total.toLocaleString()}\`\`\``,
+        `💰 *${u.name || sender}'s Balance*\n\n` +
+        `💵 Wallet: $${(u.wallet || 0).toLocaleString()}\n` +
+        `🏦 Bank: $${(u.bank || 0).toLocaleString()}\n` +
+        `💎 Gems: ${u.gems || 0}\n` +
+        `📊 Net Worth: $${total.toLocaleString()}`,
       mentions: [`${sender}@s.whatsapp.net`],
     }, { quoted: msg })
   },
   async balance(ctx) { return module.exports.bal(ctx) },
-  async wallet(ctx)  { return module.exports.bal(ctx) },
-  async bankbal({ reply, sender, user }) {
-    const u = user || await db.getOrCreateUser(sender)
-    await reply(`🏦 *Bank Balance*\n\n\`\`\`\n🏦 Bank  : $${(u.bank||0).toLocaleString()}\n💵 Wallet: $${(u.wallet||0).toLocaleString()}\n\`\`\``)
-  },
 
   async gems({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
@@ -106,7 +87,12 @@ module.exports = {
     if (!amount || amount <= 0) return reply('❌ Usage: `.withdraw <amount>` or `.withdraw all`')
     if (amount > (u.bank || 0)) return reply(`❌ Not enough in bank! Bank: $${(u.bank || 0).toLocaleString()}`)
     await db.updateUser(sender, { wallet: (u.wallet || 0) + amount, bank: (u.bank || 0) - amount })
-    await reply(`🏧 You have successfully withdrawn ${amount.toLocaleString()} from your bank.`)
+    await reply(
+      `💵 *Withdrawn!*\n\n` +
+      `+$${amount.toLocaleString()} from bank\n` +
+      `🏦 Bank: $${((u.bank || 0) - amount).toLocaleString()}\n` +
+      `💵 Wallet: $${((u.wallet || 0) + amount).toLocaleString()}`
+    )
   },
   async wid(ctx) { return module.exports.withdraw(ctx) },
 
@@ -116,7 +102,12 @@ module.exports = {
     if (!amount || amount <= 0) return reply('❌ Usage: `.deposit <amount>` or `.deposit all`')
     if (amount > (u.wallet || 0)) return reply(`❌ Not enough in wallet! Wallet: $${(u.wallet || 0).toLocaleString()}`)
     await db.updateUser(sender, { wallet: (u.wallet || 0) - amount, bank: (u.bank || 0) + amount })
-    await reply(`🎉 You have successfully deposited ${amount.toLocaleString()} to your bank.`)
+    await reply(
+      `🏦 *Deposited!*\n\n` +
+      `+$${amount.toLocaleString()} to bank\n` +
+      `💵 Wallet: $${((u.wallet || 0) - amount).toLocaleString()}\n` +
+      `🏦 Bank: $${((u.bank || 0) + amount).toLocaleString()}`
+    )
   },
   async dep(ctx) { return module.exports.deposit(ctx) },
 
@@ -228,30 +219,19 @@ module.exports = {
   },
   async lb(ctx) { return module.exports.leaderboard(ctx) },
 
-  async market({ reply, sender, user }) {
-    const u         = user || await db.getOrCreateUser(sender)
-    const byType    = {}
-    for (const [k, v] of Object.entries(SHOP_ITEMS)) {
-      if (!byType[v.type]) byType[v.type] = []
-      byType[v.type].push([k, v])
-    }
-    const typeEmojis = { weapon:'⚔️', armor:'🥋', consumable:'🧪', tool:'🔧', accessory:'💍' }
-    const typeLabels = { weapon:'Weapons', armor:'Armor', consumable:'Consumables', tool:'Tools', accessory:'Accessories' }
-    let sections = ''
-    for (const [type, entries] of Object.entries(byType)) {
-      const lines = entries.map(([k, v]) => `  ${v.emoji} *${v.name}* - $${v.price.toLocaleString()}  \`.buy ${k}\``).join('\n')
-      sections += `\n${typeEmojis[type]||'🛒'} *${typeLabels[type]||type}*\n${lines}\n`
-    }
+  async shop({ reply, sender, user }) {
+    const u       = user || await db.getOrCreateUser(sender)
+    const weapons = Object.entries(SHOP_ITEMS).filter(([,v]) => v.type === 'weapon').map(([k, v]) => `${v.emoji} *${v.name}* - $${v.price}\n   \`.buy ${k}\``).join('\n')
+    const items   = Object.entries(SHOP_ITEMS).filter(([,v]) => v.type === 'item').map(([k, v]) => `${v.emoji} *${v.name}* - $${v.price}\n   \`.buy ${k}\``).join('\n')
+    const premium = Object.entries(SHOP_ITEMS).filter(([,v]) => v.type === 'premium').map(([k, v]) => `${v.emoji} *${v.name}* - ${v.price} 💎\n   \`.buy ${k}\``).join('\n')
     await reply(
-      `🏪 *Konosuba Market*\n\n` +
-      `💰 Wallet: $${(u.wallet||0).toLocaleString()} | 💎 Gems: ${u.gems||0}\n` +
-      `━━━━━━━━━━━━━━━━━━━━` +
-      sections +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `_Use *.buy <item_key>* to purchase_`
+      `🛍️ *Konosuba Shop*\n\n` +
+      `💰 Wallet: $${(u.wallet || 0).toLocaleString()} | 💎 Gems: ${u.gems || 0}\n\n` +
+      `⚔️ *Weapons*\n${weapons}\n\n` +
+      `🎒 *Items*\n${items}\n\n` +
+      `💎 *Premium*\n${premium}`
     )
   },
-  async shop(ctx) { return module.exports.market(ctx) },
 
   async buy({ reply, sender, user, args }) {
     const u       = user || await db.getOrCreateUser(sender)
@@ -310,7 +290,7 @@ module.exports = {
     if (u.bio && u.bio !== '') return reply('⚠️ Already registered.')
     const name = args.join(' ') || pushName || sender
     await db.updateUser(sender, { name, bio: 'Konosuba Member' })
-    await reply(`✅ *Registered!* Welcome to Konosuba, *${name}*!\n\nType \`.profile\` to see your profile.`)
+    await reply(`✅ *Registered as ${name}!*\n\nType \`.profile\` to see your profile.`)
   },
   async reg(ctx) { return module.exports.register(ctx) },
 
@@ -379,154 +359,4 @@ module.exports = {
     await reply(`💎 *Premium Balance*\n\n${u.name || sender}\n${u.gems || 0} gems | Premium: ${u.premium ? '✅ Active' : '❌ Inactive'}`)
   },
   async pbal(ctx) { return module.exports.premiumbal(ctx) },
-
-  async weekly({ reply, sender, user }) {
-    const u = user || await db.getOrCreateUser(sender)
-    const remaining = await db.getCooldown(sender, 'weekly')
-    if (remaining > 0) {
-      const hrs = Math.floor(remaining / 3600000)
-      const mins = Math.floor((remaining % 3600000) / 60000)
-      return reply(`⏳ Weekly already claimed! Try again in *${hrs}h ${mins}m*`)
-    }
-    const coins = Math.floor(Math.random() * 1000) + 1500
-    await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
-    await db.setCooldown(sender, 'weekly', 7 * 24 * 3600)
-    await reply(`📅 *Weekly Reward!*\n\n💰 +$${coins.toLocaleString()}\n\n_Come back in 7 days!_`)
-  },
-
-  async monthly({ reply, sender, user }) {
-    const u = user || await db.getOrCreateUser(sender)
-    const remaining = await db.getCooldown(sender, 'monthly')
-    if (remaining > 0) {
-      const days = Math.floor(remaining / 86400000)
-      const hrs  = Math.floor((remaining % 86400000) / 3600000)
-      return reply(`⏳ Monthly already claimed! Try again in *${days}d ${hrs}h*`)
-    }
-    const coins = Math.floor(Math.random() * 3000) + 5000
-    await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
-    await db.setCooldown(sender, 'monthly', 30 * 24 * 3600)
-    await reply(`🗓️ *Monthly Reward!*\n\n💰 +$${coins.toLocaleString()}\n\n_Come back in 30 days!_`)
-  },
-
-  async crime({ reply, sender, user }) {
-    const u = user || await db.getOrCreateUser(sender)
-    const remaining = await db.getCooldown(sender, 'crime')
-    if (remaining > 0) {
-      const mins = Math.floor(remaining / 60000)
-      const secs = Math.floor((remaining % 60000) / 1000)
-      return reply(`⏳ You're laying low. Try again in *${mins}m ${secs}s*`)
-    }
-    const success = Math.random() < 0.5
-    const amount  = Math.floor(Math.random() * 400) + 100
-    await db.setCooldown(sender, 'crime', 15 * 60)
-    if (success) {
-      await db.updateUser(sender, { wallet: (u.wallet || 0) + amount })
-      const acts = ['robbed a merchant', 'pickpocketed a noble', 'hacked a guild vault', 'stole a shipment', 'conned a trader']
-      await reply(`🦹 *Crime Successful!*\n\nYou ${acts[Math.floor(Math.random()*acts.length)]}.\n💰 +$${amount}`)
-    } else {
-      const fine = Math.min(amount, u.wallet || 0)
-      await db.updateUser(sender, { wallet: Math.max(0, (u.wallet || 0) - fine) })
-      await reply(`👮 *Caught!*\n\nYou were caught and fined *$${fine}*. Better luck next time.`)
-    }
-  },
-
-  async rob({ sock, msg, jid, reply, sender, user, args }) {
-    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('❌ Usage: *.rob @user*')
-    const u = user || await db.getOrCreateUser(sender)
-    const remaining = await db.getCooldown(sender, 'rob')
-    if (remaining > 0) {
-      const mins = Math.floor(remaining / 60000)
-      return reply(`⏳ You need to wait *${mins}m* before robbing again.`)
-    }
-    const target = mentioned[0]
-    const tp     = target.split('@')[0]
-    if (tp === sender) return reply('❌ You cannot rob yourself!')
-    const tu = await db.getOrCreateUser(tp)
-    if ((tu.wallet || 0) < 50) return reply(`❌ @${tp} doesn't have enough to rob.`)
-    const success = Math.random() < 0.45
-    await db.setCooldown(sender, 'rob', 20 * 60)
-    if (success) {
-      const stolen = Math.floor((tu.wallet || 0) * (0.1 + Math.random() * 0.2))
-      await db.updateUser(tp, { wallet: (tu.wallet || 0) - stolen })
-      await db.updateUser(sender, { wallet: (u.wallet || 0) + stolen })
-      await sock.sendMessage(jid, { text: `🦹 *Rob Successful!*\n\nYou stole *$${stolen.toLocaleString()}* from @${tp}!`, mentions: [target] }, { quoted: msg })
-    } else {
-      const fine = Math.min(100, u.wallet || 0)
-      await db.updateUser(sender, { wallet: (u.wallet || 0) - fine })
-      await sock.sendMessage(jid, { text: `👮 *Caught!*\n\nYou failed to rob @${tp} and paid a *$${fine}* fine.`, mentions: [target] }, { quoted: msg })
-    }
-  },
-
-  async heist({ reply, sender, user }) {
-    const u = user || await db.getOrCreateUser(sender)
-    const remaining = await db.getCooldown(sender, 'heist')
-    if (remaining > 0) {
-      const mins = Math.floor(remaining / 60000)
-      return reply(`⏳ Cooling down from last heist. *${mins}m* left.`)
-    }
-    const success = Math.random() < 0.4
-    const amount  = Math.floor(Math.random() * 1500) + 500
-    await db.setCooldown(sender, 'heist', 60 * 60)
-    if (success) {
-      await db.updateUser(sender, { wallet: (u.wallet || 0) + amount })
-      await reply(`💰 *Heist Successful!*\n\nYour crew cracked the vault and got away with *$${amount.toLocaleString()}*!`)
-    } else {
-      const loss = Math.min(Math.floor(amount * 0.3), u.wallet || 0)
-      await db.updateUser(sender, { wallet: (u.wallet || 0) - loss })
-      await reply(`🚨 *Heist Failed!*\n\nThe guards caught you. You lost *$${loss.toLocaleString()}* in the chaos.`)
-    }
-  },
-
-  async topmoney({ reply }) { return module.exports.richlist({ reply }) },
-  async topbank({ reply })  { return module.exports.richlist({ reply }) },
-
-  async achievements({ reply, sender, user }) {
-    const u = user || await db.getOrCreateUser(sender)
-    const ach = []
-    if ((u.wallet || 0) + (u.bank || 0) >= 10000) ach.push('💰 *Coin Hoarder* - Net worth over $10,000')
-    if ((u.streak || 0) >= 7)  ach.push('🔥 *Week Warrior* - 7-day daily streak')
-    if ((u.streak || 0) >= 30) ach.push('🏆 *Monthly Master* - 30-day daily streak')
-    if ((u.level  || 1) >= 10) ach.push('📈 *Veteran* - Reached level 10')
-    await reply(
-      `🏆 *Achievements*\n\n` +
-      (ach.length ? ach.join('\n') : '_No achievements yet. Keep playing!_')
-    )
-  },
-
-  async bonus({ reply, sender, user }) {
-    const u = user || await db.getOrCreateUser(sender)
-    const remaining = await db.getCooldown(sender, 'bonus')
-    if (remaining > 0) {
-      const hrs  = Math.floor(remaining / 3600000)
-      const mins = Math.floor((remaining % 3600000) / 60000)
-      return reply(`⏳ Bonus claimed! Next in *${hrs}h ${mins}m*`)
-    }
-    const coins = Math.floor(Math.random() * 300) + 100
-    await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
-    await db.setCooldown(sender, 'bonus', 4 * 3600)
-    await reply(`🎁 *Bonus Collected!*\n\n💰 +$${coins}\n\n_Next bonus in 4 hours._`)
-  },
-
-  async upgrade({ reply }) {
-    await reply('⚙️ *Upgrade System*\n\n_Upgrades coming soon! Stay tuned._')
-  },
-
-  async prestige({ reply }) {
-    await reply('✨ *Prestige*\n\n_Prestige system coming soon! Keep grinding._')
-  },
-
-  async bankupgrade({ reply }) {
-    await reply('🏦 *Bank Upgrade*\n\n_Bank upgrades coming soon!_')
-  },
-
-  async withdrawall({ reply, sender, user }) {
-    const u = user || await db.getOrCreateUser(sender)
-    const amount = u.bank || 0
-    if (amount <= 0) return reply('❌ Your bank is empty.')
-    await db.updateUser(sender, { wallet: (u.wallet || 0) + amount, bank: 0 })
-    await reply(`🏧 You have successfully withdrawn *$${amount.toLocaleString()}* from your bank.\n\n💵 Wallet: $${((u.wallet||0)+amount).toLocaleString()} | 🏦 Bank: $0`)
-  },
-
-  async claim(ctx) { return module.exports.daily(ctx) },
 }

@@ -566,7 +566,7 @@ module.exports = {
       `┌─「 𝗦𝗧𝗔𝗙𝗙𝗦 」─┐\n│\n` +
       `├── 👑 𝗠𝗢𝗗𝗦 👑\n${modLines}\n│\n` +
       `└── 🛡️ 𝗚𝗨𝗔𝗥𝗗𝗜𝗔𝗡𝗦 🛡️\n${guardianLines}\n\n` +
-      `> ⚠️ Inappropriate use of this command will lead to a *Konosuba Ban*.`
+      `> ⚠️ Inappropriate use of this command will lead to a *Shadow Ban*.`
 
     await sock.sendMessage(jid, { text, mentions: allMentions }, { quoted: msg })
   },
@@ -643,4 +643,37 @@ module.exports = {
       await reply(`❌ DB error: ${e.message}`)
     }
   },
+  async join({ sock, reply, args, isOwner, isMod, isGuardian }) {
+    if (!isOwner && !isMod && !isGuardian) return reply('🚫 Access Denied')
+    const link = args[0]
+    if (!link) return reply('❌ Usage: .join {group link}')
+    try {
+      const code = link.includes('/') ? link.split('/').pop() : link
+      await sock.groupAcceptInvite(code)
+      await reply('✅ Successfully joined the group!')
+    } catch (err) {
+      await reply('❌ Failed to join: ' + (err.message || 'Invalid link'))
+    }
+  },
+
+  async exit({ sock, jid, reply, isOwner, isMod, isGuardian, isGroup }) {
+    if (!isOwner && !isMod && !isGuardian) return reply('🚫 Access Denied')
+    if (!isGroup) return reply('❌ This command only works in groups.')
+    await reply('👋 Leaving this group...')
+    setTimeout(() => sock.groupLeave(jid).catch(() => {}), 1000)
+  },
+
+  async listgc({ sock, reply, isOwner, isMod, isGuardian }) {
+    if (!isOwner && !isMod && !isGuardian) return reply('🚫 Access Denied')
+    try {
+      const groups = await sock.groupFetchAllParticipating()
+      const list = Object.values(groups)
+      if (!list.length) return reply('📋 Bot is not in any groups.')
+      const lines = list.map((g, i) => `${i+1}. ${g.subject} - ${g.participants.length} members`).join('\n')
+      await reply(`📋 *Groups Bot is In (${list.length})*\n\n${lines}`)
+    } catch (err) {
+      await reply('❌ Failed to fetch groups: ' + (err.message || 'Unknown error'))
+    }
+  },
+
 }

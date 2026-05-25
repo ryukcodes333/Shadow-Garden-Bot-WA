@@ -27,7 +27,7 @@ const { alphaChatReply } = require('./chat')
 
 const PREFIX      = global.prefix   || '.'
 const POKE_PREFIX = '#'
-const OWNER_LID   = '12232838631673@lid'
+const OWNER_LID   = global.ownerLid || '259683117985842@lid'
 
 const spamTracker = {}
 
@@ -282,12 +282,11 @@ async function handleMessage(sock, msg) {
     'megumin','mikasa','naruto','sasuke','itachi','madara','gojo','nezuko','kurumi','onepiece','yumeko',
     'lotterystart','lotteryjoin','lotterystatus','lotterydraw','lotteryend','lottery',
     'poll','pollresult','dbstatus',
-    'addmod','removemod','addguardian','removeguardian','mods','modlist','modslist',
+    'addmod','removemod','addguardian','removeguardian','mods','modlist','listgc','modslist',
     'phelp','law','pbenefits','report','trivia','math','fact','joke','flip','8ball','roll','choose',
     'roulette','horse','casino','dice',
     'removebg','nobg','enhance','remini','upscale','night','sunset','rain','city','gun','jail','toanime','cartoon','carbon',
     'suspend','unsuspend','suspendlist',
-    'market','wallet','bank','weekly','monthly','crime','rob','heist','topmoney','topbank','howgay','lockgroup','unlockgroup','join','exit','listgc',
     // ── new-user / registration commands always allowed ──────────
     'register','reg','start','p','profile','bal','balance','help','menu',
   ])
@@ -419,36 +418,6 @@ async function handleMessage(sock, msg) {
 
     // Staff commands
     if (staffCmds[cmd])         return await staffCmds[cmd](ctx)
-    // Group join/exit/list commands (routed through staffCmds)
-    if (cmd === 'join')          return await staffCmds['join'] ? staffCmds['join'](ctx) : ctx.reply('❌ .join <invite link>')
-    if (cmd === 'exit')          return await staffCmds['exit'] ? staffCmds['exit'](ctx) : ctx.reply('❌ Groups only.')
-    if (cmd === 'listgc')        return await staffCmds['listgc'] ? staffCmds['listgc'](ctx) : ctx.reply('❌ Access Denied')
-
-    // Renamed commands
-    if (cmd === 'lockgroup')     return await adminCmds['close']   ? adminCmds['close'](ctx)   : ctx.reply('❌ Groups only.')
-    if (cmd === 'unlockgroup')   return await adminCmds['open']    ? adminCmds['open'](ctx)    : ctx.reply('❌ Groups only.')
-    if (cmd === 'howgay')        return await funCmds['gay']       ? funCmds['gay'](ctx)       : ctx.reply('❌ Fun cmd missing.')
-    if (cmd === 'market')        return await economyCmds['market']? economyCmds['market'](ctx): ctx.reply('❌ Economy cmd missing.')
-    if (cmd === 'wallet')        return await economyCmds['wallet']? economyCmds['wallet'](ctx): economyCmds['bal'](ctx)
-    if (cmd === 'bank')          return await economyCmds['bankbal']?economyCmds['bankbal'](ctx): economyCmds['bal'](ctx)
-    if (cmd === 'weekly')        return await economyCmds['weekly']? economyCmds['weekly'](ctx): ctx.reply('⏳ Coming soon.')
-    if (cmd === 'monthly')       return await economyCmds['monthly']?economyCmds['monthly'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'crime')         return await economyCmds['crime']? economyCmds['crime'](ctx) : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'rob')           return await economyCmds['rob']   ? economyCmds['rob'](ctx)   : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'heist')         return await economyCmds['heist'] ? economyCmds['heist'](ctx) : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'topmoney')      return await economyCmds['topmoney']?economyCmds['topmoney'](ctx):economyCmds['richlist'](ctx)
-    if (cmd === 'topbank')       return await economyCmds['topbank']?economyCmds['topbank'](ctx):economyCmds['richlist'](ctx)
-    if (cmd === 'achievements')  return await economyCmds['achievements']?economyCmds['achievements'](ctx):ctx.reply('🏆 Achievements coming soon!')
-    if (cmd === 'claim')         return await economyCmds['claim'] ? economyCmds['claim'](ctx) : economyCmds['daily'](ctx)
-    if (cmd === 'bonus')         return await economyCmds['bonus'] ? economyCmds['bonus'](ctx) : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'upgrade')       return await economyCmds['upgrade']?economyCmds['upgrade'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'prestige')      return await economyCmds['prestige']?economyCmds['prestige'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'bankupgrade')   return await economyCmds['bankupgrade']?economyCmds['bankupgrade'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'withdrawall')   return await economyCmds['withdrawall']?economyCmds['withdrawall'](ctx):(()=>{ctx.args=['all'];return economyCmds['withdraw'](ctx)})()
-    if (cmd === 'goodbye')       return await adminCmds['leave']   ? adminCmds['leave'](ctx)   : ctx.reply('❌ Usage: .goodbye on/off')
-    if (cmd === 'invitelink')    return await adminCmds['invitelink']?adminCmds['invitelink'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'stafflist')     return await staffCmds['mods']    ? staffCmds['mods'](ctx)    : ctx.reply('No staff found.')
-    if (cmd === 'myrole')        return await staffCmds['myrole']  ? staffCmds['myrole'](ctx)  : ctx.reply('⏳ Coming soon.')
 
     // Poll commands
     if (pollCmds[cmd])          return await pollCmds[cmd](ctx)
