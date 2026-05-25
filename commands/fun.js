@@ -30,6 +30,7 @@ module.exports = {
     const pct = Math.floor(Math.random() * 101)
     await reply(`🏳️‍🌈 *Gay Meter*\n\n👤 @${target}\n\n${'🌈'.repeat(Math.ceil(pct/10))}${'⬛'.repeat(10-Math.ceil(pct/10))}\n\n*${pct}%*`)
   },
+  async howgay(ctx) { return module.exports.gay(ctx) },
   async lesbian({ reply, sender, msg }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     const target = mentioned.length ? mentioned[0].split('@')[0] : sender
@@ -66,7 +67,7 @@ module.exports = {
   async skill({ reply, sender }) {
     const skills = ['Shadow manipulation', 'Time bending', 'Mind reading', 'Invisibility', 'Fire control', 'Ice formation', 'Lightning strike', 'Shadow teleport']
     const lvl = Math.floor(Math.random() * 10) + 1
-    await reply(`⚡ *Skill Check*\n\n@${sender}\n\n*${skills[Math.floor(Math.random() * skills.length)]}* — Lv.${lvl}/10`)
+    await reply(`⚡ *Skill Check*\n\n@${sender}\n\n*${skills[Math.floor(Math.random() * skills.length)]}* - Lv.${lvl}/10`)
   },
   async duality({ reply, sender }) {
     const sides = [['Light', 'Dark'], ['Chaos', 'Order'], ['Creation', 'Destruction'], ['Love', 'Hate'], ['Peace', 'War']]
@@ -201,7 +202,7 @@ module.exports = {
   async fact({ reply }) {
     const facts = [
       'A group of flamingos is called a flamboyance.',
-      'Honey never spoils — archaeologists found 3000-year-old honey in Egypt.',
+      'Honey never spoils - archaeologists found 3000-year-old honey in Egypt.',
       'A day on Venus is longer than a year on Venus.',
       'The shortest war in history lasted 38-45 minutes.',
       'Bananas are berries, but strawberries are not.',
@@ -213,7 +214,7 @@ module.exports = {
     const target = mentioned.length ? mentioned[0].split('@')[0] : sender
     const roasts = [
       `@${target}, your Wi-Fi password is longer than your attention span.`,
-      `@${target} is like a software update — nobody wants them but they keep showing up.`,
+      `@${target} is like a software update - nobody wants them but they keep showing up.`,
       `@${target}'s brain cell count rivals a rock. Impressive for a rock.`,
       `@${target} Googles "how to tie shoes" every morning.`,
       `@${target} is the reason we don't clone people.`,

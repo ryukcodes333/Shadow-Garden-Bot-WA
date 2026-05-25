@@ -6,7 +6,7 @@ const os = require('os')
 const path = require('path')
 const fs = require('fs')
 
-// MongoDB-based image storage — stores images as base64 data URLs in the user document
+// MongoDB-based image storage - stores images as base64 data URLs in the user document
 
 // Download an attached or quoted image from a message, returns buffer or null
 async function getImageBuffer(sock, msg) {
@@ -49,7 +49,7 @@ function extractJpegFromBinary(buf) {
   return buf.slice(start, end)
 }
 
-// Download the raw video from a message — returns the mp4 buffer as-is.
+// Download the raw video from a message - returns the mp4 buffer as-is.
 async function getRawVideoBuffer(sock, msg) {
   const vidMsg =
     msg.message?.videoMessage ||
@@ -125,7 +125,7 @@ async function uploadToStorage(buffer, storagePath, mime = 'image/jpeg') {
 }
 
 module.exports = {
-  // ─── .p — image profile card ──────────────────────────────────────────────
+  // ─── .p - image profile card ──────────────────────────────────────────────
   async p({ sock, msg, jid, sender, user, reply, isOwner, isMod, isGuardian }) {
     await reply('⏳ Generating your profile card…')
 
@@ -173,48 +173,56 @@ module.exports = {
     const frameId   = u.profile_frame || 1
     const frameName = getFrame(frameId).name
     const cardCount = await db.getUserCardCount(sender).catch(() => '?')
-    const pokemon   = await db.getUserPokemon(sender).catch(() => [])
-    const pokeCount = (pokemon || []).length
-    const partySize = (pokemon || []).filter(p => p.in_party).length
+    const joinDate  = u.created_at ? new Date(u.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown'
     const xpNeeded  = (u.level || 1) * 1000
-    const joinDate  = u.created_at ? new Date(u.created_at).toLocaleDateString('en-GB') : 'Unknown'
-    const barFilled = Math.round(((u.xp || 0) % 1000) / 100)
-    const xpBar     = '█'.repeat(barFilled) + '░'.repeat(10 - barFilled)
+    const xpFill    = Math.min(Math.round(((u.xp || 0) / xpNeeded) * 10), 10)
+    const xpBar     = '🟦'.repeat(xpFill) + '⬛'.repeat(10 - xpFill)
     const netWorth  = (Number(u.wallet || 0) + Number(u.bank || 0))
+    const rank      = effectiveRole.charAt(0).toUpperCase() + effectiveRole.slice(1)
+    const title     = u.title || 'Newcomer'
+
+    // Pokemon stats
+    let pokemonOwned = 0, partyCount = 0, gymBadges = 0, battleWins = 0, battleLosses = 0
+    try {
+      const pData = await db.getUserPokemon(sender).catch(() => [])
+      pokemonOwned = Array.isArray(pData) ? pData.length : 0
+      partyCount   = Array.isArray(pData) ? pData.filter(p => p.in_party).length : 0
+      gymBadges    = u.gym_badges || 0
+      battleWins   = u.battle_wins || 0
+      battleLosses = u.battle_losses || 0
+    } catch {}
 
     await sock.sendMessage(
       jid,
       {
         image: cardBuffer,
         caption:
-          `✦ *${u.name || sender}'s Profile* ✦\n\n` +
-          `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-          `👤 *Rank:* ${(u.role || 'member').toUpperCase()}  |  🏷️ *Title:* ${u.title || 'Newcomer'}\n` +
-          `⭐ *Level:* ${u.level || 1}  |  🔥 *Streak:* ${u.streak || 0} days\n` +
-          `📊 *XP:* ${(u.xp || 0).toLocaleString()} / ${xpNeeded.toLocaleString()}\n` +
-          `[${xpBar}]\n\n` +
-          `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-          `💰 *Wallet:* $${Number(u.wallet || 0).toLocaleString()}\n` +
-          `🏦 *Bank:* $${Number(u.bank || 0).toLocaleString()}\n` +
-          `💎 *Gems:* ${Number(u.gems || 0).toLocaleString()}\n` +
-          `💵 *Net Worth:* $${netWorth.toLocaleString()}\n\n` +
-          `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-          `🃏 *Cards Owned:* ${cardCount}\n` +
-          `🖼️ *Frame:* ${frameName} (#${frameId})\n\n` +
-          `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-          `🎮 *Trainer Stats*\n` +
-          `🐾 *Pokémon Owned:* ${pokeCount}  |  🎒 *In Party:* ${partySize}\n` +
-          `🏆 *Gym Badges:* ${u.pokemon_badges || 0}\n` +
-          `⚔️ *Battle Wins:* ${u.pokemon_wins || 0}  |  💥 *Losses:* ${u.pokemon_losses || 0}\n\n` +
-          `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-          `📅 *Joined:* ${joinDate}\n` +
-          `_Type .frames to browse all 30 frames_ 🖤`,
+          `✦ ${u.name || sender}'s Profile ✦\n\n` +
+          `*👤 Rank:* ${rank} | 🏷️ Title: ${title}  \n` +
+          `*⭐ Level:* ${u.level || 1}\n` +
+          `*🔥 Streak:* ${u.streak || 0} days  \n` +
+          `*📊 XP:* ${u.xp || 0} / ${xpNeeded}  \n` +
+          `\`[${xpBar}]\`\n\n` +
+          `*💰 Wallet:* ${Number(u.wallet || 0).toLocaleString()}  \n` +
+          `*🏦 Bank:* ${Number(u.bank || 0).toLocaleString()}  \n` +
+          `*💎 Gems:* ${Number(u.gems || 0).toLocaleString()}  \n` +
+          `*💵 Net Worth:* ${netWorth.toLocaleString()}\n\n` +
+          `*🃏 Cards Owned:* ${cardCount}  \n` +
+          `*🖼️ Frame:* ${frameName}\n\n` +
+          `\`🎮 Trainer Stats\` \n` +
+          `*🐾 Pokémon Owned:* ${pokemonOwned}\n` +
+          `*🎒 In Party:* ${partyCount}  \n` +
+          `*🏆 Gym Badges:* ${gymBadges}  \n` +
+          `*⚔️ Battle Wins:* ${battleWins}\n` +
+          `*💥 Losses:* ${battleLosses}\n\n` +
+          `*📅 Joined:* ${joinDate}  \n\n` +
+          `> Type .frames to browse all 30 frames`,
       },
       { quoted: msg }
     )
   },
 
-  // ─── .profile — text profile ─────────────────────────────────────────────
+  // ─── .profile - text profile ─────────────────────────────────────────────
   async profile({ reply, sender, user, msg }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     const targetPhone = mentioned.length ? mentioned[0].split('@')[0] : sender
@@ -224,46 +232,26 @@ module.exports = {
     const xpNeeded = (u.level || 1) * 1000
     const joinDate = u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Unknown'
 
-    const pokemonList = await db.getUserPokemon(targetPhone).catch(() => [])
-    const cardCount2  = await db.getUserCardCount(targetPhone).catch(() => 0)
-    const pokeCount2  = (pokemonList || []).length
-    const partyPoke   = (pokemonList || []).filter(p => p.in_party).slice(0, 3)
-    const netWorth2   = Number(u.wallet || 0) + Number(u.bank || 0)
-    const xpBar2fill  = Math.round(((u.xp || 0) % 1000) / 100)
-    const xpBar2      = '█'.repeat(xpBar2fill) + '░'.repeat(10 - xpBar2fill)
-    const partyLine   = partyPoke.length
-      ? partyPoke.map(p => `  • *${p.name}* Lv.${p.level || 1}`).join('\n')
-      : '  _No Pokémon in party_'
-
     await reply(
-      `✦ *${u.name || targetPhone}'s Profile* ✦\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `👤 *USER PROFILE*\n\n` +
       `🧑 *Name:* ${u.name || targetPhone}\n` +
-      `🆔 *ID:* ${targetPhone.slice(-6)}\n` +
-      `⭐ *Rank:* ${(u.role || 'member').toUpperCase()}\n` +
-      `🏷️ *Title:* ${u.title || 'Newcomer'}\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `🆔 *User ID:* ${targetPhone}\n\n` +
       `📊 *Level:* ${u.level || 1}\n` +
-      `🔥 *XP:* ${(u.xp || 0).toLocaleString()} / ${xpNeeded}\n` +
-      `[${xpBar2}]\n` +
-      `📈 *Streak:* ${u.streak || 0} days\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-      `💰 *Wallet:* $${Number(u.wallet || 0).toLocaleString()}\n` +
-      `🏦 *Bank:* $${Number(u.bank || 0).toLocaleString()}\n` +
-      `💎 *Gems:* ${Number(u.gems || 0).toLocaleString()}\n` +
-      `💵 *Net Worth:* $${netWorth2.toLocaleString()}\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-      `🃏 *Cards Owned:* ${cardCount2}\n` +
-      `🚫 *Banned:* ${u.banned ? '⛔ Yes' : '✅ No'}\n` +
-      `📅 *Joined:* ${joinDate}\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-      `🎮 *Trainer Stats*\n` +
-      `🐾 *Pokémon Owned:* ${pokeCount2}\n` +
-      `🏆 *Gym Badges:* ${u.pokemon_badges || 0}\n` +
-      `⚔️ *Wins:* ${u.pokemon_wins || 0}  |  💥 *Losses:* ${u.pokemon_losses || 0}\n\n` +
-      `*🎒 Active Party (${partyPoke.length}/6):*\n${partyLine}\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `_The shadows know your every move._ 🖤`
+      `🔥 *XP:* ${u.xp || 0} / ${xpNeeded}\n` +
+      `⭐ *Rank:* ${u.role || 'member'}\n\n` +
+      `💰 *Wallet:* ${u.wallet || 0} coins\n` +
+      `🏦 *Bank:* ${u.bank || 0} coins\n` +
+      `💎 *Gems:* ${u.gems || 0}\n\n` +
+      `🎮 *Games Won:* 0\n` +
+      `❌ *Games Lost:* 0\n\n` +
+      `📈 *Streak:* ${u.streak || 0} days\n` +
+      `⚡ *Status:* Active\n\n` +
+      `🧠 *Title:* ${u.title || 'Newcomer'}\n` +
+      `🎴 *Card Tier:* N/A\n\n` +
+      `🚫 *Banned:* ${u.banned ? 'Yes' : 'No'}\n` +
+      `📅 *Joined:* ${joinDate}\n` +
+      `🌍 *Registered:* ${u.created_at ? 'Yes' : 'No'}\n\n` +
+      `_The system records everything… even what you don't notice._ 🖤`
     )
   },
 
@@ -296,7 +284,7 @@ module.exports = {
               `✅ *PROFILE PICTURE UPDATED*\n\n` +
               `Your video PP has been saved! 🎬\n\n` +
               `📸 Type *.p* to see your updated card.\n\n` +
-              `_The shadows reflect your true face._ 🖤`,
+              `_You carry the spirit of Konosuba._ 🖤`,
           },
           { quoted: msg }
         )
@@ -335,7 +323,7 @@ module.exports = {
             `✅ *PROFILE PICTURE UPDATED*\n\n` +
             `Your PP has been saved.\n\n` +
             `📸 Type *.p* to see your updated card.\n\n` +
-            `_The shadows reflect your true face._ 🖤`,
+            `_You carry the spirit of Konosuba._ 🖤`,
         },
         { quoted: msg }
       )
@@ -373,7 +361,7 @@ module.exports = {
               `✅ *PROFILE BACKGROUND UPDATED*\n\n` +
               `Your video background has been saved! 🎬\n\n` +
               `📸 Type *.p* to see your card (uses first frame).\n\n` +
-              `_Your shadow now has a new stage._ 🖤`,
+              `_A new backdrop for your legend._ 🖤`,
           },
           { quoted: msg }
         )
@@ -394,7 +382,7 @@ module.exports = {
         `🎨 *SET PROFILE BACKGROUND*\n\n` +
         `Send or quote a *JPG/PNG* image with *.setbg*\n\n` +
         `This sets the background of your profile card.\n\n` +
-        `_Any image works — landscapes, gradients, etc._ 🖤${staffNote}`
+        `_Any image works - landscapes, gradients, etc._ 🖤${staffNote}`
       )
     }
 
@@ -412,7 +400,7 @@ module.exports = {
             `✅ *PROFILE BACKGROUND UPDATED*\n\n` +
             `Your background has been saved.\n\n` +
             `📸 Type *.p* to see your updated card.\n\n` +
-            `_Your shadow now has a new stage._ 🖤`,
+            `_A new backdrop for your legend._ 🖤`,
         },
         { quoted: msg }
       )
@@ -429,9 +417,9 @@ module.exports = {
       return reply(
         `🖼️ *FRAMES CATALOG*\n\n` +
         `Usage:\n` +
-        `• *.frames* or *.frames 1* — Page 1 (frames 1–35, Basic)\n` +
-        `• *.frames 2* — Page 2 (frames 36–70, Anime)\n` +
-        `• *.frames 3* — Page 3 (frames 71–100, 3D Prestige)\n\n` +
+        `• *.frames* or *.frames 1* - Page 1 (frames 1–35, Basic)\n` +
+        `• *.frames 2* - Page 2 (frames 36–70, Anime)\n` +
+        `• *.frames 3* - Page 3 (frames 71–100, 3D Prestige)\n\n` +
         `_100 frames total across three pages._ 🖤`
       )
     }
@@ -448,36 +436,36 @@ module.exports = {
 
     const captions = {
       1:
-        `🖼️ *FRAMES COLLECTION — Page 1/3 (Basic)*\n\n` +
+        `🖼️ *FRAMES COLLECTION - Page 1/3 (Basic)*\n\n` +
         `*35 frames* across 7 categories:\n` +
         `• Basic (1–5)  • Neon (6–10)  • Gradient (11–15)\n` +
         `• Ornate (16–20)  • Nature (21–25)\n` +
         `• Prestige (26–30)  • Extra (31–35)\n\n` +
-        `📖 *.frames 2* — Anime frames (36–70)\n` +
-        `📖 *.frames 3* — 3D Prestige frames (71–100)\n` +
-        `⚙️ *.setframe <id>* — Equip a frame\n\n` +
+        `📖 *.frames 2* - Anime frames (36–70)\n` +
+        `📖 *.frames 3* - 3D Prestige frames (71–100)\n` +
+        `⚙️ *.setframe <id>* - Equip a frame\n\n` +
         `_e.g. .setframe 14_ 🖤`,
 
       2:
-        `🎌 *FRAMES COLLECTION — Page 2/3 (Anime)*\n\n` +
+        `🎌 *FRAMES COLLECTION - Page 2/3 (Anime)*\n\n` +
         `*35 anime & cartoon frames* (36–70):\n` +
         `• Anime Basics (36–40)  • Anime Fantasy (41–45)\n` +
         `• Anime Magic (46–50)  • Anime Nature (51–55)\n` +
         `• Cyberpunk (56–60)  • Anime Prestige (61–65)\n` +
         `• Anime Ultimate (66–70)\n\n` +
-        `📖 *.frames* — Page 1 (basic)  |  *.frames 3* — 3D frames\n` +
-        `⚙️ *.setframe <id>* — Equip a frame\n\n` +
+        `📖 *.frames* - Page 1 (basic)  |  *.frames 3* - 3D frames\n` +
+        `⚙️ *.setframe <id>* - Equip a frame\n\n` +
         `_Cartoonish, anime-styled shadows await._ 🖤`,
 
       3:
-        `✨ *FRAMES COLLECTION — Page 3/3 (3D Prestige)*\n\n` +
+        `✨ *FRAMES COLLECTION - Page 3/3 (3D Prestige)*\n\n` +
         `*30 three-dimensional prestige frames* (71–100):\n` +
         `• Shadow Depth (71–80)  • Neon 3D (81–90)\n` +
         `• Void Prism (91–100)\n\n` +
         `💎 These frames feature: radial gradients, bevel edges,\n` +
         `   specular highlights, glow rings & accent gems.\n\n` +
-        `📖 *.frames* — Page 1  |  *.frames 2* — Anime\n` +
-        `⚙️ *.setframe <id>* — Equip a frame\n\n` +
+        `📖 *.frames* - Page 1  |  *.frames 2* - Anime\n` +
+        `⚙️ *.setframe <id>* - Equip a frame\n\n` +
         `_Only the strongest carry these marks._ 🖤`,
     }
 
@@ -496,9 +484,9 @@ module.exports = {
       return reply(
         `🖼️ *SET FRAME*\n\n` +
         `Usage: *.setframe <1–100>*\n\n` +
-        `• *.frames*   — Page 1 (frames 1–35, Basic)\n` +
-        `• *.frames 2* — Page 2 (frames 36–70, Anime)\n` +
-        `• *.frames 3* — Page 3 (frames 71–100, 3D Prestige)\n\n` +
+        `• *.frames*   - Page 1 (frames 1–35, Basic)\n` +
+        `• *.frames 2* - Page 2 (frames 36–70, Anime)\n` +
+        `• *.frames 3* - Page 3 (frames 71–100, 3D Prestige)\n\n` +
         `_e.g. .setframe 88_ 🖤`
       )
     }

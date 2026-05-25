@@ -27,8 +27,8 @@ const STAFF_ROLES = { MOD: 'mod', GUARDIAN: 'guardian', CARD_MAKER: 'card_maker'
 
 module.exports = {
 
-  // ── .mods — always use actual participant JIDs ─────────────────
-  async mods({ sock, jid, msg, reply, isGroup }) {
+  // ── .mods - always use actual participant JIDs ─────────────────
+  async mods({ sock, jid, msg, reply, isGroup, sender, pushName }) {
     const allStaff     = await db.getMods()
     const modList      = allStaff.filter(u => u.role === 'mod')
     const guardianList = allStaff.filter(u => u.role === 'guardian')
@@ -43,22 +43,23 @@ module.exports = {
     ]
 
     // Display text always uses just the phone number (not the @lid number)
+    const callerName = pushName || sender || 'there'
     const modLines = modList.length
-      ? modList.map((u, i) => `│   ${i === modList.length - 1 ? '└──' : '├──'} @${u.phone}`).join('\n')
-      : '│   └── None'
+      ? modList.map(u => `💙 @${u.phone}`).join('\n')
+      : '(none)'
 
     const guardianLines = guardianList.length
-      ? guardianList.map((u, i) => `     ${i === guardianList.length - 1 ? '└──' : '├──'} @${u.phone}`).join('\n')
-      : '     └── None'
+      ? guardianList.map(u => `💙 @${u.phone}`).join('\n')
+      : '(none)'
 
     const text =
-      `┌─「 𝗦𝗧𝗔𝗙𝗙𝗦 」─┐\n` +
-      `│\n` +
-      `├── 👑 𝗠𝗢𝗗𝗦 👑\n${modLines}\n` +
-      `│\n` +
-      `└── 🛡️ 𝗚𝗨𝗔𝗥𝗗𝗜𝗔𝗡𝗦 🛡️\n${guardianLines}\n\n` +
-      `> ⚠️ Inappropriate use of this command will lead to a *Shadow Ban* from the bot.`
-
+      `Hᴇʟʟᴏ ${callerName}, ᴛʜɪᴜ ᴀʀᴇ ᴍʏ ᴍᴏᴅᴇʀᴀᴛᴏʀᴜ ɪɴ 𝐊Ω𝐍Ω𝐒𝐔𝐁Φ, ᴏᴋᴀʏ?! 💙\n\n` +
+      `> Aɴᴅ ʜᴇʏ! ʏᴏᴜ'ʀᴇ ᴏɴʟʏ ᴜᴜᴘᴘᴏᴜᴇᴅ ᴛᴏ ᴅᴍ ᴛʜᴇᴍ ᶣᴏʀ *Iᴍᴘᴏʀᴛᴀɴᴛ Rᴇᴀᴜᴏɴᴜ!!*\n\n` +
+      `*👑 Moderators 👑*\n\n` +
+      `${modLines}\n\n` +
+      `*🛡️ Guardians 🛡️*\n\n` +
+      `${guardianLines}\n\n` +
+      `> Do *not* spam their DMs to *avoid* getting *blocked* 🚫`
     await sock.sendMessage(jid, { text, mentions: allMentions }, { quoted: msg })
   },
 
@@ -305,21 +306,21 @@ module.exports = {
     if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const text = args.join(' ')
     if (!text) return reply('⚠️ Usage: *.post <message>*')
-    await sock.sendMessage(jid, { text: `📣 *SHADOW GARDEN ANNOUNCEMENT*\n\n${text}\n\n— *Shadow Garden Staff* 🖤` })
+    await sock.sendMessage(jid, { text: `📣 *KONOSUBA ANNOUNCEMENT*\n\n${text}\n\n- *Konosuba Staff* 🖤` })
   },
 
   async broadcast({ sock, reply, jid, args, isOwner }) {
     if (!isOwner) return reply('*🚫 Access Denied*')
     const message = args.join(' ')
     if (!message) return reply('⚠️ Usage: *.broadcast <message>*')
-    await sock.sendMessage(jid, { text: `📢 *BROADCAST*\n\n${message}\n\n— *Shadow Garden* 🖤` })
+    await sock.sendMessage(jid, { text: `📢 *BROADCAST*\n\n${message}\n\n- *Konosuba* 🖤` })
   },
 
   async announce({ sock, jid, reply, args, isOwner, isMod }) {
     if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const text = args.join(' ')
     if (!text) return reply('⚠️ Usage: *.announce <message>*')
-    await sock.sendMessage(jid, { text: `📢 *ANNOUNCEMENT*\n\n${text}\n\n_Shadow Garden Official_ 🖤` })
+    await sock.sendMessage(jid, { text: `📢 *ANNOUNCEMENT*\n\n${text}\n\n_Konosuba Official_ 🖤` })
   },
 
   async dbstatus({ reply, isOwner, isMod, isGuardian }) {
@@ -369,12 +370,12 @@ module.exports = {
   },
 
   async owner({ reply }) {
-    await reply(`👑 *BOT OWNER*\n\nThis bot is managed by Shadow Garden staff.`)
+    await reply(`👑 *BOT OWNER*\n\nThis bot is managed by Konosuba staff.`)
   },
 
   async setprefix({ reply, isOwner }) {
     if (!isOwner) return reply('*🚫 Access Denied*')
-    await reply('ℹ️ Prefix is hardcoded as *.* — contact dev to change.')
+    await reply('ℹ️ Prefix is hardcoded as *.* - contact dev to change.')
   },
 
   // ── Staff menu ────────────────────────────────────────────────
@@ -382,13 +383,57 @@ module.exports = {
     if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
     await reply(
       `╭─『 👑 *Staff Menu* 』\n│\n` +
-      `│ 💰 *Economy*\n│ *.ac <amount> @user* — add cash\n│ *.rc <amount> @user* — remove cash\n│ *.resetbal @user* — reset balance\n│ *.reset @user* — full reset\n│ *.addinv @user <item>* — add inventory item\n│\n` +
-      `│ 🎴 *Cards*\n│ *.spawncard* — spawn random card\n│ *.shoob <name> <tier>* — add Shoob card\n│\n` +
-      `│ 🎮 *Pokémon*\n│ *#spawnp <name>* — spawn specific Pokémon\n│ *.pokemon on/off* — toggle Pokémon system\n│\n` +
-      `│ 👥 *Members*\n│ *.addmod @user* — add moderator\n│ *.addguardian @user* — add guardian\n│ *.recruit @user* — add card maker\n│ *.removemod / .removeguardian*\n│ *.addpremium / .removepremium*\n│ *.mods / .modlist* — view staff\n│\n` +
+      `│ 💰 *Economy*\n│ *.ac <amount> @user* - add cash\n│ *.rc <amount> @user* - remove cash\n│ *.resetbal @user* - reset balance\n│ *.reset @user* - full reset\n│ *.addinv @user <item>* - add inventory item\n│\n` +
+      `│ 🎴 *Cards*\n│ *.spawncard* - spawn random card\n│ *.shoob <name> <tier>* - add Shoob card\n│\n` +
+      `│ 🎮 *Pokémon*\n│ *#spawnp <name>* - spawn specific Pokémon\n│ *.pokemon on/off* - toggle Pokémon system\n│\n` +
+      `│ 👥 *Members*\n│ *.addmod @user* - add moderator\n│ *.addguardian @user* - add guardian\n│ *.recruit @user* - add card maker\n│ *.removemod / .removeguardian*\n│ *.addpremium / .removepremium*\n│ *.mods / .modlist* - view staff\n│\n` +
       `│ 🚫 *Moderation*\n│ *.ban / .unban / .banlist*\n│ *.disable / .enable <cmd>*\n│ *.addrole @user <role>*\n│\n` +
-      `│ 🤖 *Bot*\n│ *.restart* — reboot bot\n│ *.logs* — check logs\n│ *.transfer @old @new*\n│ *.post <message>*\n` +
+      `│ 🤖 *Bot*\n│ *.restart* - reboot bot\n│ *.logs* - check logs\n│ *.transfer @old @new*\n│ *.post <message>*\n` +
       `╰─────────────────────`
     )
+  },
+
+  // ── Group management for owner/mod/guardian ─────────────────
+  async join({ sock, jid, args, isOwner, isMod, isGuardian, reply }) {
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
+    const link = args[0]
+    if (!link || !link.includes('chat.whatsapp.com/')) return reply('❌ Usage: *.join <invite link>*\n\nExample: *.join https://chat.whatsapp.com/XXXX*')
+    const code = link.split('chat.whatsapp.com/').pop().split(/[?&]/)[0].trim()
+    if (!code) return reply('❌ Invalid invite link.')
+    try {
+      await sock.groupAcceptInvite(code)
+      await reply('✅ *Joined group successfully!*')
+    } catch (err) {
+      await reply(`❌ Failed to join: ${err.message || 'Invalid or expired invite link.'}`)
+    }
+  },
+
+  async exit({ sock, jid, isOwner, isMod, isGuardian, isGroup, reply }) {
+    if (!isGroup) return reply('❌ Groups only.')
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
+    await reply('👋 *Leaving this group...*')
+    try {
+      await sock.groupLeave(jid)
+    } catch (err) {
+      await reply(`❌ Failed to leave: ${err.message}`)
+    }
+  },
+
+  async listgc({ sock, jid, isOwner, isMod, isGuardian, reply }) {
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
+    try {
+      const groups = await sock.groupFetchAllParticipating()
+      const list   = Object.values(groups)
+      if (!list.length) return reply('📋 Bot is not in any groups.')
+      const lines  = list.map((g, i) => `${i + 1}. *${g.subject}* - ${g.participants.length} members`).join('\n')
+      await reply(`📋 *Groups Bot is In (${list.length})*\n\n${lines}`)
+    } catch (err) {
+      await reply(`❌ Error fetching groups: ${err.message}`)
+    }
+  },
+
+  async myrole({ reply, sender, user, isOwner, isMod, isGuardian }) {
+    const role = isOwner ? '👑 Owner' : isMod ? '⚙️ Moderator' : isGuardian ? '🛡️ Guardian' : (user?.role || 'Member')
+    await reply(`🎭 *Your Role*\n\n${role}`)
   },
 }

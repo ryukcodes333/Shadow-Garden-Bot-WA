@@ -433,8 +433,8 @@ module.exports = {
   },
 
   async help({ reply, args }) {
-    if (args[0]) return reply(`📖 .${args[0]} — check *.menu* for details`)
-    await reply(`📖 *Help*\n\n• *.menu* — all commands\n• *#phelp* — pokémon help\n• *.law* — rules\n• *.pbenefits* — premium info`)
+    if (args[0]) return reply(`📖 .${args[0]} - check *.menu* for details`)
+    await reply(`📖 *Help*\n\n• *.menu* - all commands\n• *#phelp* - pokémon help\n• *.law* - rules\n• *.pbenefits* - premium info`)
   },
 
   async memory({ reply }) {
@@ -461,7 +461,7 @@ module.exports = {
       `1. Multiple accounts (alts) are strictly prohibited.\n\n` +
       `2. No scripts, cheats, macros, or bot automation.\n\n` +
       `3. Fake card spawns are not allowed.\n\n` +
-      `4. Report bugs — don't exploit them.\n\n` +
+      `4. Report bugs - don't exploit them.\n\n` +
       `5. No fraud, scam trading, or card manipulation.\n\n\n` +
       `🤖 *BOT RULES*\n\n` +
       `1. Don't spam commands when the bot is offline.\n\n` +
@@ -475,7 +475,7 @@ module.exports = {
       `4. Tampering with bot permissions = immediate removal.\n\n\n` +
       `📩 *STAFF CONTACT RULES*\n\n` +
       `1. Use *.modslist* to view staff.\n\n` +
-      `2. State your issue clearly — no empty "hi" messages.\n\n` +
+      `2. State your issue clearly - no empty "hi" messages.\n\n` +
       `3. No spamming staff DMs.\n\n` +
       `4. Contact only one staff member at a time.\n\n` +
       `5. Don't beg for unbans.\n\n\n` +
@@ -566,7 +566,7 @@ module.exports = {
       `┌─「 𝗦𝗧𝗔𝗙𝗙𝗦 」─┐\n│\n` +
       `├── 👑 𝗠𝗢𝗗𝗦 👑\n${modLines}\n│\n` +
       `└── 🛡️ 𝗚𝗨𝗔𝗥𝗗𝗜𝗔𝗡𝗦 🛡️\n${guardianLines}\n\n` +
-      `> ⚠️ Inappropriate use of this command will lead to a *Shadow Ban*.`
+      `> ⚠️ Inappropriate use of this command will lead to a *Konosuba Ban*.`
 
     await sock.sendMessage(jid, { text, mentions: allMentions }, { quoted: msg })
   },
@@ -637,7 +637,7 @@ module.exports = {
           return { c, ok: true, n }
         } catch { return { c, ok: false } }
       }))
-      const lines = counts.map(r => `${r.ok ? '✅' : '❌'} ${r.c}${r.ok ? ` (${r.n})` : ' — error'}`).join('\n')
+      const lines = counts.map(r => `${r.ok ? '✅' : '❌'} ${r.c}${r.ok ? ` (${r.n})` : ' - error'}`).join('\n')
       await reply(`🗄️ *DB STATUS (MongoDB)*\n\n${lines}`)
     } catch (e) {
       await reply(`❌ DB error: ${e.message}`)
