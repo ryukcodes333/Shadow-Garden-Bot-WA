@@ -207,7 +207,19 @@ async function getOrCreateUser(phone, name) {
   phone = cleanPhone(phone)
   let user = await getUser(phone)
   if (!user) user = await createUser(phone, name)
+  // Fallback: always return a minimal user object so commands never crash
+  if (!user) user = {
+    phone, name: name || phone, wallet: 0, bank: 500, gems: 0,
+    xp: 0, level: 1, streak: 0, role: 'member', title: 'Newcomer',
+    banned: false, premium: false, bio: '', pokemon_badges: 0,
+    pokemon_wins: 0, pokemon_losses: 0, profile_pp: null,
+    profile_bg: null, profile_frame: 1, _isFallback: true,
+  }
   return user
+}
+
+async function getCardByExternalId(externalId) {
+  return Card.findOne({ external_id: externalId }).lean()
 }
 
 async function updateUser(phone, updates) {
@@ -669,7 +681,7 @@ module.exports = {
   // Leaderboard
   getLeaderboard, getRichList, getUserCount, getGroupCount,
   // Cards
-  addCard, getCards, getCard, getUserCards, getUserCardCount,
+  addCard, getCards, getCard, getCardByExternalId, getUserCards, getUserCardCount,
   assignCard, addUserCard, deleteUserCardById, getCardOwners, getOrCreateShoobCard,
   // Pokémon
   getUserPokemon, addPokemon, updatePokemon,
