@@ -259,12 +259,34 @@ module.exports = {
           `_Use *.ci ${nameQuery}${tierFilter ? " " + tierFilter : ""}|2* for the 2nd match, |3 for the 3rd, etc._`;
       }
 
+      // Fetch owners from DB
+      let ownersText = '';
+      try {
+        const db2 = require('../database');
+        const dbCard = await db2.getCardByExternalId(cardId).catch(() => null);
+        if (dbCard) {
+          const owners = await db2.getCardOwners(dbCard._id).catch(() => []);
+          const ownerCount = owners.length;
+          if (ownerCount > 0) {
+            const ownerLines = owners.slice(0, 10).map(uc =>
+              `> *@${uc.phone || '?'}* | \`${cardId}\``
+            ).join('\n');
+            ownersText = `\n\n━━━━━━━━━━━━━━━━━━━━━━━\n\n🎀 𝗢𝘄𝗻𝗲𝗿𝘀 (${ownerCount})\n\n${ownerLines}${ownerCount > 10 ? `\n> _...and ${ownerCount - 10} more_` : ''}`;
+          } else {
+            ownersText = `\n\n━━━━━━━━━━━━━━━━━━━━━━━\n\n🎀 𝗢𝘄𝗻𝗲𝗿𝘀 (0)\n\n> _No one owns this card yet_`;
+          }
+        } else {
+          ownersText = `\n\n━━━━━━━━━━━━━━━━━━━━━━━\n\n🎀 𝗢𝘄𝗻𝗲𝗿𝘀 (0)\n\n> _No one owns this card yet_`;
+        }
+      } catch { ownersText = ''; }
+
       const caption =
-        `*🃏 Card Info*\n\n` +
-        `*🎴 Name:* ${card.title}\n` +
-        `*⭐ Tier:* ${tier} — ${TIER_NAMES[tier] || tier}\n` +
-        `*💰 Price:* $${price.toLocaleString()}\n` +
-        `*🆔 Card ID:* \`${cardId}\`` +
+        `🃏 𝗖𝗮𝗿𝗱 𝗜𝗻𝗳𝗼\n\n` +
+        `✨ 𝗡𝗮𝗺𝗲: ${card.title}\n` +
+        `📚 𝗦𝗲𝗿𝗶𝗲𝘀: ${card.series || '—'}\n` +
+        `💠 𝗧𝗶𝗲𝗿: ${tier} — ${TIER_NAMES[tier] || tier}\n` +
+        `🆔 𝗖𝗮𝗿𝗱 𝗜𝗗: #${cardId}` +
+        ownersText +
         multiNote;
 
       try {
@@ -298,15 +320,21 @@ module.exports = {
     const imageUrl = cardData?.image_url || null;
     const price = cardData?.price || TIER_PRICES[tier] || 0;
     const tierEmoji = TIERS[tier] || "🎴";
+    const dbCardId = cardData?._id ? extractCardId(String(cardData.image_url || cardData.external_id || cardData._id)) : '??????';
+    const ownerCount2 = await (async () => {
+      try {
+        const db2 = require('../database');
+        if (cardData?._id) return await db2.getCardOwners(cardData._id).then(o => o.length).catch(() => '?');
+        return '?';
+      } catch { return '?'; }
+    })();
     const caption =
-      `🃏 *CARD #${index}*\n\n` +
-      `━━━━━━━━━━━━━━━━━━━\n` +
-      `${tierEmoji} *${name}*\n` +
-      `📚 *Series:* ${series}\n` +
-      `⭐ *Tier:* ${tier} — ${TIER_NAMES[tier] || tier}\n` +
-      `💰 *Price:* $${price.toLocaleString()}\n` +
-      `━━━━━━━━━━━━━━━━━━━\n` +
-      `_Collection entry #${index}._`;
+      `🃏 𝗖𝗮𝗿𝗱 𝗜𝗻𝗳𝗼\n\n` +
+      `✨ 𝗡𝗮𝗺𝗲: ${name}\n` +
+      `📚 𝗦𝗲𝗿𝗶𝗲𝘀: ${series}\n` +
+      `💠 𝗧𝗶𝗲𝗿: ${tier} — ${TIER_NAMES[tier] || tier}\n` +
+      `🆔 𝗖𝗮𝗿𝗱 𝗜𝗗: #${dbCardId}\n` +
+      `🎀 𝗢𝘄𝗻𝗲𝗿𝘀 (${ownerCount2})`;
     try {
       if (imageUrl) {
         await sock.sendMessage(jid, { image: { url: imageUrl }, caption }, { quoted: msg });

@@ -255,7 +255,7 @@ module.exports = {
   async trainer({ sock, jid, msg, reply, sender, user, pushName }) {
     const u       = user || await db.getOrCreateUser(sender, pushName)
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const region  = (u.bio || '').includes('from') ? u.bio.replace('A trainer from ', '') : 'Unknown'
+    const region  = (u && u.bio || '').includes('from') ? (u.bio || '').replace('A trainer from ', '') : 'Unknown'
     const joined  = u.created_at ? new Date(u.created_at).toLocaleDateString('en-GB') : 'Unknown'
 
     const profileText =
@@ -493,19 +493,19 @@ module.exports = {
 
   // ── #team ─────────────────────────────────────────────────────
   async team({ reply, sender, user }) {
-    const u       = user || await db.getOrCreateUser(sender)
+    const u       = (user || await db.getOrCreateUser(sender)) || { name: sender }
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party).slice(0, 6)
     if (!party.length) return reply(`❌ *Your team is empty!*\n\nCatch some Pokémon with *#hunt*!`)
     const lines = party.map((p, i) =>
       `*#${i + 1}* ${p.name} | Lvl ${p.level || 1} | XP: ${p.xp || 0}\n     Type: ${Array.isArray(p.types) ? p.types.join('/') : p.types || 'N/A'}`
     ).join('\n\n')
-    await reply(`⚗ *Team*\n\n👤 *${u.name || sender}*\n\n${lines}\n\n_Your squad awaits battle._ 🖤`)
+    await reply(`⚗ *Team*\n\n👤 *${(u && u.name) || sender}*\n\n${lines}\n\n_Your squad awaits battle._ 🖤`)
   },
 
   // ── #party ────────────────────────────────────────────────────
   async party({ sock, jid, msg, reply, sender, user, pushName, args }) {
-    const u       = user || await db.getOrCreateUser(sender, pushName)
+    const u       = (user || await db.getOrCreateUser(sender, pushName)) || { name: pushName || sender }
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party).slice(0, 6)
 
@@ -532,7 +532,7 @@ module.exports = {
     }).join('\n\n')
 
     const caption =
-      `⚗ *Party*\n\n🎴 *ID:* ${sender.slice(-6)}\n🏮 *Username:* ${u.name || pushName || sender}\n🧧 *Tag:* @${sender}\n\n` +
+      `⚗ *Party*\n\n🎴 *ID:* ${sender.slice(-6)}\n🏮 *Username:* ${(u && u.name) || pushName || sender}\n🧧 *Tag:* @${sender}\n\n` +
       `${slots}\n\n[Use *#party <slot>* to see a Pokémon's stats]\n\n> Shadow Pokémon 👥`
 
     const imgBuf = await _buildPartyImage(party).catch(() => null)
