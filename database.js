@@ -10,6 +10,20 @@ async function connectDB() {
     await mongoose.connect(MONGO_URI)
     isConnected = true
     console.log('✅ MongoDB connected successfully')
+
+    // Drop the legacy non-sparse jid_1 index that blocks inserts when jid is null
+    try {
+      const db = mongoose.connection.db
+      const usersCol = db.collection('users')
+      const indexes = await usersCol.indexes()
+      const hasJidIndex = indexes.some(i => i.name === 'jid_1' && !i.sparse)
+      if (hasJidIndex) {
+        await usersCol.dropIndex('jid_1')
+        console.log('🗑️  Dropped stale jid_1 index from users collection')
+      }
+    } catch (idxErr) {
+      console.warn('⚠️  Could not clean jid index:', idxErr.message)
+    }
   } catch (err) {
     console.error('❌ MongoDB connection error:', err.message)
     console.warn('⚠️  Server starting without database connection.')
