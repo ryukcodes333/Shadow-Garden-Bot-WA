@@ -323,20 +323,19 @@ module.exports = {
   },
 
   async register({ reply, sender, pushName, args }) {
-    // Always check the real DB (not the pre-loaded cache, which may be a fallback object)
     const existing = await db.getUser(sender).catch(() => null)
     if (existing && existing.bio && existing.bio !== '') return reply('⚠️ Already registered.')
 
     const name = args.join(' ') || pushName || sender
 
-    // Guarantee the document exists in the DB first (handles first-time users)
-    await db.createUser(sender, name).catch(() => {})
-
-    // Now update with registration fields
-    const saved = await db.updateUser(sender, { name, bio: 'Konosuba Member' })
-    if (!saved) {
+    // Ensure user document exists — getOrCreateUser handles duplicates gracefully
+    const userDoc = await db.getOrCreateUser(sender, name).catch(() => null)
+    if (!userDoc) {
       return reply('❌ Registration failed — the database may be offline. Please try again in a moment.')
     }
+
+    // Update registration fields; don't gate success on the return value
+    await db.updateUser(sender, { name, bio: 'Konosuba Member' }).catch(() => {})
 
     await reply(
       `✅ *REGISTERED!*\n\n` +
