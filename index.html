@@ -1,702 +1,498 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Konosuba Bot — The Ultimate Anime WhatsApp Bot</title>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Shadow Garden Bot</title>
+  <link rel="icon" type="image/jpeg" href="icon.jpg"/>
+  <link rel="apple-touch-icon" href="icon.jpg"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
-      --blue:    #3b82f6;
-      --indigo:  #6366f1;
-      --purple:  #8b5cf6;
-      --pink:    #ec4899;
-      --cyan:    #06b6d4;
-      --dark:    #0d0d1a;
-      --card-bg: rgba(255,255,255,0.05);
-      --border:  rgba(255,255,255,0.08);
+      --bg:      #080810;
+      --surface: rgba(255,255,255,0.04);
+      --border:  rgba(255,255,255,0.07);
+      --accent:  #7c3aed;
+      --accent2: #ec4899;
+      --accent3: #06b6d4;
       --text:    #e2e8f0;
-      --muted:   #94a3b8;
+      --muted:   #64748b;
+      --gold:    #f59e0b;
     }
-
     html { scroll-behavior: smooth; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); overflow-x: hidden; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 99px; }
 
-    body {
-      font-family: 'Poppins', sans-serif;
-      background: var(--dark);
-      color: var(--text);
-      overflow-x: hidden;
-    }
-
-    /* ── SCROLLBAR ──────────────────────────── */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: var(--dark); }
-    ::-webkit-scrollbar-thumb { background: var(--purple); border-radius: 99px; }
-
-    /* ── NOISE OVERLAY ──────────────────────── */
-    body::before {
-      content: '';
-      position: fixed; inset: 0; z-index: 0; pointer-events: none;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
-      opacity: 0.4;
-    }
-
-    /* ── NAV ────────────────────────────────── */
+    /* ── NAV ── */
     nav {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      position: fixed; top: 0; inset-inline: 0; z-index: 200;
       display: flex; align-items: center; justify-content: space-between;
-      padding: 1rem 2.5rem;
-      background: rgba(13,13,26,0.7);
-      backdrop-filter: blur(20px);
+      padding: 0 1.5rem; height: 60px;
+      background: rgba(8,8,16,0.85); backdrop-filter: blur(20px);
       border-bottom: 1px solid var(--border);
     }
-    .nav-logo {
-      font-size: 1.3rem; font-weight: 800;
-      background: linear-gradient(135deg, var(--blue), var(--purple), var(--pink));
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      letter-spacing: -0.5px;
+    .nav-logo { display: flex; align-items: center; gap: 0.6rem; text-decoration: none; }
+    .nav-logo img { width: 32px; height: 32px; border-radius: 8px; object-fit: cover; }
+    .nav-logo span { font-weight: 800; font-size: 1rem; color: #fff; letter-spacing: -0.3px; }
+    .nav-links { display: flex; gap: 0.25rem; }
+    .nav-link {
+      background: none; border: none; color: var(--muted); font-family: inherit;
+      font-size: 0.85rem; font-weight: 500; padding: 0.4rem 0.9rem; border-radius: 8px;
+      cursor: pointer; transition: color 0.15s, background 0.15s; text-decoration: none;
     }
-    .nav-links { display: flex; gap: 2rem; list-style: none; }
-    .nav-links a { color: var(--muted); text-decoration: none; font-size: 0.9rem; font-weight: 500; transition: color 0.2s; }
-    .nav-links a:hover { color: #fff; }
+    .nav-link:hover, .nav-link.active { color: #fff; background: rgba(255,255,255,0.06); }
     .nav-cta {
-      background: linear-gradient(135deg, var(--indigo), var(--purple));
-      color: #fff; border: none; border-radius: 12px;
-      padding: 0.55rem 1.4rem; font-family: inherit; font-weight: 600; font-size: 0.9rem;
-      cursor: pointer; transition: opacity 0.2s, transform 0.2s;
-      text-decoration: none; display: inline-block;
+      background: var(--accent); color: #fff; border: none; border-radius: 10px;
+      padding: 0.45rem 1.1rem; font-family: inherit; font-size: 0.82rem; font-weight: 600;
+      cursor: pointer; text-decoration: none; transition: opacity 0.2s;
     }
-    .nav-cta:hover { opacity: 0.85; transform: translateY(-1px); }
+    .nav-cta:hover { opacity: 0.85; }
+    .nav-right { display: flex; align-items: center; gap: 0.5rem; }
+    @media (max-width: 640px) { .nav-links { display: none; } }
 
-    /* ── HERO ───────────────────────────────── */
+    /* ── PAGES ── */
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* ── HOME HERO ── */
     .hero {
-      position: relative; min-height: 100vh;
-      display: flex; align-items: center; justify-content: center;
-      text-align: center; overflow: hidden; padding-top: 5rem;
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      text-align: center; padding: 6rem 1.5rem 4rem; position: relative; overflow: hidden;
     }
-    .hero-bg {
-      position: absolute; inset: 0; z-index: 0;
-      background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(99,102,241,0.18) 0%, transparent 70%),
-                  radial-gradient(ellipse 50% 40% at 80% 80%, rgba(139,92,246,0.12) 0%, transparent 60%),
-                  radial-gradient(ellipse 40% 30% at 20% 70%, rgba(6,182,212,0.1) 0%, transparent 60%);
+    .hero-glow {
+      position: absolute; width: 600px; height: 600px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(124,58,237,0.15) 0%, transparent 70%);
+      top: 50%; left: 50%; transform: translate(-50%,-50%); pointer-events: none;
     }
-    .hero-orb {
-      position: absolute; border-radius: 50%; filter: blur(80px); animation: float 8s ease-in-out infinite;
+    .hero-inner { position: relative; z-index: 1; max-width: 680px; }
+    .hero-avatar {
+      width: 96px; height: 96px; border-radius: 22px; object-fit: cover;
+      border: 2px solid rgba(124,58,237,0.4); margin-bottom: 1.5rem;
+      box-shadow: 0 0 40px rgba(124,58,237,0.3);
     }
-    .hero-orb-1 { width: 400px; height: 400px; background: rgba(99,102,241,0.15); top: -100px; left: -100px; animation-delay: 0s; }
-    .hero-orb-2 { width: 300px; height: 300px; background: rgba(236,72,153,0.12); top: 200px; right: -80px; animation-delay: 3s; }
-    .hero-orb-3 { width: 250px; height: 250px; background: rgba(6,182,212,0.1); bottom: 0; left: 30%; animation-delay: 5s; }
-    @keyframes float {
-      0%,100% { transform: translateY(0); }
-      50% { transform: translateY(-30px); }
-    }
-    .hero-content { position: relative; z-index: 2; max-width: 900px; padding: 2rem; }
     .hero-badge {
-      display: inline-flex; align-items: center; gap: 0.5rem;
-      background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.3);
-      border-radius: 99px; padding: 0.35rem 1rem; font-size: 0.8rem; font-weight: 600;
-      color: #a5b4fc; margin-bottom: 1.5rem; letter-spacing: 0.5px;
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      background: rgba(124,58,237,0.12); border: 1px solid rgba(124,58,237,0.25);
+      border-radius: 99px; padding: 0.3rem 0.9rem; font-size: 0.75rem; font-weight: 600;
+      color: #a78bfa; margin-bottom: 1.2rem; letter-spacing: 0.3px;
     }
-    .hero-badge .dot { width: 6px; height: 6px; background: #22c55e; border-radius: 50%; animation: pulse 2s infinite; }
-    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.6;transform:scale(1.3)} }
-    .hero h1 {
-      font-size: clamp(2.8rem, 7vw, 5.5rem); font-weight: 900; line-height: 1.05;
-      letter-spacing: -2px; margin-bottom: 1.2rem;
-    }
-    .hero h1 .grad {
-      background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 40%, #f472b6 80%);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    }
-    .hero-sub {
-      font-size: 1.15rem; color: var(--muted); max-width: 600px;
-      margin: 0 auto 2.5rem; line-height: 1.7; font-weight: 400;
-    }
-    .hero-ctas { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
-    .btn-primary {
-      background: linear-gradient(135deg, var(--indigo), var(--purple));
-      color: #fff; border: none; border-radius: 14px;
-      padding: 0.85rem 2rem; font-family: inherit; font-size: 1rem; font-weight: 600;
-      cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem;
-      box-shadow: 0 4px 30px rgba(99,102,241,0.35);
+    .hero-badge .dot { width: 5px; height: 5px; background: #22c55e; border-radius: 50%; animation: blink 2s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .hero h1 { font-size: clamp(2.2rem, 6vw, 3.8rem); font-weight: 900; line-height: 1.1; letter-spacing: -1.5px; margin-bottom: 1rem; }
+    .grad { background: linear-gradient(135deg, #a78bfa 0%, #ec4899 60%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .hero-sub { font-size: 1rem; color: var(--muted); line-height: 1.7; margin-bottom: 2rem; }
+    .hero-btns { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+    .btn-main {
+      background: var(--accent); color: #fff; border: none; border-radius: 12px;
+      padding: 0.75rem 1.6rem; font-family: inherit; font-size: 0.9rem; font-weight: 600;
+      cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem;
       transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 24px rgba(124,58,237,0.35);
     }
-    .btn-primary:hover { transform: translateY(-3px); box-shadow: 0 8px 40px rgba(99,102,241,0.5); }
-    .btn-secondary {
-      background: transparent; border: 1px solid var(--border);
-      color: var(--text); border-radius: 14px;
-      padding: 0.85rem 2rem; font-family: inherit; font-size: 1rem; font-weight: 500;
-      cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem;
-      transition: border-color 0.2s, background 0.2s, transform 0.2s;
-    }
-    .btn-secondary:hover { border-color: rgba(139,92,246,0.5); background: rgba(139,92,246,0.08); transform: translateY(-2px); }
-    .hero-stats {
-      display: flex; justify-content: center; gap: 3rem; margin-top: 4rem;
-      flex-wrap: wrap;
-    }
-    .hero-stat { text-align: center; }
-    .hero-stat-num { font-size: 2rem; font-weight: 800; background: linear-gradient(135deg, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .hero-stat-label { font-size: 0.8rem; color: var(--muted); font-weight: 500; margin-top: 0.2rem; }
-
-    /* ── CHARACTERS SHOWCASE ────────────────── */
-    .chars-section { padding: 5rem 2rem; position: relative; overflow: hidden; }
-    .chars-section::before {
-      content: ''; position: absolute; top: 0; left: 0; right: 0;
-      height: 1px; background: linear-gradient(90deg, transparent, var(--purple), transparent);
-    }
-    .section-label {
-      text-align: center; font-size: 0.75rem; font-weight: 700; letter-spacing: 3px;
-      text-transform: uppercase; color: var(--purple); margin-bottom: 1rem;
-    }
-    .section-title { text-align: center; font-size: clamp(1.8rem, 4vw, 2.8rem); font-weight: 800; letter-spacing: -1px; margin-bottom: 0.75rem; }
-    .section-sub { text-align: center; color: var(--muted); max-width: 500px; margin: 0 auto 3.5rem; font-size: 1rem; line-height: 1.6; }
-
-    .chars-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 1.5rem; max-width: 900px; margin: 0 auto;
-    }
-    .char-card {
-      background: var(--card-bg); border: 1px solid var(--border);
-      border-radius: 20px; overflow: hidden; cursor: pointer;
-      transition: transform 0.3s, box-shadow 0.3s;
-      position: relative;
-    }
-    .char-card:hover { transform: translateY(-8px); box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
-    .char-card img {
-      width: 100%; aspect-ratio: 3/4; object-fit: cover; object-position: top center;
-      display: block; transition: transform 0.4s;
-    }
-    .char-card:hover img { transform: scale(1.05); }
-    .char-card-info { padding: 1rem; }
-    .char-name { font-weight: 700; font-size: 1rem; }
-    .char-role { font-size: 0.78rem; color: var(--muted); margin-top: 0.2rem; }
-    .char-badge {
-      position: absolute; top: 0.75rem; right: 0.75rem;
-      background: rgba(0,0,0,0.6); backdrop-filter: blur(10px);
-      border-radius: 8px; padding: 0.25rem 0.6rem;
-      font-size: 0.72rem; font-weight: 600; border: 1px solid var(--border);
-    }
-
-    /* ── FEATURES ───────────────────────────── */
-    .features-section { padding: 5rem 2rem; background: rgba(255,255,255,0.015); position: relative; }
-    .features-section::before {
-      content: ''; position: absolute; top: 0; left: 0; right: 0;
-      height: 1px; background: linear-gradient(90deg, transparent, var(--cyan), transparent);
-    }
-    .features-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1.5rem; max-width: 1100px; margin: 0 auto;
-    }
-    .feature-card {
-      background: var(--card-bg); border: 1px solid var(--border);
-      border-radius: 20px; padding: 1.8rem; transition: transform 0.3s, border-color 0.3s;
-    }
-    .feature-card:hover { transform: translateY(-4px); border-color: rgba(139,92,246,0.3); }
-    .feature-icon {
-      width: 52px; height: 52px; border-radius: 14px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.4rem; margin-bottom: 1.2rem;
-    }
-    .feature-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.5rem; }
-    .feature-card p { color: var(--muted); font-size: 0.9rem; line-height: 1.6; }
-
-    /* ── COMMANDS SHOWCASE ──────────────────── */
-    .commands-section { padding: 5rem 2rem; }
-    .commands-section::before {
-      content: ''; display: block; height: 1px; margin-bottom: 5rem;
-      background: linear-gradient(90deg, transparent, var(--indigo), transparent);
-    }
-    .commands-tabs {
-      display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap;
-      margin-bottom: 2.5rem;
-    }
-    .tab {
-      background: var(--card-bg); border: 1px solid var(--border);
-      border-radius: 99px; padding: 0.45rem 1.2rem; font-family: inherit;
-      font-size: 0.85rem; font-weight: 600; color: var(--muted);
-      cursor: pointer; transition: all 0.2s;
-    }
-    .tab.active, .tab:hover { background: rgba(139,92,246,0.2); border-color: rgba(139,92,246,0.4); color: #fff; }
-    .commands-grid {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 1rem; max-width: 1100px; margin: 0 auto;
-    }
-    .cmd-card {
-      background: var(--card-bg); border: 1px solid var(--border);
-      border-radius: 14px; padding: 1.1rem 1.3rem;
-      display: flex; gap: 1rem; align-items: flex-start;
+    .btn-main:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(124,58,237,0.5); }
+    .btn-ghost {
+      background: var(--surface); border: 1px solid var(--border); color: var(--text);
+      border-radius: 12px; padding: 0.75rem 1.6rem; font-family: inherit; font-size: 0.9rem; font-weight: 500;
+      cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem;
       transition: border-color 0.2s, background 0.2s;
     }
-    .cmd-card:hover { border-color: rgba(99,102,241,0.3); background: rgba(99,102,241,0.05); }
-    .cmd-icon { font-size: 1.3rem; margin-top: 0.1rem; flex-shrink: 0; }
-    .cmd-body { min-width: 0; }
-    .cmd-name { font-size: 0.9rem; font-weight: 700; color: #a5b4fc; font-family: 'Courier New', monospace; }
-    .cmd-desc { font-size: 0.82rem; color: var(--muted); margin-top: 0.2rem; line-height: 1.4; }
+    .btn-ghost:hover { border-color: rgba(124,58,237,0.4); background: rgba(124,58,237,0.06); }
 
-    /* ── CARD SHOWCASE ──────────────────────── */
-    .cards-section { padding: 5rem 2rem; background: rgba(255,255,255,0.015); position: relative; overflow: hidden; }
-    .cards-section::before {
-      content: ''; position: absolute; top: 0; left: 0; right: 0;
-      height: 1px; background: linear-gradient(90deg, transparent, var(--pink), transparent);
-    }
-    .tiers-grid {
-      display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;
-      max-width: 900px; margin: 0 auto;
-    }
-    .tier-pill {
-      padding: 0.7rem 1.5rem; border-radius: 14px; font-weight: 700;
-      font-size: 0.9rem; border: 1px solid rgba(255,255,255,0.1);
-      text-align: center;
-    }
+    /* pillars */
+    .pillars { display: flex; justify-content: center; gap: 2.5rem; margin-top: 3.5rem; flex-wrap: wrap; }
+    .pillar { text-align: center; }
+    .pillar-num { font-size: 1.8rem; font-weight: 900; letter-spacing: -1px; background: linear-gradient(135deg,#a78bfa,#ec4899); -webkit-background-clip:text;-webkit-text-fill-color:transparent; }
+    .pillar-label { font-size: 0.75rem; color: var(--muted); font-weight: 500; margin-top: 0.15rem; }
 
-    /* ── STATS BANNER ───────────────────────── */
-    .stats-section {
-      padding: 4rem 2rem;
-      background: linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(139,92,246,0.05) 50%, rgba(236,72,153,0.08) 100%);
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-    }
-    .stats-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 2rem; max-width: 900px; margin: 0 auto; text-align: center;
-    }
-    .stat-num { font-size: 2.5rem; font-weight: 900; letter-spacing: -1px; }
-    .stat-label { color: var(--muted); font-size: 0.85rem; font-weight: 500; margin-top: 0.3rem; }
+    /* features strip */
+    .strips { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap: 1px; border: 1px solid var(--border); border-radius: 18px; overflow: hidden; margin: 4rem auto; max-width: 900px; }
+    .strip { background: var(--surface); padding: 1.4rem 1.6rem; display: flex; align-items: flex-start; gap: 1rem; }
+    .strip-icon { font-size: 1.5rem; flex-shrink: 0; }
+    .strip h3 { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.25rem; }
+    .strip p { font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
 
-    /* ── CTA ────────────────────────────────── */
-    .cta-section {
-      padding: 6rem 2rem; text-align: center;
-      background: radial-gradient(ellipse 60% 80% at 50% 50%, rgba(99,102,241,0.1) 0%, transparent 70%);
-    }
-    .cta-section h2 { font-size: clamp(1.8rem, 5vw, 3rem); font-weight: 900; letter-spacing: -1px; margin-bottom: 1rem; }
-    .cta-section p { color: var(--muted); font-size: 1rem; max-width: 450px; margin: 0 auto 2.5rem; line-height: 1.7; }
+    /* ── SHOP ── */
+    .page-wrap { padding: 5rem 1.5rem 3rem; max-width: 1100px; margin: 0 auto; }
+    .page-head { text-align: center; margin-bottom: 2.5rem; }
+    .page-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: var(--accent2); margin-bottom: 0.6rem; }
+    .page-title { font-size: clamp(1.8rem, 4vw, 2.5rem); font-weight: 900; letter-spacing: -1px; margin-bottom: 0.5rem; }
+    .page-sub { color: var(--muted); font-size: 0.9rem; line-height: 1.6; }
 
-    /* ── FOOTER ─────────────────────────────── */
-    footer {
-      padding: 2.5rem; text-align: center;
-      border-top: 1px solid var(--border); color: var(--muted);
-      font-size: 0.85rem;
+    .shop-filters { display: flex; gap: 0.4rem; justify-content: center; flex-wrap: wrap; margin-bottom: 2rem; }
+    .filter-btn {
+      background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+      border-radius: 99px; padding: 0.35rem 1rem; font-family: inherit; font-size: 0.8rem; font-weight: 600;
+      cursor: pointer; transition: all 0.2s;
     }
+    .filter-btn:hover, .filter-btn.on { background: rgba(124,58,237,0.15); border-color: rgba(124,58,237,0.4); color: #fff; }
+
+    .shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
+    .shop-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+      padding: 1.2rem; display: flex; flex-direction: column; gap: 0.6rem;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .shop-card:hover { transform: translateY(-3px); border-color: rgba(124,58,237,0.3); }
+    .shop-card[data-type="weapon"]:hover { border-color: rgba(239,68,68,0.4); }
+    .shop-card[data-type="armor"]:hover { border-color: rgba(59,130,246,0.4); }
+    .shop-card[data-type="consumable"]:hover { border-color: rgba(34,197,94,0.4); }
+    .shop-card[data-type="tool"]:hover { border-color: rgba(245,158,11,0.4); }
+    .shop-card[data-type="accessory"]:hover { border-color: rgba(236,72,153,0.4); }
+    .shop-emoji { font-size: 2rem; }
+    .shop-name { font-weight: 700; font-size: 0.95rem; }
+    .shop-type-tag {
+      font-size: 0.68rem; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+      padding: 0.2rem 0.6rem; border-radius: 6px; display: inline-block; width: fit-content;
+    }
+    .shop-type-tag.weapon    { background: rgba(239,68,68,0.15); color: #f87171; }
+    .shop-type-tag.armor     { background: rgba(59,130,246,0.15); color: #60a5fa; }
+    .shop-type-tag.consumable{ background: rgba(34,197,94,0.15);  color: #4ade80; }
+    .shop-type-tag.tool      { background: rgba(245,158,11,0.15); color: #fbbf24; }
+    .shop-type-tag.accessory { background: rgba(236,72,153,0.15); color: #f472b6; }
+    .shop-price { font-size: 1rem; font-weight: 800; color: var(--gold); margin-top: auto; }
+    .shop-cmd { font-size: 0.75rem; color: var(--muted); font-family: monospace; }
+
+    /* ── POKEMON ── */
+    .poke-hero {
+      background: linear-gradient(135deg, rgba(234,179,8,0.08) 0%, rgba(239,68,68,0.05) 100%);
+      border: 1px solid rgba(234,179,8,0.12); border-radius: 20px;
+      padding: 2rem; margin-bottom: 2rem; display: flex; align-items: center; gap: 2rem; flex-wrap: wrap;
+    }
+    .poke-hero-text h2 { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.5rem; }
+    .poke-hero-text p { color: var(--muted); font-size: 0.9rem; line-height: 1.6; max-width: 500px; }
+    .poke-balls { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem; }
+    .ball-tag { font-size: 0.8rem; font-weight: 600; padding: 0.3rem 0.8rem; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); }
+
+    .poke-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+    .poke-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.4rem; }
+    .poke-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; }
+    .poke-cmd-list { display: flex; flex-direction: column; gap: 0.5rem; }
+    .poke-cmd { display: flex; align-items: center; gap: 0.75rem; }
+    .poke-cmd code { background: rgba(234,179,8,0.1); border: 1px solid rgba(234,179,8,0.2); color: #fbbf24; border-radius: 6px; padding: 0.2rem 0.5rem; font-size: 0.78rem; font-weight: 700; white-space: nowrap; }
+    .poke-cmd span { font-size: 0.82rem; color: var(--muted); }
+
+    .types-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .type-pill { padding: 0.3rem 0.8rem; border-radius: 8px; font-size: 0.78rem; font-weight: 700; border: 1px solid rgba(255,255,255,0.08); }
+
+    /* ── SIGN IN ── */
+    .coming-soon {
+      min-height: calc(100vh - 60px); display: flex; align-items: center; justify-content: center;
+      text-align: center; padding: 2rem;
+    }
+    .cs-inner { max-width: 420px; }
+    .cs-icon { font-size: 4rem; margin-bottom: 1.5rem; display: block; }
+    .cs-title { font-size: 2rem; font-weight: 900; letter-spacing: -1px; margin-bottom: 0.75rem; }
+    .cs-sub { color: var(--muted); font-size: 0.95rem; line-height: 1.7; margin-bottom: 2rem; }
+    .cs-badge { display: inline-flex; align-items: center; gap: 0.4rem; background: rgba(236,72,153,0.1); border: 1px solid rgba(236,72,153,0.25); border-radius: 99px; padding: 0.4rem 1rem; font-size: 0.8rem; font-weight: 600; color: #f472b6; }
+    .notify-form { display: flex; gap: 0.5rem; margin-top: 1.5rem; }
+    .notify-input {
+      flex: 1; background: var(--surface); border: 1px solid var(--border); color: var(--text);
+      border-radius: 10px; padding: 0.65rem 1rem; font-family: inherit; font-size: 0.85rem;
+    }
+    .notify-input:focus { outline: none; border-color: rgba(124,58,237,0.5); }
+    .notify-btn {
+      background: var(--accent); color: #fff; border: none; border-radius: 10px;
+      padding: 0.65rem 1.2rem; font-family: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    }
+    .notify-btn:hover { opacity: 0.85; }
+
+    /* ── FOOTER ── */
+    footer { border-top: 1px solid var(--border); padding: 2rem 1.5rem; text-align: center; color: var(--muted); font-size: 0.8rem; }
     footer a { color: var(--muted); text-decoration: none; }
     footer a:hover { color: var(--text); }
-    .footer-links { display: flex; gap: 1.5rem; justify-content: center; margin-bottom: 1rem; flex-wrap: wrap; }
 
-    /* ── RESPONSIVE ─────────────────────────── */
-    @media (max-width: 768px) {
-      nav { padding: 1rem; }
-      .nav-links { display: none; }
-      .hero-stats { gap: 1.5rem; }
+    /* ── SECTION DIVIDER ── */
+    .divider { height: 1px; background: linear-gradient(90deg, transparent, var(--border), transparent); margin: 3rem 0; }
+
+    /* ── MISC ── */
+    .hidden { display: none !important; }
+    @media (max-width: 480px) {
+      .notify-form { flex-direction: column; }
+      .poke-hero { flex-direction: column; }
     }
   </style>
 </head>
 <body>
 
-<!-- ── NAV ──────────────────────────────────────────────────────────── -->
+<!-- ── NAV ──────────────────────────────────────── -->
 <nav>
-  <div class="nav-logo">✦ KonoBot</div>
-  <ul class="nav-links">
-    <li><a href="#features">Features</a></li>
-    <li><a href="#commands">Commands</a></li>
-    <li><a href="#cards">Cards</a></li>
-    <li><a href="#pokemon">Pokémon</a></li>
-  </ul>
-  <a class="nav-cta" href="https://wa.me/?text=.menu" target="_blank">
-    <i class="fab fa-whatsapp"></i> Add Bot
+  <a class="nav-logo" href="#" onclick="showPage('home')">
+    <img src="icon.jpg" alt="SGB Icon"/>
+    <span>Shadow Garden Bot</span>
   </a>
+  <div class="nav-links">
+    <button class="nav-link active" onclick="showPage('home',this)">Home</button>
+    <button class="nav-link" onclick="showPage('shop',this)">Shop</button>
+    <button class="nav-link" onclick="showPage('pokemon',this)">Pokémon</button>
+    <button class="nav-link" onclick="showPage('signin',this)">Sign In</button>
+  </div>
+  <div class="nav-right">
+    <a class="nav-cta" href="https://wa.me/?text=.menu" target="_blank">+ Add Bot</a>
+  </div>
 </nav>
 
-<!-- ── HERO ─────────────────────────────────────────────────────────── -->
-<section class="hero">
-  <div class="hero-bg"></div>
-  <div class="hero-orb hero-orb-1"></div>
-  <div class="hero-orb hero-orb-2"></div>
-  <div class="hero-orb hero-orb-3"></div>
+<!-- ══════════════════════════════════════════════ -->
+<!-- PAGE: HOME                                     -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="page-home" class="page active">
 
-  <div class="hero-content">
-    <div class="hero-badge">
-      <span class="dot"></span>
-      Now Live • KONOSUBA Community Bot
+  <section class="hero">
+    <div class="hero-glow"></div>
+    <div class="hero-inner">
+      <img class="hero-avatar" src="icon.jpg" alt="Shadow Garden Bot"/>
+      <div class="hero-badge">
+        <span class="dot"></span>
+        Live on WhatsApp
+      </div>
+      <h1>The Konosuba<br/><span class="grad">WhatsApp Bot</span></h1>
+      <p class="hero-sub">Cards, Pokémon, RPG battles, economy and more — all in your WhatsApp group. Powered by the chaotic energy of Konosuba.</p>
+      <div class="hero-btns">
+        <a class="btn-main" href="https://wa.me/?text=.menu" target="_blank">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.553 4.116 1.523 5.847L0 24l6.335-1.502A11.95 11.95 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.793 9.793 0 01-5.001-1.371l-.359-.214-3.731.885.93-3.619-.235-.372A9.794 9.794 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182S21.818 6.57 21.818 12 17.43 21.818 12 21.818z"/></svg>
+          Get Started
+        </a>
+        <button class="btn-ghost" onclick="showPage('shop',document.querySelector('.nav-link:nth-child(2)'))">
+          View Shop
+        </button>
+      </div>
+      <div class="pillars">
+        <div class="pillar"><div class="pillar-num">8K+</div><div class="pillar-label">Cards Indexed</div></div>
+        <div class="pillar"><div class="pillar-num">900+</div><div class="pillar-label">Pokémon</div></div>
+        <div class="pillar"><div class="pillar-num">100+</div><div class="pillar-label">Commands</div></div>
+        <div class="pillar"><div class="pillar-num">24/7</div><div class="pillar-label">Online</div></div>
+      </div>
     </div>
+  </section>
 
-    <h1>
-      The Anime Bot<br/>
-      <span class="grad">Built Different</span>
-    </h1>
-
-    <p class="hero-sub">
-      Cards, Pokémon, economy, RPG battles, guilds and more — all inside WhatsApp.
-      Powered by the chaotic energy of the Konosuba universe.
-    </p>
-
-    <div class="hero-ctas">
-      <a class="btn-primary" href="https://wa.me/?text=.menu" target="_blank">
-        <i class="fab fa-whatsapp"></i>
-        Get Started Free
-      </a>
-      <a class="btn-secondary" href="#features">
-        <i class="fas fa-sparkles"></i>
-        Explore Features
-      </a>
-    </div>
-
-    <div class="hero-stats">
-      <div class="hero-stat">
-        <div class="hero-stat-num">50K+</div>
-        <div class="hero-stat-label">Active Users</div>
-      </div>
-      <div class="hero-stat">
-        <div class="hero-stat-num">8K+</div>
-        <div class="hero-stat-label">Cards Indexed</div>
-      </div>
-      <div class="hero-stat">
-        <div class="hero-stat-num">900+</div>
-        <div class="hero-stat-label">Pokémon</div>
-      </div>
-      <div class="hero-stat">
-        <div class="hero-stat-num">100+</div>
-        <div class="hero-stat-label">Commands</div>
-      </div>
+  <div style="max-width:900px;margin:0 auto;padding:0 1.5rem">
+    <div class="strips">
+      <div class="strip"><span class="strip-icon">🎴</span><div><h3>Anime Cards</h3><p>Collect & trade rare cards across 8 tiers — from Common to Shadow Void.</p></div></div>
+      <div class="strip"><span class="strip-icon">🐾</span><div><h3>Pokémon</h3><p>Hunt, catch, battle and train. 900+ Pokémon with full move sets.</p></div></div>
+      <div class="strip"><span class="strip-icon">💰</span><div><h3>Economy</h3><p>Work, fish, dig, gamble and invest your way to the top of the rich list.</p></div></div>
+      <div class="strip"><span class="strip-icon">⚔️</span><div><h3>RPG & Guilds</h3><p>Form guilds, run dungeon raids and level up your character.</p></div></div>
+      <div class="strip"><span class="strip-icon">🎭</span><div><h3>Custom Profiles</h3><p>Generate profile cards with custom backgrounds, frames and stats.</p></div></div>
+      <div class="strip"><span class="strip-icon">🎰</span><div><h3>Gambling Suite</h3><p>Slots, blackjack, roulette, crash and 5+ more mini-games.</p></div></div>
     </div>
   </div>
-</section>
 
-<!-- ── CHARACTERS ────────────────────────────────────────────────────── -->
-<section class="chars-section">
-  <div class="section-label">Meet the Gang</div>
-  <h2 class="section-title">Powered by Konosuba's Spirit</h2>
-  <p class="section-sub">Your favourite adventurers guide every feature of the bot — chaotic, useless, and absolutely legendary.</p>
+  <footer>
+    <p>© 2026 Shadow Garden Bot — Konosuba Community &nbsp;·&nbsp; <a href="https://wa.me/?text=.menu" target="_blank">Add to WhatsApp</a></p>
+  </footer>
+</div>
 
-  <div class="chars-grid">
-    <!-- Kazuma -->
-    <div class="char-card">
-      <img
-        src="https://github.com/ryukcodes333/Shadow-Garden-Bot-WA/blob/main/IMG-20260525-WA0120.jpg"
-        alt="Kazuma"
-        onerror="this.style.background='linear-gradient(135deg,#1e1e3f,#2d2d5e)';this.src='';this.alt='Kazuma';"
-      />
-      <span class="char-badge">🗡️ Adventurer</span>
-      <div class="char-card-info">
-        <div class="char-name">Kazuma</div>
-        <div class="char-role">Cunning Strategist</div>
-      </div>
+<!-- ══════════════════════════════════════════════ -->
+<!-- PAGE: SHOP                                     -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="page-shop" class="page">
+  <div class="page-wrap">
+    <div class="page-head">
+      <div class="page-label">In-Game Store</div>
+      <h1 class="page-title">🛒 Item Shop</h1>
+      <p class="page-sub">Buy items with your in-game coins using <code style="background:rgba(124,58,237,0.15);color:#a78bfa;padding:0.1rem 0.4rem;border-radius:5px;font-size:0.85rem">.buy &lt;item&gt;</code> in WhatsApp</p>
     </div>
 
-    <!-- Aqua -->
-    <div class="char-card">
-      <img
-        src="https://github.com/ryukcodes333/Shadow-Garden-Bot-WA/blob/main/IMG-20260525-WA0120.jpg"
-        alt="Aqua"
-        onerror="this.style.background='linear-gradient(135deg,#0ea5e9,#1d4ed8)';this.src='';this.alt='Aqua';"
-      />
-      <span class="char-badge">💧 Goddess</span>
-      <div class="char-card-info">
-        <div class="char-name">Aqua</div>
-        <div class="char-role">Useless but Pretty</div>
-      </div>
+    <div class="shop-filters">
+      <button class="filter-btn on" onclick="filterShop('all',this)">All</button>
+      <button class="filter-btn" onclick="filterShop('weapon',this)">⚔️ Weapons</button>
+      <button class="filter-btn" onclick="filterShop('armor',this)">🥋 Armor</button>
+      <button class="filter-btn" onclick="filterShop('consumable',this)">🧪 Consumables</button>
+      <button class="filter-btn" onclick="filterShop('tool',this)">🔧 Tools</button>
+      <button class="filter-btn" onclick="filterShop('accessory',this)">💍 Accessories</button>
     </div>
 
-    <!-- Megumin -->
-    <div class="char-card">
-      <img
-        src="https://github.com/ryukcodes333/Shadow-Garden-Bot-WA/blob/main/IMG-20260525-WA0120.jpg"
-        alt="Megumin"
-        onerror="this.style.background='linear-gradient(135deg,#7c3aed,#be185d)';this.src='';this.alt='Megumin';"
-      />
-      <span class="char-badge">💥 Arch-Wizard</span>
-      <div class="char-card-info">
-        <div class="char-name">Megumin</div>
-        <div class="char-role">Explosion Obsessed</div>
-      </div>
-    </div>
-
-    <!-- Darkness -->
-    <div class="char-card">
-      <img
-        src="https://github.com/ryukcodes333/Shadow-Garden-Bot-WA/blob/main/IMG-20260525-WA0120.jpg"
-        alt="Darkness"
-        onerror="this.style.background='linear-gradient(135deg,#b45309,#92400e)';this.src='';this.alt='Darkness';"
-      />
-      <span class="char-badge">⚔️ Crusader</span>
-      <div class="char-card-info">
-        <div class="char-name">Darkness</div>
-        <div class="char-role">Indestructible Tank</div>
-      </div>
+    <div class="shop-grid" id="shop-grid">
+      <!-- weapons -->
+      <div class="shop-card" data-type="weapon"><span class="shop-emoji">⚔️</span><div class="shop-name">Sword</div><span class="shop-type-tag weapon">Weapon</span><div class="shop-price">$500</div><div class="shop-cmd">.buy sword</div></div>
+      <div class="shop-card" data-type="weapon"><span class="shop-emoji">🛡️</span><div class="shop-name">Shield</div><span class="shop-type-tag weapon">Weapon</span><div class="shop-price">$400</div><div class="shop-cmd">.buy shield</div></div>
+      <div class="shop-card" data-type="weapon"><span class="shop-emoji">🏹</span><div class="shop-name">Bow</div><span class="shop-type-tag weapon">Weapon</span><div class="shop-price">$350</div><div class="shop-cmd">.buy bow</div></div>
+      <div class="shop-card" data-type="weapon"><span class="shop-emoji">🗡️</span><div class="shop-name">Dagger</div><span class="shop-type-tag weapon">Weapon</span><div class="shop-price">$300</div><div class="shop-cmd">.buy dagger</div></div>
+      <div class="shop-card" data-type="weapon"><span class="shop-emoji">🪓</span><div class="shop-name">Battle Axe</div><span class="shop-type-tag weapon">Weapon</span><div class="shop-price">$650</div><div class="shop-cmd">.buy axe</div></div>
+      <div class="shop-card" data-type="weapon"><span class="shop-emoji">🪄</span><div class="shop-name">Magic Staff</div><span class="shop-type-tag weapon">Weapon</span><div class="shop-price">$700</div><div class="shop-cmd">.buy staff_wep</div></div>
+      <div class="shop-card" data-type="weapon"><span class="shop-emoji">🔱</span><div class="shop-name">Spear</div><span class="shop-type-tag weapon">Weapon</span><div class="shop-price">$550</div><div class="shop-cmd">.buy spear</div></div>
+      <!-- armor -->
+      <div class="shop-card" data-type="armor"><span class="shop-emoji">🥋</span><div class="shop-name">Iron Armor</div><span class="shop-type-tag armor">Armor</span><div class="shop-price">$800</div><div class="shop-cmd">.buy armor</div></div>
+      <div class="shop-card" data-type="armor"><span class="shop-emoji">⛑️</span><div class="shop-name">Steel Helmet</div><span class="shop-type-tag armor">Armor</span><div class="shop-price">$450</div><div class="shop-cmd">.buy helmet</div></div>
+      <div class="shop-card" data-type="armor"><span class="shop-emoji">👟</span><div class="shop-name">Shadow Boots</div><span class="shop-type-tag armor">Armor</span><div class="shop-price">$380</div><div class="shop-cmd">.buy boots</div></div>
+      <!-- consumables -->
+      <div class="shop-card" data-type="consumable"><span class="shop-emoji">🧪</span><div class="shop-name">Health Potion</div><span class="shop-type-tag consumable">Consumable</span><div class="shop-price">$100</div><div class="shop-cmd">.buy potion</div></div>
+      <div class="shop-card" data-type="consumable"><span class="shop-emoji">💙</span><div class="shop-name">Mana Elixir</div><span class="shop-type-tag consumable">Consumable</span><div class="shop-price">$120</div><div class="shop-cmd">.buy elixir</div></div>
+      <div class="shop-card" data-type="consumable"><span class="shop-emoji">⚡</span><div class="shop-name">Energy Drink</div><span class="shop-type-tag consumable">Consumable</span><div class="shop-price">$80</div><div class="shop-cmd">.buy energy</div></div>
+      <div class="shop-card" data-type="consumable"><span class="shop-emoji">💊</span><div class="shop-name">Antidote</div><span class="shop-type-tag consumable">Consumable</span><div class="shop-price">$90</div><div class="shop-cmd">.buy antidote</div></div>
+      <div class="shop-card" data-type="consumable"><span class="shop-emoji">💣</span><div class="shop-name">Shadow Bomb</div><span class="shop-type-tag consumable">Consumable</span><div class="shop-price">$200</div><div class="shop-cmd">.buy bomb</div></div>
+      <!-- tools -->
+      <div class="shop-card" data-type="tool"><span class="shop-emoji">🎟️</span><div class="shop-name">Luck Ticket</div><span class="shop-type-tag tool">Tool</span><div class="shop-price">$150</div><div class="shop-cmd">.buy ticket</div></div>
+      <div class="shop-card" data-type="tool"><span class="shop-emoji">⛏️</span><div class="shop-name">Pickaxe</div><span class="shop-type-tag tool">Tool</span><div class="shop-price">$280</div><div class="shop-cmd">.buy pickaxe</div></div>
+      <div class="shop-card" data-type="tool"><span class="shop-emoji">🎣</span><div class="shop-name">Fishing Rod</div><span class="shop-type-tag tool">Tool</span><div class="shop-price">$220</div><div class="shop-cmd">.buy fishingrod</div></div>
+      <div class="shop-card" data-type="tool"><span class="shop-emoji">🗺️</span><div class="shop-name">Treasure Map</div><span class="shop-type-tag tool">Tool</span><div class="shop-price">$500</div><div class="shop-cmd">.buy map</div></div>
+      <div class="shop-card" data-type="tool"><span class="shop-emoji">🏮</span><div class="shop-name">Shadow Lantern</div><span class="shop-type-tag tool">Tool</span><div class="shop-price">$180</div><div class="shop-cmd">.buy lantern</div></div>
+      <!-- accessories -->
+      <div class="shop-card" data-type="accessory"><span class="shop-emoji">💍</span><div class="shop-name">Power Ring</div><span class="shop-type-tag accessory">Accessory</span><div class="shop-price">$950</div><div class="shop-cmd">.buy ring</div></div>
+      <div class="shop-card" data-type="accessory"><span class="shop-emoji">📿</span><div class="shop-name">Mana Amulet</div><span class="shop-type-tag accessory">Accessory</span><div class="shop-price">$850</div><div class="shop-cmd">.buy amulet</div></div>
+      <div class="shop-card" data-type="accessory"><span class="shop-emoji">🧣</span><div class="shop-name">Shadow Cloak</div><span class="shop-type-tag accessory">Accessory</span><div class="shop-price">$1,200</div><div class="shop-cmd">.buy cloak</div></div>
     </div>
   </div>
-</section>
+  <footer>
+    <p>© 2026 Shadow Garden Bot — Konosuba Community</p>
+  </footer>
+</div>
 
-<!-- ── FEATURES ──────────────────────────────────────────────────────── -->
-<section class="features-section" id="features">
-  <div class="section-label">Why KonoBot</div>
-  <h2 class="section-title">Everything in One Bot</h2>
-  <p class="section-sub">No extra apps. No subscriptions. Just send a message and the adventure begins.</p>
+<!-- ══════════════════════════════════════════════ -->
+<!-- PAGE: POKEMON                                  -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="page-pokemon" class="page">
+  <div class="page-wrap">
+    <div class="page-head">
+      <div class="page-label">Gotta Catch Em All</div>
+      <h1 class="page-title">🐾 Pokémon System</h1>
+      <p class="page-sub">Full Pokémon experience inside WhatsApp — hunt wild Pokémon, build your party and dominate battles.</p>
+    </div>
 
-  <div class="features-grid">
-    <div class="feature-card">
-      <div class="feature-icon" style="background:rgba(99,102,241,0.15);color:#818cf8">
-        <i class="fas fa-cards-blank"></i>
+    <div class="poke-hero">
+      <div style="font-size:4rem">⚡</div>
+      <div class="poke-hero-text">
+        <h2>900+ Pokémon Available</h2>
+        <p>From Gen 1 all the way through Gen 8. Each with real moves, types, stats and official artwork. Shiny variants drop randomly in the wild!</p>
+        <div class="poke-balls">
+          <span class="ball-tag">🔴 Pokéball</span>
+          <span class="ball-tag">⚪ Great Ball</span>
+          <span class="ball-tag">🔵 Ultra Ball</span>
+          <span class="ball-tag">🟡 Master Ball</span>
+          <span class="ball-tag">✨ Shiny Hunt</span>
+        </div>
       </div>
-      <h3>Anime Card System</h3>
-      <p>Collect rare anime character cards across 8 tiers — from Common to Shadow Void. Spawn, claim, trade and build your deck.</p>
     </div>
-    <div class="feature-card">
-      <div class="feature-icon" style="background:rgba(234,179,8,0.15);color:#fbbf24">
-        <i class="fas fa-gamepad"></i>
+
+    <div class="poke-grid">
+      <div class="poke-card">
+        <h3>🌿 Hunting & Catching</h3>
+        <div class="poke-cmd-list">
+          <div class="poke-cmd"><code>#hunt</code><span>Search for a wild Pokémon</span></div>
+          <div class="poke-cmd"><code>.fight</code><span>Start a battle (sends image)</span></div>
+          <div class="poke-cmd"><code>.move &lt;1-4&gt;</code><span>Use a move in battle</span></div>
+          <div class="poke-cmd"><code>.flee</code><span>Escape from battle</span></div>
+          <div class="poke-cmd"><code>.catch</code><span>Throw a Pokéball to catch</span></div>
+          <div class="poke-cmd"><code>.catch great</code><span>Use a Great Ball</span></div>
+          <div class="poke-cmd"><code>.catch ultra</code><span>Use an Ultra Ball</span></div>
+          <div class="poke-cmd"><code>.catch master</code><span>Use a Master Ball (100%)</span></div>
+        </div>
       </div>
-      <h3>Full Pokémon System</h3>
-      <p>Hunt wild Pokémon, catch them with different balls, battle other trainers, earn gym badges and become champion.</p>
+      <div class="poke-card">
+        <h3>📋 Party & Collection</h3>
+        <div class="poke-cmd-list">
+          <div class="poke-cmd"><code>.party</code><span>View your active party</span></div>
+          <div class="poke-cmd"><code>.mypoke</code><span>See all your Pokémon</span></div>
+          <div class="poke-cmd"><code>.pokestats &lt;#&gt;</code><span>Detailed stats for a Pokémon</span></div>
+          <div class="poke-cmd"><code>.addparty &lt;#&gt;</code><span>Add a Pokémon to party</span></div>
+          <div class="poke-cmd"><code>.removeparty &lt;#&gt;</code><span>Remove from party</span></div>
+          <div class="poke-cmd"><code>.releasepoke &lt;#&gt;</code><span>Release a Pokémon</span></div>
+          <div class="poke-cmd"><code>.renamepoke &lt;#&gt; &lt;name&gt;</code><span>Give a nickname</span></div>
+        </div>
+      </div>
+      <div class="poke-card">
+        <h3>🏋️ Training & Battles</h3>
+        <div class="poke-cmd-list">
+          <div class="poke-cmd"><code>.pvpchallenge @user</code><span>Challenge another player</span></div>
+          <div class="poke-cmd"><code>.pvpaccept</code><span>Accept a PvP challenge</span></div>
+          <div class="poke-cmd"><code>.pvpmove &lt;1-4&gt;</code><span>Make your PvP move</span></div>
+          <div class="poke-cmd"><code>.gymlist</code><span>See available gym badges</span></div>
+          <div class="poke-cmd"><code>.gymchallenge &lt;gym&gt;</code><span>Challenge a gym leader</span></div>
+          <div class="poke-cmd"><code>.gymbadges</code><span>View your badges</span></div>
+        </div>
+      </div>
+      <div class="poke-card">
+        <h3>📖 Pokédex & Info</h3>
+        <div class="poke-cmd-list">
+          <div class="poke-cmd"><code>.pokedex &lt;name&gt;</code><span>Look up any Pokémon</span></div>
+          <div class="poke-cmd"><code>.pokesearch &lt;name&gt;</code><span>Search by name</span></div>
+          <div class="poke-cmd"><code>.pokemoves &lt;name&gt;</code><span>See a Pokémon's moves</span></div>
+          <div class="poke-cmd"><code>.poketop</code><span>Top Pokémon trainers</span></div>
+          <div class="poke-cmd"><code>.shinyhunt</code><span>Check your shiny luck</span></div>
+          <div class="poke-cmd"><code>.pokeinventory</code><span>View your Pokéballs</span></div>
+        </div>
+      </div>
     </div>
-    <div class="feature-card">
-      <div class="feature-icon" style="background:rgba(34,197,94,0.15);color:#4ade80">
-        <i class="fas fa-coins"></i>
-      </div>
-      <h3>Deep Economy</h3>
-      <p>Earn coins by working, fishing, digging and completing quests. Gamble, invest and rise up the rich list.</p>
+
+    <div class="page-head" style="margin-bottom:1.2rem;margin-top:1rem">
+      <h2 class="page-title" style="font-size:1.4rem">All 18 Types</h2>
     </div>
-    <div class="feature-card">
-      <div class="feature-icon" style="background:rgba(236,72,153,0.15);color:#f472b6">
-        <i class="fas fa-shield-halved"></i>
-      </div>
-      <h3>RPG & Guilds</h3>
-      <p>Form guilds with friends, run dungeon raids and guild raids. Level up your character and unlock powerful class skills.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon" style="background:rgba(6,182,212,0.15);color:#22d3ee">
-        <i class="fas fa-robot"></i>
-      </div>
-      <h3>AI Chat</h3>
-      <p>Talk to the bot and get intelligent responses powered by Groq AI. Ask anything, get image analysis and more.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon" style="background:rgba(139,92,246,0.15);color:#a78bfa">
-        <i class="fas fa-user-circle"></i>
-      </div>
-      <h3>Custom Profiles</h3>
-      <p>Generate stunning profile cards with custom backgrounds, profile pictures, 100 unique frames and a full stat display.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon" style="background:rgba(239,68,68,0.15);color:#f87171">
-        <i class="fas fa-dice"></i>
-      </div>
-      <h3>Gambling Suite</h3>
-      <p>Slots, blackjack, roulette, coinflip, crash, high-low and more. Bet your coins and win big — or lose everything.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon" style="background:rgba(245,158,11,0.15);color:#fcd34d">
-        <i class="fas fa-users-gear"></i>
-      </div>
-      <h3>Admin Suite</h3>
-      <p>Full group management — anti-link, anti-spam, welcome messages, warnings, suspensions and role management.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon" style="background:rgba(168,85,247,0.15);color:#c084fc">
-        <i class="fas fa-heart"></i>
-      </div>
-      <h3>Social Actions</h3>
-      <p>Hug, kiss, slap, pat, cuddle and 15+ other anime-style interactions. Mention someone and watch the fun unfold.</p>
+    <div class="types-grid" style="margin-bottom:3rem">
+      <span class="type-pill" style="background:rgba(255,100,100,0.12);color:#f87171;border-color:rgba(255,100,100,0.2)">🔥 Fire</span>
+      <span class="type-pill" style="background:rgba(56,189,248,0.12);color:#38bdf8;border-color:rgba(56,189,248,0.2)">💧 Water</span>
+      <span class="type-pill" style="background:rgba(34,197,94,0.12);color:#4ade80;border-color:rgba(34,197,94,0.2)">🌿 Grass</span>
+      <span class="type-pill" style="background:rgba(250,204,21,0.12);color:#fbbf24;border-color:rgba(250,204,21,0.2)">⚡ Electric</span>
+      <span class="type-pill" style="background:rgba(139,92,246,0.12);color:#a78bfa;border-color:rgba(139,92,246,0.2)">🔮 Psychic</span>
+      <span class="type-pill" style="background:rgba(168,85,247,0.12);color:#c084fc;border-color:rgba(168,85,247,0.2)">👻 Ghost</span>
+      <span class="type-pill" style="background:rgba(99,102,241,0.12);color:#818cf8;border-color:rgba(99,102,241,0.2)">🐉 Dragon</span>
+      <span class="type-pill" style="background:rgba(30,41,59,0.5);color:#94a3b8;border-color:rgba(148,163,184,0.2)">⬛ Dark</span>
+      <span class="type-pill" style="background:rgba(148,163,184,0.12);color:#cbd5e1;border-color:rgba(148,163,184,0.2)">🥊 Fighting</span>
+      <span class="type-pill" style="background:rgba(251,191,36,0.12);color:#fcd34d;border-color:rgba(251,191,36,0.2)">🌟 Normal</span>
+      <span class="type-pill" style="background:rgba(234,179,8,0.12);color:#eab308;border-color:rgba(234,179,8,0.2)">🌍 Ground</span>
+      <span class="type-pill" style="background:rgba(6,182,212,0.12);color:#22d3ee;border-color:rgba(6,182,212,0.2)">❄️ Ice</span>
+      <span class="type-pill" style="background:rgba(167,243,208,0.12);color:#6ee7b7;border-color:rgba(167,243,208,0.2)">🐛 Bug</span>
+      <span class="type-pill" style="background:rgba(120,113,108,0.2);color:#a8a29e;border-color:rgba(120,113,108,0.3)">🪨 Rock</span>
+      <span class="type-pill" style="background:rgba(148,163,184,0.1);color:#94a3b8;border-color:rgba(148,163,184,0.2)">🔩 Steel</span>
+      <span class="type-pill" style="background:rgba(192,132,252,0.12);color:#d8b4fe;border-color:rgba(192,132,252,0.2)">🧚 Fairy</span>
+      <span class="type-pill" style="background:rgba(74,222,128,0.1);color:#86efac;border-color:rgba(74,222,128,0.2)">☁️ Flying</span>
+      <span class="type-pill" style="background:rgba(126,211,33,0.1);color:#bef264;border-color:rgba(126,211,33,0.2)">☠️ Poison</span>
     </div>
   </div>
-</section>
+  <footer>
+    <p>© 2026 Shadow Garden Bot — Konosuba Community</p>
+  </footer>
+</div>
 
-<!-- ── COMMANDS ───────────────────────────────────────────────────────── -->
-<section class="commands-section" id="commands">
-  <div class="section-label">Commands</div>
-  <h2 class="section-title">Over 100 Commands</h2>
-  <p class="section-sub">Everything you'd want from a group bot, and then some. All prefixed with . or #</p>
-
-  <div class="commands-tabs">
-    <button class="tab active" onclick="filterCmds('all', this)">All</button>
-    <button class="tab" onclick="filterCmds('economy', this)">Economy</button>
-    <button class="tab" onclick="filterCmds('cards', this)">Cards</button>
-    <button class="tab" onclick="filterCmds('pokemon', this)">Pokémon</button>
-    <button class="tab" onclick="filterCmds('fun', this)">Fun</button>
-    <button class="tab" onclick="filterCmds('admin', this)">Admin</button>
-  </div>
-
-  <div class="commands-grid" id="cmds">
-    <!-- Economy -->
-    <div class="cmd-card" data-cat="economy"><div class="cmd-icon">💰</div><div class="cmd-body"><div class="cmd-name">.balance</div><div class="cmd-desc">View wallet, bank and gem balance</div></div></div>
-    <div class="cmd-card" data-cat="economy"><div class="cmd-icon">📅</div><div class="cmd-body"><div class="cmd-name">.daily</div><div class="cmd-desc">Claim daily coins and gems with streak bonus</div></div></div>
-    <div class="cmd-card" data-cat="economy"><div class="cmd-icon">🎣</div><div class="cmd-body"><div class="cmd-name">.fish</div><div class="cmd-desc">Go fishing for coins every 2 minutes</div></div></div>
-    <div class="cmd-card" data-cat="economy"><div class="cmd-icon">⛏️</div><div class="cmd-body"><div class="cmd-name">.dig</div><div class="cmd-desc">Dig for buried coins and gems</div></div></div>
-    <div class="cmd-card" data-cat="economy"><div class="cmd-icon">💼</div><div class="cmd-body"><div class="cmd-name">.work</div><div class="cmd-desc">Work a job and earn salary every 20 minutes</div></div></div>
-    <div class="cmd-card" data-cat="economy"><div class="cmd-icon">🏦</div><div class="cmd-body"><div class="cmd-name">.deposit / .withdraw</div><div class="cmd-desc">Move money between wallet and bank</div></div></div>
-    <div class="cmd-card" data-cat="economy"><div class="cmd-icon">💸</div><div class="cmd-body"><div class="cmd-name">.pay @user</div><div class="cmd-desc">Send coins to another user</div></div></div>
-    <div class="cmd-card" data-cat="economy"><div class="cmd-icon">🛒</div><div class="cmd-body"><div class="cmd-name">.market / .buy</div><div class="cmd-desc">Browse the shop and buy items</div></div></div>
-    <!-- Cards -->
-    <div class="cmd-card" data-cat="cards"><div class="cmd-icon">🃏</div><div class="cmd-body"><div class="cmd-name">.ci &lt;name&gt;</div><div class="cmd-desc">Look up a card — shows owners and full info</div></div></div>
-    <div class="cmd-card" data-cat="cards"><div class="cmd-icon">📦</div><div class="cmd-body"><div class="cmd-name">.coll</div><div class="cmd-desc">View your full card collection</div></div></div>
-    <div class="cmd-card" data-cat="cards"><div class="cmd-icon">🔍</div><div class="cmd-body"><div class="cmd-name">.ss &lt;name&gt;</div><div class="cmd-desc">Search card names across the full index</div></div></div>
-    <div class="cmd-card" data-cat="cards"><div class="cmd-icon">✨</div><div class="cmd-body"><div class="cmd-name">.get &lt;id&gt;</div><div class="cmd-desc">Claim a spawned card before it expires</div></div></div>
-    <div class="cmd-card" data-cat="cards"><div class="cmd-icon">🗑️</div><div class="cmd-body"><div class="cmd-name">.dc &lt;num&gt;</div><div class="cmd-desc">Discard a card from your collection</div></div></div>
-    <div class="cmd-card" data-cat="cards"><div class="cmd-icon">🎴</div><div class="cmd-body"><div class="cmd-name">.card &lt;num&gt;</div><div class="cmd-desc">View detailed info about one of your cards</div></div></div>
-    <!-- Pokémon -->
-    <div class="cmd-card" data-cat="pokemon"><div class="cmd-icon">🎯</div><div class="cmd-body"><div class="cmd-name">#hunt</div><div class="cmd-desc">Search for a wild Pokémon encounter</div></div></div>
-    <div class="cmd-card" data-cat="pokemon"><div class="cmd-icon">🔴</div><div class="cmd-body"><div class="cmd-name">#catch &lt;slot&gt; | &lt;ball&gt;</div><div class="cmd-desc">Attempt to catch the wild Pokémon</div></div></div>
-    <div class="cmd-card" data-cat="pokemon"><div class="cmd-icon">⚔️</div><div class="cmd-body"><div class="cmd-name">#battle @user</div><div class="cmd-desc">Challenge a trainer to a PvP battle</div></div></div>
-    <div class="cmd-card" data-cat="pokemon"><div class="cmd-icon">🏅</div><div class="cmd-body"><div class="cmd-name">#gym</div><div class="cmd-desc">Challenge a gym leader for a badge</div></div></div>
-    <div class="cmd-card" data-cat="pokemon"><div class="cmd-icon">👥</div><div class="cmd-body"><div class="cmd-name">#party</div><div class="cmd-desc">View your active Pokémon party</div></div></div>
-    <div class="cmd-card" data-cat="pokemon"><div class="cmd-icon">📘</div><div class="cmd-body"><div class="cmd-name">#dex &lt;name&gt;</div><div class="cmd-desc">Look up any Pokémon in the Pokédex</div></div></div>
-    <div class="cmd-card" data-cat="pokemon"><div class="cmd-icon">🌟</div><div class="cmd-body"><div class="cmd-name">#evolve &lt;slot&gt;</div><div class="cmd-desc">Evolve a Pokémon in your party</div></div></div>
-    <div class="cmd-card" data-cat="pokemon"><div class="cmd-icon">💪</div><div class="cmd-body"><div class="cmd-name">#train &lt;slot&gt;</div><div class="cmd-desc">Train a Pokémon to gain XP and levels</div></div></div>
-    <!-- Fun -->
-    <div class="cmd-card" data-cat="fun"><div class="cmd-icon">😂</div><div class="cmd-body"><div class="cmd-name">.joke</div><div class="cmd-desc">Get a random joke</div></div></div>
-    <div class="cmd-card" data-cat="fun"><div class="cmd-icon">🎱</div><div class="cmd-body"><div class="cmd-name">.8ball &lt;question&gt;</div><div class="cmd-desc">Ask the magic 8-ball anything</div></div></div>
-    <div class="cmd-card" data-cat="fun"><div class="cmd-icon">💑</div><div class="cmd-body"><div class="cmd-name">.ship @user @user</div><div class="cmd-desc">Calculate compatibility between two people</div></div></div>
-    <div class="cmd-card" data-cat="fun"><div class="cmd-icon">🎭</div><div class="cmd-body"><div class="cmd-name">.truth / .dare</div><div class="cmd-desc">Random truth or dare prompts</div></div></div>
-    <div class="cmd-card" data-cat="fun"><div class="cmd-icon">🪨</div><div class="cmd-body"><div class="cmd-name">.rps &lt;choice&gt;</div><div class="cmd-desc">Rock paper scissors against the bot</div></div></div>
-    <!-- Admin -->
-    <div class="cmd-card" data-cat="admin"><div class="cmd-icon">🔨</div><div class="cmd-body"><div class="cmd-name">.kick @user</div><div class="cmd-desc">Remove a member from the group</div></div></div>
-    <div class="cmd-card" data-cat="admin"><div class="cmd-icon">⚠️</div><div class="cmd-body"><div class="cmd-name">.warn @user</div><div class="cmd-desc">Issue a warning to a user</div></div></div>
-    <div class="cmd-card" data-cat="admin"><div class="cmd-icon">🔇</div><div class="cmd-body"><div class="cmd-name">.mute / .unmute</div><div class="cmd-desc">Restrict or restore a user's messaging</div></div></div>
-    <div class="cmd-card" data-cat="admin"><div class="cmd-icon">🔗</div><div class="cmd-body"><div class="cmd-name">.antilink on/off</div><div class="cmd-desc">Auto-delete unauthorized group links</div></div></div>
-    <div class="cmd-card" data-cat="admin"><div class="cmd-icon">👋</div><div class="cmd-body"><div class="cmd-name">.welcome on/off</div><div class="cmd-desc">Send custom messages on member join</div></div></div>
-    <div class="cmd-card" data-cat="admin"><div class="cmd-icon">📋</div><div class="cmd-body"><div class="cmd-name">.tagall</div><div class="cmd-desc">Mention everyone in the group at once</div></div></div>
-  </div>
-</section>
-
-<!-- ── CARDS ─────────────────────────────────────────────────────────── -->
-<section class="cards-section" id="cards">
-  <div class="section-label">Card System</div>
-  <h2 class="section-title">8 Tiers of Power</h2>
-  <p class="section-sub">From a humble Common to the elusive Void — every card is worth chasing. Spawn, collect, dominate.</p>
-
-  <div class="tiers-grid">
-    <div class="tier-pill" style="background:rgba(120,113,108,0.2);border-color:rgba(120,113,108,0.4);color:#d6d3d1">🥉 T1 — Common</div>
-    <div class="tier-pill" style="background:rgba(59,130,246,0.15);border-color:rgba(59,130,246,0.3);color:#93c5fd">🔵 T2 — Uncommon</div>
-    <div class="tier-pill" style="background:rgba(34,197,94,0.15);border-color:rgba(34,197,94,0.3);color:#86efac">🟢 T3 — Rare</div>
-    <div class="tier-pill" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.3);color:#fca5a5">🔴 T4 — Epic</div>
-    <div class="tier-pill" style="background:rgba(168,85,247,0.15);border-color:rgba(168,85,247,0.3);color:#c4b5fd">🟣 T5 — Legendary</div>
-    <div class="tier-pill" style="background:rgba(234,179,8,0.15);border-color:rgba(234,179,8,0.3);color:#fde68a">🟡 T6 — Mythic</div>
-    <div class="tier-pill" style="background:rgba(255,255,255,0.07);border-color:rgba(255,255,255,0.2);color:#fff">✨ TS — Shadow</div>
-    <div class="tier-pill" style="background:rgba(99,102,241,0.1);border-color:rgba(99,102,241,0.25);color:#a5b4fc">🌌 TZ — Void</div>
-  </div>
-
-  <div style="max-width:700px;margin:3rem auto 0;background:var(--card-bg);border:1px solid var(--border);border-radius:20px;padding:2rem;font-family:'Courier New',monospace;font-size:0.88rem;line-height:1.9;color:var(--text)">
-    <div style="color:#94a3b8;margin-bottom:0.5rem;font-family:'Poppins',sans-serif;font-size:0.75rem;font-weight:700;letter-spacing:2px;text-transform:uppercase">Card Info Preview</div>
-    <div>🃏 <strong style="color:#a78bfa">𝗖𝗮𝗿𝗱 𝗜𝗻𝗳𝗼</strong></div>
-    <div>&nbsp;</div>
-    <div>✨ 𝗡𝗮𝗺𝗲: <span style="color:#f9a8d4">Megumin</span></div>
-    <div>📚 𝗦𝗲𝗿𝗶𝗲𝘀: <span style="color:#93c5fd">KonoSuba</span></div>
-    <div>💠 𝗧𝗶𝗲𝗿: <span style="color:#c4b5fd">TS — Shadow</span></div>
-    <div>🆔 𝗖𝗮𝗿𝗱 𝗜𝗗: <span style="color:#fcd34d">#kn8f2a</span></div>
-    <div>&nbsp;</div>
-    <div style="border-top:1px solid rgba(255,255,255,0.1);margin:0.5rem 0;padding-top:0.5rem">━━━━━━━━━━━━━━━━━━━━━━━</div>
-    <div>🎀 <strong>𝗢𝘄𝗻𝗲𝗿𝘀</strong> (3)</div>
-    <div>&nbsp;</div>
-    <div>&gt; <em style="color:#93c5fd">@AquaSimp</em> | <code style="background:rgba(255,255,255,0.08);padding:0 4px;border-radius:4px">kn8f2a</code></div>
-    <div>&gt; <em style="color:#93c5fd">@KazumaBro</em> | <code style="background:rgba(255,255,255,0.08);padding:0 4px;border-radius:4px">kn8f2a</code></div>
-    <div>&gt; <em style="color:#93c5fd">@DarknessWaifu</em> | <code style="background:rgba(255,255,255,0.08);padding:0 4px;border-radius:4px">kn8f2a</code></div>
-  </div>
-</section>
-
-<!-- ── STATS BANNER ──────────────────────────────────────────────────── -->
-<section class="stats-section">
-  <div class="stats-grid">
-    <div>
-      <div class="stat-num" style="background:linear-gradient(135deg,#60a5fa,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent">50K+</div>
-      <div class="stat-label"><i class="fas fa-users" style="margin-right:6px"></i>Members Served</div>
-    </div>
-    <div>
-      <div class="stat-num" style="background:linear-gradient(135deg,#34d399,#22d3ee);-webkit-background-clip:text;-webkit-text-fill-color:transparent">8,200+</div>
-      <div class="stat-label"><i class="fas fa-cards-blank" style="margin-right:6px"></i>Cards in Index</div>
-    </div>
-    <div>
-      <div class="stat-num" style="background:linear-gradient(135deg,#f472b6,#fb7185);-webkit-background-clip:text;-webkit-text-fill-color:transparent">900+</div>
-      <div class="stat-label"><i class="fas fa-gamepad" style="margin-right:6px"></i>Pokémon Available</div>
-    </div>
-    <div>
-      <div class="stat-num" style="background:linear-gradient(135deg,#fbbf24,#f97316);-webkit-background-clip:text;-webkit-text-fill-color:transparent">99.9%</div>
-      <div class="stat-label"><i class="fas fa-bolt" style="margin-right:6px"></i>Uptime</div>
+<!-- ══════════════════════════════════════════════ -->
+<!-- PAGE: SIGN IN                                  -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="page-signin" class="page">
+  <div class="coming-soon">
+    <div class="cs-inner">
+      <span class="cs-icon">🔐</span>
+      <h1 class="cs-title">Sign In</h1>
+      <p class="cs-sub">A full account portal is on the way — view your stats, manage your profile, track your cards and check your leaderboard rank from the web.</p>
+      <div class="cs-badge">
+        <span style="width:6px;height:6px;background:#ec4899;border-radius:50%;display:inline-block"></span>
+        Coming Soon
+      </div>
+      <div class="notify-form">
+        <input class="notify-input" type="text" placeholder="Your WhatsApp number"/>
+        <button class="notify-btn" onclick="notifyMe(this)">Notify Me</button>
+      </div>
+      <p style="font-size:0.75rem;color:var(--muted);margin-top:0.75rem">We'll ping you on WhatsApp when it launches 🤙</p>
     </div>
   </div>
-</section>
-
-<!-- ── POKÉMON ────────────────────────────────────────────────────────── -->
-<section style="padding:5rem 2rem;" id="pokemon">
-  <div class="section-label">Pokémon System</div>
-  <h2 class="section-title">Catch 'em All — in WhatsApp</h2>
-  <p class="section-sub">A fully fleshed Pokémon system powered live from the PokéAPI. Real stats, real moves, real battles.</p>
-
-  <div style="max-width:900px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.5rem">
-    <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:20px;padding:1.8rem">
-      <div style="font-size:2rem;margin-bottom:1rem">🎯</div>
-      <h3 style="font-weight:700;margin-bottom:0.5rem">Hunt & Catch</h3>
-      <p style="color:var(--muted);font-size:0.9rem;line-height:1.6">Use <code style="color:#a78bfa">#hunt</code> to spawn a wild Pokémon. Choose your ball — Poké, Great or Ultra — and attempt the catch before it flees.</p>
-    </div>
-    <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:20px;padding:1.8rem">
-      <div style="font-size:2rem;margin-bottom:1rem">⚔️</div>
-      <h3 style="font-weight:700;margin-bottom:0.5rem">Real Battles</h3>
-      <p style="color:var(--muted);font-size:0.9rem;line-height:1.6">Challenge other trainers to PvP battles using your party. Win to earn XP, coins and battle records. Gym leaders await your challenge.</p>
-    </div>
-    <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:20px;padding:1.8rem">
-      <div style="font-size:2rem;margin-bottom:1rem">🌟</div>
-      <h3 style="font-weight:700;margin-bottom:0.5rem">Train & Evolve</h3>
-      <p style="color:var(--muted);font-size:0.9rem;line-height:1.6">Train your Pokémon every 15 minutes to gain XP and levels. When they're ready, evolve them and learn new powerful moves.</p>
-    </div>
-    <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:20px;padding:1.8rem">
-      <div style="font-size:2rem;margin-bottom:1rem">🔥</div>
-      <h3 style="font-weight:700;margin-bottom:0.5rem">Raids & Events</h3>
-      <p style="color:var(--muted);font-size:0.9rem;line-height:1.6">Take on legendary raid bosses for massive XP rewards. Special events double spawn rates for Dark, Ghost and Legendary types.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ── CTA ───────────────────────────────────────────────────────────── -->
-<section class="cta-section">
-  <h2>Ready to Join the Party?</h2>
-  <p>Add the bot to your WhatsApp group and type <code style="background:rgba(139,92,246,0.2);color:#c4b5fd;padding:0.2rem 0.6rem;border-radius:8px;font-family:'Courier New',monospace">.menu</code> to get started.</p>
-  <div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap">
-    <a class="btn-primary" href="https://wa.me/?text=.menu" target="_blank">
-      <i class="fab fa-whatsapp"></i>
-      Add to WhatsApp
-    </a>
-    <a class="btn-secondary" href="https://wa.me/?text=.help" target="_blank">
-      <i class="fas fa-question-circle"></i>
-      View Help
-    </a>
-  </div>
-</section>
-
-<!-- ── FOOTER ────────────────────────────────────────────────────────── -->
-<footer>
-  <div class="footer-links">
-    <a href="#features">Features</a>
-    <a href="#commands">Commands</a>
-    <a href="#cards">Cards</a>
-    <a href="#pokemon">Pokémon</a>
-  </div>
-  <p>© 2025 KonoBot &nbsp;•&nbsp; Powered by the KONOSUBA Community &nbsp;•&nbsp; Not affiliated with the KonoSuba anime franchise.</p>
-</footer>
+  <footer>
+    <p>© 2026 Shadow Garden Bot — Konosuba Community</p>
+  </footer>
+</div>
 
 <script>
-  function filterCmds(cat, btn) {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
-    btn.classList.add('active')
-    document.querySelectorAll('.cmd-card').forEach(c => {
-      c.style.display = (cat === 'all' || c.dataset.cat === cat) ? 'flex' : 'none'
-    })
+  function showPage(id, btn) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    document.getElementById('page-' + id).classList.add('active');
+    window.scrollTo(0, 0);
+    if (btn) btn.classList.add('active');
   }
 
-  // Intersection Observer for subtle fade-in
-  const observer = new IntersectionObserver(entries => {
-    entries.forEach(e => {
-      if (e.isIntersecting) {
-        e.target.style.opacity = '1'
-        e.target.style.transform = 'translateY(0)'
-        observer.unobserve(e.target)
-      }
-    })
-  }, { threshold: 0.08 })
+  function filterShop(type, btn) {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    document.querySelectorAll('.shop-card').forEach(card => {
+      card.style.display = (type === 'all' || card.dataset.type === type) ? '' : 'none';
+    });
+  }
 
-  document.querySelectorAll('.feature-card, .cmd-card, .char-card, .tier-pill').forEach(el => {
-    el.style.opacity = '0'
-    el.style.transform = 'translateY(20px)'
-    el.style.transition = 'opacity 0.5s ease, transform 0.5s ease'
-    observer.observe(el)
-  })
+  function notifyMe(btn) {
+    const input = btn.previousElementSibling;
+    if (!input.value.trim()) { input.style.borderColor = 'rgba(239,68,68,0.5)'; return; }
+    btn.textContent = '✓ Done!';
+    btn.style.background = '#22c55e';
+    btn.disabled = true;
+    input.disabled = true;
+  }
 </script>
 </body>
 </html>
