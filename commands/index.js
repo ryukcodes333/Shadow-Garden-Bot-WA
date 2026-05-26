@@ -281,7 +281,7 @@ async function handleMessage(sock, msg) {
     'waifu','neko','animesearch','animekill','animebite','animewave','animewink','animebonk',
     'megumin','mikasa','naruto','sasuke','itachi','madara','gojo','nezuko','kurumi','onepiece','yumeko',
     'lotterystart','lotteryjoin','lotterystatus','lotterydraw','lotteryend','lottery',
-    'poll','pollresult','dbstatus',
+    'poll','pollresult','dbstatus','checkdb',
     'addmod','removemod','addguardian','removeguardian','mods','modlist','modslist',
     'phelp','law','pbenefits','report','trivia','math','fact','joke','flip','8ball','roll','choose',
     'roulette','horse','casino','dice',

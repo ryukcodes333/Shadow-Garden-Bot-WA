@@ -649,4 +649,80 @@ module.exports = {
       await reply(`❌ DB error: ${e.message}`)
     }
   },
+
+  async checkdb({ reply, isOwner, isMod, isGuardian }) {
+    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
+
+    const db_module = require('../database')
+    const mongoose  = db_module.mongoose
+
+    const stateMap = { 0: '🔴 Disconnected', 1: '🟢 Connected', 2: '🟡 Connecting', 3: '🟠 Disconnecting' }
+    const connState = stateMap[mongoose.connection.readyState] || '❓ Unknown'
+
+    const uptimeSec = Math.floor(process.uptime())
+    const uptimeH   = Math.floor(uptimeSec / 3600)
+    const uptimeM   = Math.floor((uptimeSec % 3600) / 60)
+    const uptimeS   = uptimeSec % 60
+    const uptimeStr = `${uptimeH}h ${uptimeM}m ${uptimeS}s`
+
+    const collections = [
+      'users', 'groups', 'warnings', 'cooldowns',
+      'inventory', 'cards', 'usercards', 'userpokemons',
+      'guilds', 'guildmembers', 'suspensions', 'loans',
+    ]
+
+    let collectionLines = ''
+    let indexLines = ''
+    let problemFound = false
+
+    try {
+      const dbConn = mongoose.connection.db
+
+      const counts = await Promise.all(collections.map(async name => {
+        try {
+          const col = dbConn?.collection(name)
+          const n   = col ? await col.countDocuments() : null
+          return { name, ok: n !== null, n }
+        } catch { return { name, ok: false, n: null } }
+      }))
+      collectionLines = counts
+        .map(r => `${r.ok ? '✅' : '❌'} *${r.name}*${r.ok ? `: ${r.n.toLocaleString()} docs` : ': error'}`)
+        .join('\n')
+
+      const usersCol  = dbConn?.collection('users')
+      const indexes   = usersCol ? await usersCol.indexes() : []
+      const idxIssues = []
+      for (const idx of indexes) {
+        const isBadJid = idx.name === 'jid_1' && !idx.sparse
+        if (isBadJid) {
+          idxIssues.push(`⚠️ *jid_1* — non-sparse unique index (blocks new users)`)
+          problemFound = true
+        }
+      }
+      const goodIndexes = indexes.filter(i => !(i.name === 'jid_1' && !i.sparse))
+      const goodLines   = goodIndexes.map(i => `✅ *${i.name}*${i.unique ? ' (unique)' : ''}${i.sparse ? ' (sparse)' : ''}`).join('\n')
+      indexLines = [...idxIssues, goodLines].filter(Boolean).join('\n')
+
+    } catch (e) {
+      collectionLines = `❌ Could not fetch collection info: ${e.message}`
+      indexLines      = '❌ Could not fetch index info'
+    }
+
+    const memUsage = process.memoryUsage()
+    const heapMB   = (memUsage.heapUsed / 1024 / 1024).toFixed(1)
+    const rssMB    = (memUsage.rss       / 1024 / 1024).toFixed(1)
+
+    await reply(
+      `🔍 *DATABASE HEALTH CHECK*\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `*🔌 Connection*\n${connState}\n\n` +
+      `*⏱️ Bot Uptime*\n${uptimeStr}\n\n` +
+      `*🧠 Memory*\nHeap: ${heapMB} MB  |  RSS: ${rssMB} MB\n\n` +
+      `*📦 Collections*\n${collectionLines}\n\n` +
+      `*🗂️ users Indexes*\n${indexLines || '✅ No issues found'}\n\n` +
+      (problemFound
+        ? `⚠️ *Index issues detected!* Restart the bot to auto-fix them.`
+        : `✅ *All systems healthy.*`)
+    )
+  },
 }
