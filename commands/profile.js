@@ -173,18 +173,50 @@ module.exports = {
     const frameId   = u.profile_frame || 1
     const frameName = getFrame(frameId).name
     const cardCount = await db.getUserCardCount(sender).catch(() => '?')
+    const joinDate  = u.created_at ? new Date(u.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown'
+    const xpNeeded  = (u.level || 1) * 1000
+    const xpFill    = Math.min(Math.round(((u.xp || 0) / xpNeeded) * 10), 10)
+    const xpBar     = '🟦'.repeat(xpFill) + '⬛'.repeat(10 - xpFill)
+    const netWorth  = (Number(u.wallet || 0) + Number(u.bank || 0))
+    const rank      = effectiveRole.charAt(0).toUpperCase() + effectiveRole.slice(1)
+    const title     = u.title || 'Newcomer'
+
+    // Pokemon stats
+    let pokemonOwned = 0, partyCount = 0, gymBadges = 0, battleWins = 0, battleLosses = 0
+    try {
+      const pData = await db.getUserPokemon(sender).catch(() => [])
+      pokemonOwned = Array.isArray(pData) ? pData.length : 0
+      partyCount   = Array.isArray(pData) ? pData.filter(p => p.in_party).length : 0
+      gymBadges    = u.gym_badges || 0
+      battleWins   = u.battle_wins || 0
+      battleLosses = u.battle_losses || 0
+    } catch {}
 
     await sock.sendMessage(
       jid,
       {
         image: cardBuffer,
         caption:
-          `🌑 *${u.name || sender}\'s Profile*\n\n` +
-          `⭐ Level ${u.level || 1}  |  🎭 ${u.role || 'member'}\n` +
-          `💰 ${Number(u.wallet || 0).toLocaleString()} coins  •  💎 ${Number(u.gems || 0).toLocaleString()} gems\n` +
-          `🃏 Cards: ${cardCount}\n` +
-          `🖼️ Frame: ${frameName} (#${frameId})\n\n` +
-          `_Type .frames to browse all 30 frames_ 🖤`,
+          `✦ ${u.name || sender}'s Profile ✦\n\n` +
+          `*👤 Rank:* ${rank} | 🏷️ Title: ${title}  \n` +
+          `*⭐ Level:* ${u.level || 1}\n` +
+          `*🔥 Streak:* ${u.streak || 0} days  \n` +
+          `*📊 XP:* ${u.xp || 0} / ${xpNeeded}  \n` +
+          `\`[${xpBar}]\`\n\n` +
+          `*💰 Wallet:* ${Number(u.wallet || 0).toLocaleString()}  \n` +
+          `*🏦 Bank:* ${Number(u.bank || 0).toLocaleString()}  \n` +
+          `*💎 Gems:* ${Number(u.gems || 0).toLocaleString()}  \n` +
+          `*💵 Net Worth:* ${netWorth.toLocaleString()}\n\n` +
+          `*🃏 Cards Owned:* ${cardCount}  \n` +
+          `*🖼️ Frame:* ${frameName}\n\n` +
+          `\`🎮 Trainer Stats\` \n` +
+          `*🐾 Pokémon Owned:* ${pokemonOwned}\n` +
+          `*🎒 In Party:* ${partyCount}  \n` +
+          `*🏆 Gym Badges:* ${gymBadges}  \n` +
+          `*⚔️ Battle Wins:* ${battleWins}\n` +
+          `*💥 Losses:* ${battleLosses}\n\n` +
+          `*📅 Joined:* ${joinDate}  \n\n` +
+          `> Type .frames to browse all 30 frames`,
       },
       { quoted: msg }
     )
@@ -198,16 +230,6 @@ module.exports = {
     if (!u) return reply('❌ Could not load profile.')
 
     const xpNeeded = (u.level || 1) * 1000
-    const xpBar = (() => {
-      const fill = Math.min(Math.round(((u.xp||0)/((u.level||1)*1000))*10),10);
-      return '🟦'.repeat(fill) + '⬛'.repeat(10-fill);
-    })()
-    let pokemonOwned=0, partyCount=0, gymBadges=0, battleWins=0, battleLosses=0;
-    try {
-      const pData = await db.getUserPokemon(sender).catch(()=>[]);
-      if (Array.isArray(pData)) { pokemonOwned=pData.length; partyCount=pData.filter(p=>p.in_party).length; }
-      gymBadges=u.gym_badges||0; battleWins=u.battle_wins||0; battleLosses=u.battle_losses||0;
-    } catch {}
     const joinDate = u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Unknown'
 
     await reply(
@@ -262,7 +284,7 @@ module.exports = {
               `✅ *PROFILE PICTURE UPDATED*\n\n` +
               `Your video PP has been saved! 🎬\n\n` +
               `📸 Type *.p* to see your updated card.\n\n` +
-              `_The shadows reflect your true face._ 🖤`,
+              `_You carry the spirit of Konosuba._ 🖤`,
           },
           { quoted: msg }
         )
@@ -301,7 +323,7 @@ module.exports = {
             `✅ *PROFILE PICTURE UPDATED*\n\n` +
             `Your PP has been saved.\n\n` +
             `📸 Type *.p* to see your updated card.\n\n` +
-            `_The shadows reflect your true face._ 🖤`,
+            `_You carry the spirit of Konosuba._ 🖤`,
         },
         { quoted: msg }
       )
@@ -339,7 +361,7 @@ module.exports = {
               `✅ *PROFILE BACKGROUND UPDATED*\n\n` +
               `Your video background has been saved! 🎬\n\n` +
               `📸 Type *.p* to see your card (uses first frame).\n\n` +
-              `_Your shadow now has a new stage._ 🖤`,
+              `_A new backdrop for your legend._ 🖤`,
           },
           { quoted: msg }
         )
@@ -378,7 +400,7 @@ module.exports = {
             `✅ *PROFILE BACKGROUND UPDATED*\n\n` +
             `Your background has been saved.\n\n` +
             `📸 Type *.p* to see your updated card.\n\n` +
-            `_Your shadow now has a new stage._ 🖤`,
+            `_A new backdrop for your legend._ 🖤`,
         },
         { quoted: msg }
       )

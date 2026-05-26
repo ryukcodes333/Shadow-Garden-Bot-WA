@@ -120,6 +120,106 @@ function getCardStats() {
   return { total: cardIndex.length, indexedCount: cardIndex.length, byTier };
 }
 
+
+const http2  = require("http");
+const https2 = require("https");
+
+async function fetchImageBuffer(url) {
+  return new Promise((resolve) => {
+    const client = url.startsWith("https") ? https2 : http2;
+    const req = client.get(url, { timeout: 12000 }, (res) => {
+      if (res.statusCode !== 200) { res.resume(); return resolve(null); }
+      const chunks = [];
+      res.on("data", c => chunks.push(c));
+      res.on("end",  () => resolve(Buffer.concat(chunks)));
+      res.on("error",() => resolve(null));
+    });
+    req.on("error",   () => resolve(null));
+    req.on("timeout", () => { req.destroy(); resolve(null); });
+  });
+}
+
+async function _buildDeckImage(cards) {
+  let createCanvas, loadImage;
+  try {
+    ({ createCanvas, loadImage } = require("@napi-rs/canvas"));
+  } catch { return null; }
+
+  const COLS = 3, ROWS = Math.ceil(Math.min(cards.length, 9) / 3);
+  const CW = 160, CH = 220, PAD = 8, HEADER = 40;
+  const W = COLS * (CW + PAD) + PAD;
+  const H = ROWS * (CH + PAD) + PAD + HEADER;
+  const canvas = createCanvas(W, H);
+  const ctx2   = canvas.getContext("2d");
+
+  // Background
+  ctx2.fillStyle = "#1a1a2e";
+  ctx2.fillRect(0, 0, W, H);
+
+  // Header
+  ctx2.fillStyle = "#e2b96a";
+  ctx2.font = "bold 18px sans-serif";
+  ctx2.textAlign = "center";
+  ctx2.fillText("🎴 Your Deck", W / 2, 28);
+
+  const tierColors = { T1:"#a0a0a0", T2:"#3b9ddd", T3:"#2ecc71", T4:"#e74c3c", T5:"#9b59b6", T6:"#f1c40f", TS:"#f39c12", TZ:"#8e44ad" };
+
+  for (let i = 0; i < Math.min(cards.length, 9); i++) {
+    const uc = cards[i];
+    const c  = uc.cards || uc;
+    const col = i % COLS, row = Math.floor(i / COLS);
+    const x = PAD + col * (CW + PAD);
+    const y = HEADER + PAD + row * (CH + PAD);
+    const tier = c?.tier || "?";
+    const borderColor = tierColors[tier] || "#555";
+
+    // Card bg
+    ctx2.fillStyle = "#16213e";
+    ctx2.strokeStyle = borderColor;
+    ctx2.lineWidth = 3;
+    ctx2.beginPath();
+    ctx2.roundRect(x, y, CW, CH, 8);
+    ctx2.fill(); ctx2.stroke();
+
+    // Card image
+    const imgUrl = c?.image_url || null;
+    if (imgUrl) {
+      try {
+        const buf = await fetchImageBuffer(imgUrl);
+        if (buf) {
+          const img = await loadImage(buf);
+          ctx2.save();
+          ctx2.beginPath();
+          ctx2.roundRect(x + 4, y + 4, CW - 8, CH - 52, 6);
+          ctx2.clip();
+          ctx2.drawImage(img, x + 4, y + 4, CW - 8, CH - 52);
+          ctx2.restore();
+        }
+      } catch {}
+    }
+
+    // Card name bar
+    ctx2.fillStyle = "rgba(0,0,0,0.7)";
+    ctx2.fillRect(x + 2, y + CH - 50, CW - 4, 48);
+
+    ctx2.fillStyle = "#ffffff";
+    ctx2.font      = "bold 11px sans-serif";
+    ctx2.textAlign = "center";
+    const name = (c?.name || "Unknown").length > 14 ? (c?.name || "Unknown").slice(0, 12) + "…" : (c?.name || "Unknown");
+    ctx2.fillText(name, x + CW / 2, y + CH - 34);
+
+    ctx2.fillStyle = borderColor;
+    ctx2.font      = "10px sans-serif";
+    ctx2.fillText(tier, x + CW / 2, y + CH - 20);
+
+    ctx2.fillStyle = "#aaa";
+    ctx2.font      = "9px sans-serif";
+    ctx2.fillText(`#${i + 1}`, x + CW / 2, y + CH - 6);
+  }
+
+  return canvas.toBuffer("image/jpeg", { quality: 85 });
+}
+
 module.exports = {
   async spawnc({ sock, jid, msg, reply, react, isOwner, isMod, isGuardian }) {
     if (!isOwner && !isMod && !isGuardian) return reply("⚠️ Only staff can spawn cards.");
@@ -183,7 +283,7 @@ module.exports = {
     await reply(
       `✅ *CARD CLAIMED!*\n\n` +
       `${tierEmoji} *${card.name}*\n` +
-      `⭐ Tier: ${card.tier}\n` +
+      `⭐ Tier: ${card.tier} - ${TIER_NAMES[card.tier] || card.tier}\n` +
       `💰 Worth: $${(TIER_PRICES[card.tier] || 0).toLocaleString()}\n` +
       `🆔 ID: \`${card.id}\`\n\n` +
       `_Added to your collection! Use *.coll* to view it._`
@@ -262,7 +362,7 @@ module.exports = {
       const caption =
         `*🃏 Card Info*\n\n` +
         `*🎴 Name:* ${card.title}\n` +
-        `*⭐ Tier:* ${tier}\n` +
+        `*⭐ Tier:* ${tier} - ${TIER_NAMES[tier] || tier}\n` +
         `*💰 Price:* $${price.toLocaleString()}\n` +
         `*🆔 Card ID:* \`${cardId}\`` +
         multiNote;
@@ -303,7 +403,7 @@ module.exports = {
       `━━━━━━━━━━━━━━━━━━━\n` +
       `${tierEmoji} *${name}*\n` +
       `📚 *Series:* ${series}\n` +
-      `⭐ *Tier:* ${tier}\n` +
+      `⭐ *Tier:* ${tier} - ${TIER_NAMES[tier] || tier}\n` +
       `💰 *Price:* $${price.toLocaleString()}\n` +
       `━━━━━━━━━━━━━━━━━━━\n` +
       `_Collection entry #${index}._`;
@@ -326,12 +426,42 @@ module.exports = {
       const matches = findCardsByName(nameQuery, null);
       if (!matches.length) return reply(`❌ No cards found matching: *${nameQuery}*`);
       const boldQuery = toBold(nameQuery.toUpperCase());
-      const cardLines = matches.slice(0, 30).map((c) => {
+
+      // Batch fetch owner counts for all matched cards
+      const externalIds = matches.map(c => extractCardId(c.url));
+      let ownerCounts = {};
+      try { ownerCounts = await db.getOwnerCountsBatch(externalIds); } catch {}
+
+      const cardLines = matches.map((c, i) => {
         const tier = LOCAL_TIER_TO_LABEL[String(c.tier)] || String(c.tier);
-        return `\n✦ 『 ${c.title} 』\n> 🏷️ 𝗧𝗶𝗲𝗿: ${tier}`;
+        const extId = externalIds[i];
+        const owners = ownerCounts[extId] || 0;
+        return `\n*${i + 1}. ${c.title}*\n     *⭐ Tier:* ${tier}\n     *#️⃣ Owners:* ${owners}`;
       }).join("\n");
-      const more = matches.length > 30 ? `\n\n_...and ${matches.length - 30} more cards._` : "";
-      await reply(`*🎴 Cards Matching "${nameQuery}" Globaly 🎴*` + cardLines + more + '');
+
+      const header = `*🎴 Cards Matching "${nameQuery}" Globaly 🎴*`;
+      const footer = "";
+
+      // WhatsApp has a ~65535 char limit; split into chunks if needed
+      const MAX_LEN = 4000;
+      const fullText = header + cardLines + footer;
+      if (fullText.length <= MAX_LEN) {
+        await reply(fullText);
+      } else {
+        // Send in pages
+        const chunks = [];
+        let current = header;
+        const lines = cardLines.split("\n");
+        for (const line of lines) {
+          if ((current + "\n" + line).length > MAX_LEN) {
+            chunks.push(current);
+            current = "_(continued...)_";
+          }
+          current += "\n" + line;
+        }
+        chunks.push(current + footer);
+        for (const chunk of chunks) await reply(chunk);
+      }
     } catch (err) {
       await reply(`❌ Error: ${err.message}`);
     }
@@ -355,27 +485,60 @@ module.exports = {
 
   async collection(ctx) { return module.exports.coll(ctx); },
 
-  async deck({ reply, sender }) {
+  async deck({ sock, jid, msg, reply, sender }) {
     const cards = await db.getUserCards(sender);
     if (!cards.length) return reply("📭 Your deck is empty.\n\nClaim cards when they spawn! 🎴");
+
+    // Get owner counts for deck cards
+    const deckSlice = cards.slice(0, 9);
+    const deckExtIds = deckSlice.map(uc => {
+      const c = uc.cards || uc;
+      return c?.external_id || c?.id || "?";
+    });
+    let ownerCounts = {};
+    try { ownerCounts = await db.getOwnerCountsBatch(deckExtIds); } catch {}
+
+    const cardLines = deckSlice.map((uc, i) => {
+      const c = uc.cards || uc;
+      const tier = c?.tier || "?";
+      const name = c?.name || "Unknown";
+      const extId = deckExtIds[i];
+      const owners = ownerCounts[extId] || 0;
+      return (
+        `\n🎴 *Name:* ${name}\n` +
+        `⭐ *Tier:* ${tier} - ${TIER_NAMES[tier] || tier}\n` +
+        `🔷 *Index:* #${i + 1}\n` +
+        `#️⃣ *Owners:* (${owners})`
+      );
+    }).join("\n\n");
+
     const byTier = {};
     for (const uc of cards) {
       const t = (uc.cards || uc)?.tier || "?";
       byTier[t] = (byTier[t] || 0) + 1;
     }
-    const tierSummary = Object.entries(byTier).map(([t, c]) => `${TIERS[t] || "🎴"} ${t}: ${c}`).join(" ");
-    const list = cards.slice(0, 15).map((uc, i) => {
-      const c = uc.cards || uc;
-      return `${i + 1}. ${TIERS[c?.tier] || "🎴"} *${c?.name || "Unknown"}* _(${c?.tier || "?"})_`;
-    }).join("\n");
-    await reply(
-      `🃏 *YOUR DECK*\n\n` +
-      `📦 Total: ${cards.length}\n\n` +
-      `━━━━━━━━━━━━━━━\n` +
-      `*Tiers:* ${tierSummary}\n` +
-      `━━━━━━━━━━━━━━━\n\n` +
-      `${list}${cards.length > 15 ? `\n\n_...and ${cards.length - 15} more. Use *.coll* for full list._` : ""}`
-    );
+    const tierSummary = Object.entries(byTier).map(([t, c]) => `${TIERS[t] || "🎴"} ${t}: ${c}`).join("  ");
+    const ZWLTR = '\u200e'.repeat(800)
+    const caption =
+      `*🎴 Your Deck 🎴*${ZWLTR}` +
+      cardLines +
+      (cards.length > 9 ? `\n\n_...and ${cards.length - 9} more. Use *.coll* for full list._` : "");
+
+    // Try to build a grid image of the 9 cards
+    let deckImage = null;
+    try {
+      deckImage = await _buildDeckImage(deckSlice);
+    } catch {}
+
+    try {
+      if (deckImage) {
+        await sock.sendMessage(jid, { image: deckImage, caption }, { quoted: msg });
+      } else {
+        await reply(caption);
+      }
+    } catch {
+      await reply(caption);
+    }
   },
 
   async cd(ctx) { return module.exports.deck(ctx); },

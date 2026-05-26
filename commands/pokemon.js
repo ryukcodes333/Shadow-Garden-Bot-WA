@@ -244,9 +244,9 @@ module.exports = {
       `🌍 *Assigned Region:* ${region}\n` +
       `🧭 *Team:* ${team}\n\n` +
       `🎒 *Your journey begins now!*\n\n` +
-      `• *#hunt* - Search for wild Pokémon\n` +
-      `• *#pdaily* - Claim your daily starter pack\n` +
-      `• *#phelp* - View all Pokémon commands\n\n` +
+      `• *#hunt* — Search for wild Pokémon\n` +
+      `• *#pdaily* — Claim your daily starter pack\n` +
+      `• *#phelp* — View all Pokémon commands\n\n` +
       `_The shadows welcome you, Trainer._ 🖤`
     )
   },
@@ -272,7 +272,7 @@ module.exports = {
       `📝 *Bio:* ${u.bio || 'No bio set.'}\n` +
       `📆 *Joined:* ${joined}`
 
-    // Pick a "signature" Pokémon for this trainer - seeded from their phone number
+    // Pick a "signature" Pokémon for this trainer — seeded from their phone number
     const seed    = parseInt(sender.replace(/\D/g, '').slice(-4) || '1') || 1
     const pokeId  = (seed % 898) + 1   // stay within Gen 1-8 for best artwork coverage
     const artUrl  = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${pokeId}.png`
@@ -326,9 +326,9 @@ module.exports = {
       `📋 *ACTIVE QUESTS*\n\n` +
       `👤 *Trainer:* ${u.name || sender}\n\n` +
       `━━━━━━━━━━━━━━━━━\n\n` +
-      `🐾 *Catch 5 Pokémon* - ${Math.min(caught, 5)}/5 ${caught >= 5 ? '✅' : '⬜'}\n   Reward: 500 coins\n\n` +
-      `⚔️ *Win 3 Battles* - ${Math.min(u.pokemon_wins || 0, 3)}/3 ${(u.pokemon_wins || 0) >= 3 ? '✅' : '⬜'}\n   Reward: 1 Great Ball\n\n` +
-      `🎯 *Catch a Rare Pokémon* - 0/1 ⬜\n   Reward: 200 gems\n\n` +
+      `🐾 *Catch 5 Pokémon* — ${Math.min(caught, 5)}/5 ${caught >= 5 ? '✅' : '⬜'}\n   Reward: 500 coins\n\n` +
+      `⚔️ *Win 3 Battles* — ${Math.min(u.pokemon_wins || 0, 3)}/3 ${(u.pokemon_wins || 0) >= 3 ? '✅' : '⬜'}\n   Reward: 1 Great Ball\n\n` +
+      `🎯 *Catch a Rare Pokémon* — 0/1 ⬜\n   Reward: 200 gems\n\n` +
       `━━━━━━━━━━━━━━━━━\n\n` +
       `_Complete quests to earn big rewards!_ 🖤`
     )
@@ -340,7 +340,7 @@ module.exports = {
     if (!top.length) return reply('No trainers ranked yet!')
     const medals = ['🥇', '🥈', '🥉']
     const lines = top.map((u, i) =>
-      `${medals[i] || `${i + 1}.`} *${u.name || u.phone}* - Lvl ${u.level || 1} | XP: ${(u.xp || 0).toLocaleString()}`
+      `${medals[i] || `${i + 1}.`} *${u.name || u.phone}* — Lvl ${u.level || 1} | XP: ${(u.xp || 0).toLocaleString()}`
     ).join('\n')
     await reply(
       `🏆 *POKÉMON TRAINER RANKINGS*\n\n━━━━━━━━━━━━━━━━━\n\n${lines}\n\n━━━━━━━━━━━━━━━━━\n\n_Only the strongest claim the top._ 🖤`
@@ -517,7 +517,7 @@ module.exports = {
       const moves     = Array.isArray(p.moves) ? p.moves.join(', ') : p.moves || 'N/A'
       const abilities = Array.isArray(p.abilities) ? p.abilities.join(', ') : p.abilities || 'N/A'
       return reply(
-        `📊 *POKÉMON STATS - Slot #${idx + 1}*\n\n` +
+        `📊 *POKÉMON STATS — Slot #${idx + 1}*\n\n` +
         `📛 *Name:* ${p.name}\n🆔 *No:* ${p.pokemon_id}\n🔮 *Level:* ${p.level || 1}\n🪄 *XP:* ${p.xp || 0}\n\n` +
         `🔄 *Type:* ${Array.isArray(p.types) ? p.types.join(' / ') : p.types}\n` +
         `📏 *Height:* ${p.height || '?'} m\n⚖️ *Weight:* ${p.weight || '?'} kg\n\n` +
@@ -527,7 +527,7 @@ module.exports = {
 
     const slots = Array.from({ length: 6 }, (_, i) => {
       const p = party[i]
-      if (!p) return `#${i + 1}\n🎈 *Name:* (empty)\n🔮 *Level:* -\n🪄 *XP:* -`
+      if (!p) return `#${i + 1}\n🎈 *Name:* (empty)\n🔮 *Level:* —\n🪄 *XP:* —`
       return `#${i + 1}\n🎈 *Name:* ${p.name}\n🔮 *Level:* ${p.level || 1}\n🪄 *XP:* ${p.xp || 0}`
     }).join('\n\n')
 
@@ -549,7 +549,7 @@ module.exports = {
     const stored  = (pokemon || []).filter(p => !p.in_party)
     if (!stored.length) return reply(`📦 *PC STORAGE EMPTY*\n\nAll Pokémon are in your party.`)
     const lines = stored.map((p, i) =>
-      `${i + 1}. *${p.name}* - Lvl ${p.level || 1} (${Array.isArray(p.types) ? p.types.join('/') : p.types})`
+      `${i + 1}. *${p.name}* — Lvl ${p.level || 1} (${Array.isArray(p.types) ? p.types.join('/') : p.types})`
     ).join('\n')
     await reply(`📦 *PC STORAGE*\n\n${lines}`)
   },
@@ -645,9 +645,9 @@ module.exports = {
     const u       = user || await db.getOrCreateUser(sender)
     if (win) {
       await db.updateUser(sender, { pokemon_badges: (u.pokemon_badges || 0) + 1, xp: (u.xp || 0) + 100 })
-      await reply(`🏅 *GYM BATTLE - ${leader.toUpperCase()}!*\n\n🏆 *YOU WIN!*\n\n🥇 Badge earned! Total: ${(u.pokemon_badges || 0) + 1}\n⭐ +100 XP`)
+      await reply(`🏅 *GYM BATTLE — ${leader.toUpperCase()}!*\n\n🏆 *YOU WIN!*\n\n🥇 Badge earned! Total: ${(u.pokemon_badges || 0) + 1}\n⭐ +100 XP`)
     } else {
-      await reply(`🏅 *GYM BATTLE - ${leader.toUpperCase()}!*\n\n💥 *DEFEAT!*\n\n_Train harder and return._ 🖤`)
+      await reply(`🏅 *GYM BATTLE — ${leader.toUpperCase()}!*\n\n💥 *DEFEAT!*\n\n_Train harder and return._ 🖤`)
     }
   },
 
@@ -661,9 +661,9 @@ module.exports = {
     const u    = user || await db.getOrCreateUser(sender)
     if (win) {
       await db.updateUser(sender, { xp: (u.xp || 0) + boss.xp, wallet: (u.wallet || 0) + 2000 })
-      await reply(`🔥 *RAID BOSS - ${boss.name.toUpperCase()}!*\n\n🏆 *RAID CLEARED!*\n\n⭐ +${boss.xp} XP\n💰 +2,000 coins`)
+      await reply(`🔥 *RAID BOSS — ${boss.name.toUpperCase()}!*\n\n🏆 *RAID CLEARED!*\n\n⭐ +${boss.xp} XP\n💰 +2,000 coins`)
     } else {
-      await reply(`🔥 *RAID BOSS - ${boss.name.toUpperCase()}!*\n\n💔 *RAID FAILED!*\n\n_Gather more trainers and try again._ 🖤`)
+      await reply(`🔥 *RAID BOSS — ${boss.name.toUpperCase()}!*\n\n💔 *RAID FAILED!*\n\n_Gather more trainers and try again._ 🖤`)
     }
   },
 
@@ -709,7 +709,7 @@ module.exports = {
     const p       = party[slot - 1]
     if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
     const moveList = Array.isArray(p.moves) ? p.moves : ['Tackle']
-    await reply(`🎮 *${p.name.toUpperCase()} - MOVES*\n\n${moveList.map((m, i) => `${i + 1}. *${m}*`).join('\n')}\n\n_Use *#learn ${slot}* to unlock new moves._ 🖤`)
+    await reply(`🎮 *${p.name.toUpperCase()} — MOVES*\n\n${moveList.map((m, i) => `${i + 1}. *${m}*`).join('\n')}\n\n_Use *#learn ${slot}* to unlock new moves._ 🖤`)
   },
 
   // ── #learn ────────────────────────────────────────────────────
@@ -736,7 +736,7 @@ module.exports = {
     if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
     const lvl = p.level || 1
     await reply(
-      `📊 *DETAILED STATS - ${p.name.toUpperCase()}*\n\n` +
+      `📊 *DETAILED STATS — ${p.name.toUpperCase()}*\n\n` +
       `🆔 *No:* ${p.pokemon_id}\n🔮 *Level:* ${lvl}\n🪄 *XP:* ${p.xp || 0}/${lvl * 200}\n\n` +
       `❤️ *HP:* ${200 + lvl * 15}\n⚔️ *ATK:* ${50 + lvl * 5}\n🛡️ *DEF:* ${40 + lvl * 4}\n💨 *SPD:* ${45 + lvl * 3}\n\n` +
       `🔄 *Type:* ${Array.isArray(p.types) ? p.types.join(' / ') : p.types}\n` +
@@ -747,8 +747,8 @@ module.exports = {
   // ── #mart ─────────────────────────────────────────────────────
   async mart({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
-    const coins    = Object.entries(SHOP_ITEMS).filter(([, v]) => !v.gem).map(([k, v]) => `${v.emoji} *${v.name}* - $${v.price}`).join('\n')
-    const gemItems = Object.entries(SHOP_ITEMS).filter(([, v]) => v.gem).map(([k, v]) => `${v.emoji} *${v.name}* - ${v.price} gems`).join('\n')
+    const coins    = Object.entries(SHOP_ITEMS).filter(([, v]) => !v.gem).map(([k, v]) => `${v.emoji} *${v.name}* — $${v.price}`).join('\n')
+    const gemItems = Object.entries(SHOP_ITEMS).filter(([, v]) => v.gem).map(([k, v]) => `${v.emoji} *${v.name}* — ${v.price} gems`).join('\n')
     await reply(
       `🛒 *POKÉMART*\n\n💰 *Coins:* $${(u.wallet || 0).toLocaleString()}\n💎 *Gems:* ${u.gems || 0}\n\n━━━━━━━━━━━━━━━━━\n\n🏪 *ITEMS (Coins)*\n${coins}\n\n💜 *PREMIUM (Gems)*\n${gemItems}\n\n━━━━━━━━━━━━━━━━━\n\n💡 Use *#mbuy <item>* to purchase`
     )
@@ -758,7 +758,7 @@ module.exports = {
   async mbuy({ reply, sender, user, args }) {
     const u   = user || await db.getOrCreateUser(sender)
     const key = args[0]?.toLowerCase()
-    if (!key) return reply(`⚠️ Usage: *#mbuy <item>* - See *#mart* for items.`)
+    if (!key) return reply(`⚠️ Usage: *#mbuy <item>* — See *#mart* for items.`)
     const entry = Object.entries(SHOP_ITEMS).find(([k, v]) => k === key || v.name.toLowerCase().includes(key))
     if (!entry) return reply(`❌ Item "*${key}*" not found. Check *#mart*`)
     const [itemKey, item] = entry
@@ -816,15 +816,15 @@ module.exports = {
 
   // ── #event ────────────────────────────────────────────────────
   async event({ reply }) {
-    await reply(`🎉 *SPECIAL EVENTS*\n\n🌑 *Shadow Festival* - Ongoing\n   Dark & Ghost type spawns boosted!\n\n⭐ *Legendary Weekend* - Every Fri–Sun\n   Legendary spawn rate x2\n\n_Check back often for new events!_ 🖤`)
+    await reply(`🎉 *SPECIAL EVENTS*\n\n🌑 *Shadow Festival* — Ongoing\n   Dark & Ghost type spawns boosted!\n\n⭐ *Legendary Weekend* — Every Fri–Sun\n   Legendary spawn rate x2\n\n_Check back often for new events!_ 🖤`)
   },
 
   // ── #legend ───────────────────────────────────────────────────
   async legend({ reply, sender }) {
     const pokemon     = await db.getUserPokemon(sender).catch(() => [])
     const legendaries = (pokemon || []).filter(p => (p.base_xp || 0) > 300)
-    if (!legendaries.length) return reply(`🌟 *LEGENDARY TRACKER*\n\nNo Legendaries caught yet!\n\n_Keep hunting - they appear rarely._ 🖤`)
-    const lines = legendaries.map(p => `✨ *${p.name}* - Lvl ${p.level || 1}`).join('\n')
+    if (!legendaries.length) return reply(`🌟 *LEGENDARY TRACKER*\n\nNo Legendaries caught yet!\n\n_Keep hunting — they appear rarely._ 🖤`)
+    const lines = legendaries.map(p => `✨ *${p.name}* — Lvl ${p.level || 1}`).join('\n')
     await reply(`🌟 *YOUR LEGENDARIES*\n\n${lines}\n\n_Rare power is yours._ 🖤`)
   },
 
@@ -855,7 +855,7 @@ module.exports = {
       const cd   = await db.getCooldown(sender, c).catch(() => 0)
       const mins = Math.floor(cd / 60000)
       const secs = Math.floor((cd % 60000) / 1000)
-      return `${cd > 0 ? '⏳' : '✅'} *${c}* - ${cd > 0 ? `${mins}m ${secs}s` : 'Ready!'}`
+      return `${cd > 0 ? '⏳' : '✅'} *${c}* — ${cd > 0 ? `${mins}m ${secs}s` : 'Ready!'}`
     }))
     await reply(`⏱️ *COMMAND COOLDOWNS*\n\n${results.join('\n')}`)
   },
