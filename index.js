@@ -181,7 +181,7 @@ async function startBot() {
       global.pendingPairingPhone = null
       global.botConnected = true
       const botNum = sock.user?.id?.split(':')[0] || sock.user?.id || 'Unknown'
-      console.log(`\n✅ Konosuba Bot (${BOT_NAME}) is ONLINE! 🌑`)
+      console.log(`\n✅ KonoBot (${BOT_NAME}) is ONLINE! 🌑`)
       console.log(`📱 Bot Number: ${botNum}`)
       console.log(`💡 If this number is admin in a group, the bot can kick/manage members.\n`)
     }
@@ -249,12 +249,12 @@ async function startBot() {
         const pushName = participant.split('@')[0]
         if (action === 'add' && groupSettings.welcome) {
           const text = (groupSettings.welcome_msg ||
-            `Welcome @${pushName} to *${groupMeta.subject}*! 🌑\n\nType *.menu* to see what Konosuba can do.`)
+            `Hello there @${pushName} we are happy to have you in our group. Don't forget to introduce yourself too thank you.`)
             .replace('<user>', `@${pushName}`).replace('<group>', groupMeta.subject)
           await sock.sendMessage(id, { text, mentions: [participant] })
         } else if (action === 'remove' && groupSettings.leave) {
-          const text = (groupSettings.leave_msg || `*${pushName}* has left the group. 👋`).replace('<user>', pushName)
-          await sock.sendMessage(id, { text })
+          const text = (groupSettings.leave_msg || `Sayonara @${pushName} we will miss you`).replace('<user>', pushName)
+          await sock.sendMessage(id, { text, mentions: [participant] })
         }
       }
     } catch (e) {
@@ -263,7 +263,7 @@ async function startBot() {
   })
 }
 
-console.log('🌑 Konosuba Bot starting…')
+console.log('🌑 KonoBot starting…')
 
 if (hasExistingSession()) {
   console.log('🔐 Existing session found - resuming without clearing.')
