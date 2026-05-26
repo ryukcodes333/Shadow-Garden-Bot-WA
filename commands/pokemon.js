@@ -186,11 +186,9 @@ function buildSpawnCaption(data, extras = {}) {
     `*  🔴 Ultra Ball × ${ultraball}*\n` +
     `*  🍓 Berry × ${berry}*\n\n` +
     `🌀 What will you do?\n\n` +
-    `> .catch - Catch the Pokemon\n` +
-    `> .battle - Battle the Pokemon\n` +
-    `> .bag - Use items or buffs\n` +
-    `> .Inspect - Get more info about ${data.name}\n` +
-    `> .run - Escape safely (maybe…)`
+    `> *#catch <slot> | <ball>* — Catch the Pokémon\n` +
+    `> *.fight* — Battle it with your moves\n` +
+    `> *.flee* — Escape safely (maybe…)`
   )
 }
 
@@ -911,6 +909,172 @@ module.exports = {
     }
   },
 
+  // ── .fight — start wild Pokémon battle ───────────────────────
+  async fight({ sock, jid, msg, reply, sender, user }) {
+    const wild = pendingPokemon[jid]
+    if (!wild) return reply(`❌ *No wild Pokémon here!*\n\nUse *#hunt* to find one first.`)
+    if (Date.now() - wild.spawnedAt > POKE_CATCH_WINDOW) {
+      delete pendingPokemon[jid]
+      return reply(`❌ *The wild ${wild.name} fled!*\n\nUse *#hunt* to search again.`)
+    }
+    if (activeBattles[sender]) {
+      const b = activeBattles[sender]
+      return reply(
+        `⚔️ *Already in battle!*\n\n` +
+        `You're fighting *${b.wild.name}*!\n\n` +
+        `*📋 Moves:*\n${b.moves.map((m, i) => `  *${i + 1}.* ${m}`).join('\n')}\n\n` +
+        `> *.move <1-${b.moves.length}>* to attack  |  *.flee* to escape`
+      )
+    }
+
+    const u = user || await db.getOrCreateUser(sender)
+    const pokemon = await db.getUserPokemon(sender).catch(() => [])
+    const party = (pokemon || []).filter(p => p.in_party)
+    if (!party.length) return reply(`❌ You need Pokémon in your party!\n\nCatch some first with *#hunt*.`)
+
+    const myPoke    = party[0]
+    const myLevel   = myPoke.level || 1
+    const wildLevel = randInt(5, 45)
+    const myMaxHp   = 80 + myLevel * 12
+    const wildMaxHp = 60 + wildLevel * 8
+
+    const moves = (Array.isArray(myPoke.moves) && myPoke.moves.length >= 2)
+      ? myPoke.moves.slice(0, 4)
+      : ['Tackle', 'Growl', 'Quick Attack', 'Scratch']
+
+    activeBattles[sender] = {
+      jid,
+      wild:      { ...wild, level: wildLevel },
+      myPokemon: myPoke,
+      myHp: myMaxHp, myMaxHp,
+      wildHp: wildMaxHp, wildMaxHp,
+      moves,
+      turn: 1,
+    }
+
+    const bar = (cur, max) => {
+      const f = Math.max(0, Math.round(cur / max * 10))
+      return '🟩'.repeat(f) + '⬜'.repeat(10 - f)
+    }
+
+    await sock.sendMessage(jid, {
+      text:
+        `⚔️ *WILD BATTLE!*\n\n` +
+        `🌿 *Wild ${wild.name}* (Lv ${wildLevel})\n` +
+        `❤️ ${bar(wildMaxHp, wildMaxHp)} ${wildMaxHp}/${wildMaxHp} HP\n\n` +
+        `⚡ *${myPoke.name}* (Lv ${myLevel})\n` +
+        `❤️ ${bar(myMaxHp, myMaxHp)} ${myMaxHp}/${myMaxHp} HP\n\n` +
+        `━━━━━━━━━━━━━━\n` +
+        `*📋 Your Moves:*\n` +
+        moves.map((m, i) => `  *${i + 1}.* ${m}`).join('\n') +
+        `\n\n> *.move <1-${moves.length}>* to attack  |  *.flee* to escape`,
+    }, { quoted: msg })
+  },
+
+  // ── .move — use a move during wild battle ─────────────────────
+  async move({ sock, jid, msg, reply, sender, user, args }) {
+    const battle = activeBattles[sender]
+    if (!battle) return reply(
+      `❌ *Not in a battle!*\n\nUse *#hunt* to find a wild Pokémon, then *.fight* to battle it.`
+    )
+    if (battle.jid !== jid) return reply(`❌ Your active battle is in a different group.`)
+
+    const bar = (cur, max) => {
+      const f = Math.max(0, Math.round(cur / max * 10))
+      return '🟩'.repeat(f) + '⬜'.repeat(10 - f)
+    }
+
+    const moveIdx  = Math.max(0, (parseInt(args[0]) || 1) - 1)
+    const moveName = battle.moves[Math.min(moveIdx, battle.moves.length - 1)] || 'Tackle'
+
+    // ── Player attacks ─────────────────────────────────────────
+    const myAtk     = 15 + (battle.myPokemon.level || 1) * 3
+    const crit      = Math.random() < 0.15
+    const playerDmg = randInt(myAtk, myAtk + 15) + (crit ? 12 : 0)
+    battle.wildHp   = Math.max(0, battle.wildHp - playerDmg)
+
+    const log = [`⚔️ *TURN ${battle.turn}*\n`]
+    log.push(`⚡ *${battle.myPokemon.name}* used *${moveName}*!`)
+    log.push(crit ? `✨ *Critical hit!* (-${playerDmg} HP)` : `(-${playerDmg} HP)`)
+
+    // ── Wild fainted? ──────────────────────────────────────────
+    if (battle.wildHp <= 0) {
+      const xpGain = 25 + battle.wild.level * 5
+      const u = user || await db.getOrCreateUser(sender)
+      await db.updateUser(sender, {
+        xp:           (u.xp || 0) + xpGain,
+        pokemon_wins: (u.pokemon_wins || 0) + 1,
+      }).catch(() => {})
+      delete activeBattles[sender]
+      // Keep wild alive (weakened) so player can still catch it
+      pendingPokemon[jid] = { ...battle.wild, spawnedAt: Date.now(), weakened: true }
+      log.push(`\n💫 *Wild ${battle.wild.name} fainted!*\n`)
+      log.push(`⭐ *+${xpGain} XP* earned!`)
+      log.push(`\n🎯 *${battle.wild.name}* is weakened — easier to catch now!`)
+      log.push(`Use *#catch <slot> | <ball>* to capture it! _(90 sec window)_`)
+      return await sock.sendMessage(jid, { text: log.join('\n') }, { quoted: msg })
+    }
+
+    // ── Wild attacks back ──────────────────────────────────────
+    const wildMoves = (Array.isArray(battle.wild.moves) && battle.wild.moves.length)
+      ? battle.wild.moves
+      : ['Tackle', 'Growl']
+    const wildMove  = wildMoves[Math.floor(Math.random() * Math.min(4, wildMoves.length))]
+    const wildAtk   = 8 + battle.wild.level * 2
+    const wildCrit  = Math.random() < 0.10
+    const wildDmg   = randInt(wildAtk, wildAtk + 10) + (wildCrit ? 8 : 0)
+    battle.myHp     = Math.max(0, battle.myHp - wildDmg)
+    battle.turn++
+
+    log.push(`\n🌿 *Wild ${battle.wild.name}* used *${wildMove}*!`)
+    log.push(wildCrit ? `💥 *Critical hit!* (-${wildDmg} HP)` : `(-${wildDmg} HP)`)
+
+    // ── Player fainted? ────────────────────────────────────────
+    if (battle.myHp <= 0) {
+      delete activeBattles[sender]
+      delete pendingPokemon[jid]
+      log.push(`\n💔 *${battle.myPokemon.name} fainted!*`)
+      log.push(`\n_The wild ${battle.wild.name} fled while you were down._ 🖤`)
+      return await sock.sendMessage(jid, { text: log.join('\n') }, { quoted: msg })
+    }
+
+    // ── Battle continues — show HP bars + move menu ────────────
+    log.push(`\n━━━━━━━━━━━━━━`)
+    log.push(`🌿 *${battle.wild.name}* (Lv ${battle.wild.level})`)
+    log.push(`❤️ ${bar(battle.wildHp, battle.wildMaxHp)} ${battle.wildHp}/${battle.wildMaxHp} HP`)
+    log.push(``)
+    log.push(`⚡ *${battle.myPokemon.name}* (Lv ${battle.myPokemon.level || 1})`)
+    log.push(`❤️ ${bar(battle.myHp, battle.myMaxHp)} ${battle.myHp}/${battle.myMaxHp} HP`)
+    log.push(`\n*📋 Moves:*\n${battle.moves.map((m, i) => `  *${i + 1}.* ${m}`).join('\n')}`)
+    log.push(`\n> *.move <1-${battle.moves.length}>* to attack  |  *.flee* to escape`)
+    await sock.sendMessage(jid, { text: log.join('\n') }, { quoted: msg })
+  },
+
+  // ── .flee — escape from wild battle ───────────────────────────
+  async flee({ reply, sender, jid }) {
+    const battle = activeBattles[sender]
+    if (!battle) return reply(`❌ You're not in a battle.`)
+    if (battle.jid !== jid) return reply(`❌ Your active battle is in a different group.`)
+
+    // 30% chance the wild blocks escape
+    if (Math.random() < 0.30) {
+      return reply(
+        `😤 *Can't escape!*\n\n` +
+        `Wild *${battle.wild.name}* blocked your path!\n\n` +
+        `❤️ Your HP: ${battle.myHp}/${battle.myMaxHp}\n\n` +
+        `*📋 Moves:*\n${battle.moves.map((m, i) => `  *${i + 1}.* ${m}`).join('\n')}\n\n` +
+        `> *.move <1-${battle.moves.length}>* to keep fighting`
+      )
+    }
+
+    delete activeBattles[sender]
+    await reply(
+      `🏃 *Got away safely!*\n\n` +
+      `You escaped from wild *${battle.wild.name}*.\n\n` +
+      `_It's still out there — use *#catch* if you want to capture it!_ 🖤`
+    )
+  },
+
   // Legacy alias
   async wb(ctx) { return module.exports.hunt(ctx) },
 }
@@ -927,38 +1091,64 @@ async function _sendLevelUpImage(sock, jid, msg, pokeName, newLvl) {
   } catch {}
 }
 
-// ── Party composite image (3×2 sprite grid using jimp) ───────────
+// ── Party composite image (3×2 sprite grid using sharp) ──────────
 async function _buildPartyImage(party) {
-  let Jimp
-  try { Jimp = require('jimp') } catch { return null }
+  let sharp
+  try { sharp = require('sharp') } catch { return null }
 
-  const W = 480, H = 320, cellW = 160, cellH = 160
+  const COLS = 3, cellW = 160, cellH = 160
+  const W = cellW * COLS, H = cellH * 2
+
+  // SVG background with grid lines and slot labels
+  const labels = Array.from({ length: 6 }, (_, i) => {
+    const col = i % COLS, row = Math.floor(i / COLS)
+    const cx  = col * cellW + cellW / 2
+    const ty  = row * cellH + cellH - 12
+    const p   = party[i]
+    const txt = p ? `${p.name}  Lv${p.level || 1}` : '— empty —'
+    const col2 = p ? '#b0b8e8' : '#3a3a5a'
+    return `<text x="${cx}" y="${ty}" fill="${col2}" font-size="11" font-weight="bold" text-anchor="middle" font-family="Arial,sans-serif">${txt}</text>`
+  }).join('\n')
+
+  const bgSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#12122a"/>
+        <stop offset="100%" stop-color="#1e1e42"/>
+      </linearGradient>
+    </defs>
+    <rect width="${W}" height="${H}" fill="url(#bg)"/>
+    <line x1="${cellW}"     y1="0" x2="${cellW}"     y2="${H}" stroke="#2a2a5a" stroke-width="1.5"/>
+    <line x1="${cellW * 2}" y1="0" x2="${cellW * 2}" y2="${H}" stroke="#2a2a5a" stroke-width="1.5"/>
+    <line x1="0" y1="${cellH}" x2="${W}" y2="${cellH}" stroke="#2a2a5a" stroke-width="1.5"/>
+    ${labels}
+  </svg>`
+
   let base
-  try {
-    if (typeof Jimp.create === 'function') {
-      base = await Jimp.create(W, H, 0x1a1a2eff)
-    } else {
-      base = new Jimp(W, H, 0x1a1a2eff)
-    }
-  } catch { return null }
+  try { base = await sharp(Buffer.from(bgSvg)).png().toBuffer() } catch { return null }
 
+  const composites = []
   for (let i = 0; i < Math.min(party.length, 6); i++) {
-    const p      = party[i]
+    const p = party[i]
+    if (!p || !p.pokemon_id) continue
     const sprUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.pokemon_id}.png`
     try {
-      const buf = await new Promise((resolve) => {
-        const req = https.get(sprUrl, { timeout: 8000 }, (res) => {
-          if (res.statusCode !== 200) { res.resume(); return resolve(null) }
-          const chunks = []; res.on('data', c => chunks.push(c)); res.on('end', () => resolve(Buffer.concat(chunks))); res.on('error', () => resolve(null))
-        }); req.on('error', () => resolve(null)); req.on('timeout', () => { req.destroy(); resolve(null) })
-      })
+      const buf = await downloadBuffer(sprUrl, 8000)
       if (!buf) continue
-      let sprite
-      try { sprite = await Jimp.read(buf) } catch { continue }
-      sprite.resize(cellW - 8, cellH - 8)
-      base.composite(sprite, (i % 3) * cellW + 4, Math.floor(i / 3) * cellH + 4)
+      const col  = i % COLS, row = Math.floor(i / COLS)
+      const left = col * cellW + 16
+      const top  = row * cellH + 4
+      const spr  = await sharp(buf)
+        .resize(cellW - 32, cellH - 30, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .png()
+        .toBuffer()
+      composites.push({ input: spr, left, top })
     } catch {}
   }
 
-  try { return await base.getBufferAsync('image/png') } catch { return null }
+  try {
+    return composites.length > 0
+      ? await sharp(base).composite(composites).png().toBuffer()
+      : base
+  } catch { return null }
 }

@@ -322,12 +322,28 @@ module.exports = {
     await reply(`✨ Used *${found.item}* - effect applied!`)
   },
 
-  async register({ reply, sender, user, pushName, args }) {
-    const u    = user || await db.getOrCreateUser(sender, pushName)
-    if (u.bio && u.bio !== '') return reply('⚠️ Already registered.')
+  async register({ reply, sender, pushName, args }) {
+    // Always check the real DB (not the pre-loaded cache, which may be a fallback object)
+    const existing = await db.getUser(sender).catch(() => null)
+    if (existing && existing.bio && existing.bio !== '') return reply('⚠️ Already registered.')
+
     const name = args.join(' ') || pushName || sender
-    await db.updateUser(sender, { name, bio: 'Konosuba Member' })
-    await reply(`✅ *Registered!* Welcome to Konosuba, *${name}*!\n\nType \`.profile\` to see your profile.`)
+
+    // Guarantee the document exists in the DB first (handles first-time users)
+    await db.createUser(sender, name).catch(() => {})
+
+    // Now update with registration fields
+    const saved = await db.updateUser(sender, { name, bio: 'Konosuba Member' })
+    if (!saved) {
+      return reply('❌ Registration failed — the database may be offline. Please try again in a moment.')
+    }
+
+    await reply(
+      `✅ *REGISTERED!*\n\n` +
+      `Welcome to the Konosuba family, *${name}*!\n\n` +
+      `Type *.p* to view your profile card.\n\n` +
+      `_Your adventure begins now._ ✦`
+    )
   },
   async reg(ctx) { return module.exports.register(ctx) },
 
