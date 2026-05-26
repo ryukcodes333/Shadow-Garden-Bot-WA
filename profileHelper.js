@@ -3,10 +3,10 @@ const https = require('https')
 const http = require('http')
 
 const CARD_W = 500
-const CARD_H = 524
+const CARD_H = 720
 const AV_CX = 250
-const AV_CY = 182
-const AV_R = 82
+const AV_CY = 265
+const AV_R  = 135
 
 // ─── 70 FRAMES ──────────────────────────────────────────────────────────────
 const FRAMES = [
@@ -567,111 +567,123 @@ function buildCardFrameSvg(frame) {
   </svg>`
 }
 
-// ─── STATS OVERLAY SVG (portrait) ────────────────────────────────────────────
-function buildStatsSvg(user, frameName) {
-  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+// ─── STATS OVERLAY SVG (Konosuba card style) ─────────────────────────────────
+function buildStatsSvg(user) {
+  const esc = (s) => String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-  const name    = esc((user.name || user.phone || 'Unknown').substring(0, 20))
-  const title   = esc((user.title || 'Newcomer').substring(0, 18))
-  const role    = esc((user.role || 'member').toUpperCase())
-  const wallet  = '$' + Number(user.wallet || 0).toLocaleString()
-  const bank    = '$' + Number(user.bank || 0).toLocaleString()
-  const gems    = Number(user.gems || 0).toLocaleString()
-  const streak  = user.streak || 0
-  const level   = user.level || 1
-  const xp      = Number(user.xp || 0)
-  const xpNeed  = level * 1000
-  const xpPct   = Math.min(xp / xpNeed, 1)
-  const xpBarW  = Math.round(350 * xpPct)
-  const phone   = esc((user.phone || '').substring(0, 15))
-  const fname   = esc((frameName || 'Classic White').substring(0, 18))
+  const name   = esc((user.name || user.phone || 'UNKNOWN').toUpperCase().substring(0, 15))
+  const title  = esc((user.title || 'Newcomer').substring(0, 22))
+  const level  = user.level || 1
+  const xp     = Number(user.xp || 0)
+  const xpNeed = level * 1000
+  const xpPct  = Math.min(xp / xpNeed, 1)
+  const barMaxW = 376
+  const barX   = 38
+  const xpBarW = Math.max(Math.round(barMaxW * xpPct), 6)
+  const rank   = user.rank != null ? user.rank : (user.phone ? user.phone.slice(-4) : '???')
 
-  const roleColor = {
-    owner:      '#FF4444',
-    admin:      '#FF8800',
-    mod:        '#FF8800',
-    guardian:   '#00BFFF',
-    staff:      '#FFAA00',
-    vip:        '#AA00FF',
-    card_maker: '#8b5cf6',
-    cardmaker:  '#8b5cf6',
-    member:     '#4ade80',
-  }[user.role] || '#4ade80'
-  const roleTextColor = (user.role === 'member') ? '#000000' : '#ffffff'
-
-  // Role label: map internal role names to display labels
-  const roleLabel = {
-    owner:      'OWNER',
-    admin:      'ADMIN',
-    mod:        'MOD',
-    guardian:   'GUARDIAN',
-    staff:      'STAFF',
-    vip:        'VIP',
-    card_maker: 'CARD MAKER',
-    cardmaker:  'CARD MAKER',
-    member:     'MEMBER',
-  }[user.role] || (user.role || 'MEMBER').toUpperCase()
-
-  // Widen badge for longer labels
-  const badgeW = Math.max(72, roleLabel.length * 7 + 20)
-  const badgeX = AV_CX - badgeW / 2
+  const botY = AV_CY + AV_R  // y of avatar bottom edge = 400
 
   return `<svg width="${CARD_W}" height="${CARD_H}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="ov" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%"   stop-color="#000000" stop-opacity="0.0"/>
-      <stop offset="55%"  stop-color="#000000" stop-opacity="0.10"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0.20"/>
+    <linearGradient id="xpGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2266CC"/>
+      <stop offset="100%" stop-color="#44AAEE"/>
     </linearGradient>
-    <linearGradient id="xpg" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%"   stop-color="#6366f1"/>
-      <stop offset="100%" stop-color="#38bdf8"/>
-    </linearGradient>
-    <clipPath id="card-clip">
-      <rect width="${CARD_W}" height="${CARD_H}" rx="18" ry="18"/>
-    </clipPath>
   </defs>
 
-  <rect width="${CARD_W}" height="${CARD_H}" fill="url(#ov)" clip-path="url(#card-clip)"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 4}" fill="#04040e" opacity="0.68"/>
+  <!-- ── AVATAR RING (glow layers, no SVG filters) ── -->
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 22}" fill="#4488CC" opacity="0.04"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 17}" fill="#4488CC" opacity="0.06"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 12}" fill="#4488CC" opacity="0.08"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 8}"  fill="none" stroke="#4488CC" stroke-width="2"   opacity="0.28"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 5}"  fill="none" stroke="#4488CC" stroke-width="2.5" opacity="0.50"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 3}"  fill="none" stroke="#5599DD" stroke-width="3.5" opacity="0.72"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 1}"  fill="none" stroke="#66AAEE" stroke-width="4.5" opacity="0.90"/>
+  <!-- Inner white ring at avatar edge -->
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R - 3}"  fill="none" stroke="rgba(255,255,255,0.92)" stroke-width="2"/>
 
-  <text x="16" y="26" fill="#ffffff" font-size="13" font-weight="bold" font-family="Liberation Sans,sans-serif">Bank: ${bank}</text>
-  <text x="16" y="46" fill="#ffffff" font-size="13" font-weight="bold" font-family="Liberation Sans,sans-serif">Wallet: ${wallet}</text>
+  <!-- ── SPARKLE DECORATIONS (right of circle) ── -->
+  <text x="${AV_CX + AV_R + 50}" y="${AV_CY - 4}"
+    fill="white" font-size="52" font-weight="bold" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif" opacity="0.90">+</text>
+  <text x="${AV_CX + AV_R + 65}" y="${AV_CY + 46}"
+    fill="white" font-size="24" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif" opacity="0.75">✦</text>
 
-  <!-- Avatar bottom = y ${AV_CY + AV_R} = ${AV_CY + AV_R}. Extra gap before name. -->
-  <text x="${AV_CX}" y="304" fill="#ffffff" font-size="24" font-weight="bold"
-    text-anchor="middle" font-family="Liberation Sans,sans-serif">${name}</text>
-  <text x="${AV_CX}" y="323" fill="#aaaacc" font-size="12"
-    text-anchor="middle" font-family="Liberation Sans,sans-serif">(${title})</text>
-  <text x="${AV_CX}" y="344" fill="#e0e0ff" font-size="14" font-weight="bold"
-    text-anchor="middle" font-family="Liberation Sans,sans-serif">Level ${level}</text>
-  <rect x="${badgeX}" y="350" width="${badgeW}" height="20" fill="${roleColor}" rx="10"/>
-  <text x="${AV_CX}" y="364" fill="${roleTextColor}" font-size="11" font-weight="bold"
-    text-anchor="middle" font-family="Liberation Sans,sans-serif">${roleLabel}</text>
+  <!-- ── NAME ── -->
+  <text x="${AV_CX}" y="${botY + 52}"
+    fill="#1a2040" font-size="46" font-weight="bold" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif" letter-spacing="4">${name}</text>
 
-  <rect x="75" y="380" width="350" height="18" fill="#111128" rx="9"/>
-  <rect x="75" y="380" width="${Math.max(xpBarW, 4)}" height="18" fill="url(#xpg)" rx="9"/>
-  <text x="${AV_CX}" y="393" fill="#ffffff" font-size="10" font-weight="bold"
-    text-anchor="middle" font-family="Liberation Sans,sans-serif">${xp.toLocaleString()} / ${xpNeed.toLocaleString()} XP</text>
+  <!-- ── SUBTITLE ── -->
+  <text x="${AV_CX}" y="${botY + 78}"
+    fill="#8890AA" font-size="16" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif">(${title})</text>
 
-  <line x1="40" y1="410" x2="460" y2="410" stroke="#1e1e3a" stroke-width="1"/>
+  <!-- ── DIAMOND SEPARATOR ── -->
+  <text x="${AV_CX}" y="${botY + 97}"
+    fill="#9AA0B8" font-size="13" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif">◇</text>
 
-  <text x="103"  y="426" fill="#555577" font-size="9" text-anchor="middle" font-family="Liberation Sans,sans-serif" letter-spacing="1">BANK</text>
-  <text x="103"  y="448" fill="#34d399" font-size="20" font-weight="bold" text-anchor="middle" font-family="Liberation Sans,sans-serif">${bank}</text>
+  <!-- ── RANK (left) ── -->
+  <text x="38" y="${botY + 127}"
+    fill="#4488CC" font-size="15" font-weight="bold"
+    font-family="Liberation Sans,sans-serif">Rank # ${rank}</text>
 
-  <text x="${AV_CX}" y="426" fill="#555577" font-size="9" text-anchor="middle" font-family="Liberation Sans,sans-serif" letter-spacing="1">GEMS</text>
-  <text x="${AV_CX}" y="448" fill="#60a5fa" font-size="20" font-weight="bold" text-anchor="middle" font-family="Liberation Sans,sans-serif">${gems}</text>
+  <!-- ── LEVEL (left) ── -->
+  <text x="38" y="${botY + 148}"
+    fill="#2a3050" font-size="15" font-weight="bold"
+    font-family="Liberation Sans,sans-serif">Level ${level}</text>
 
-  <text x="397"  y="426" fill="#555577" font-size="9" text-anchor="middle" font-family="Liberation Sans,sans-serif" letter-spacing="1">STREAK</text>
-  <text x="397"  y="448" fill="#f472b6" font-size="20" font-weight="bold" text-anchor="middle" font-family="Liberation Sans,sans-serif">${streak}d</text>
+  <!-- ── XP BADGE (right, centered between rank and level lines) ── -->
+  <circle cx="442" cy="${botY + 136}" r="30" fill="#1a2040"/>
+  <circle cx="442" cy="${botY + 136}" r="30" fill="none" stroke="#D4920A" stroke-width="2.5"/>
+  <text x="442" y="${botY + 142}"
+    fill="#E8C040" font-size="15" font-weight="bold" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif">XP</text>
 
-  <line x1="40" y1="464" x2="460" y2="464" stroke="#1e1e3a" stroke-width="1"/>
+  <!-- ── PROGRESS BAR ── -->
+  <!-- Track -->
+  <rect x="${barX}" y="${botY + 166}" width="${barMaxW}" height="13" fill="#1a2040" rx="6"/>
+  <!-- Fill -->
+  <rect x="${barX}" y="${botY + 166}" width="${xpBarW}" height="13" fill="url(#xpGrad)" rx="6"/>
+  <!-- XP counter (right-aligned after bar) -->
+  <text x="${barX + barMaxW}" y="${botY + 179}"
+    fill="#7880A0" font-size="11" text-anchor="end"
+    font-family="Liberation Sans,sans-serif">${xp}/${xpNeed}</text>
 
-  <text x="${AV_CX}" y="480" fill="#3a3a5c" font-size="10"
-    text-anchor="middle" font-family="Liberation Sans,sans-serif">Frame: ${fname}  |  ${phone}</text>
+  <!-- ── STAR ABOVE BOTTOM BANNER ── -->
+  <line x1="${AV_CX - 46}" y1="${CARD_H - 79}" x2="${AV_CX - 18}" y2="${CARD_H - 79}"
+    stroke="#D4920A" stroke-width="1" opacity="0.65"/>
+  <text x="${AV_CX}" y="${CARD_H - 73}"
+    fill="#D4920A" font-size="15" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif">✦</text>
+  <line x1="${AV_CX + 18}" y1="${CARD_H - 79}" x2="${AV_CX + 46}" y2="${CARD_H - 79}"
+    stroke="#D4920A" stroke-width="1" opacity="0.65"/>
 
-  <text x="${AV_CX}" y="510" fill="#272740" font-size="12" font-weight="bold"
-    text-anchor="middle" font-family="Liberation Sans,sans-serif">Konosuba  -  Alpha</text>
+  <!-- ── BOTTOM BANNER ── -->
+  <rect x="28" y="${CARD_H - 66}" width="444" height="54" fill="#1a1E38" rx="10"/>
+  <!-- Banner inner top highlight -->
+  <rect x="29" y="${CARD_H - 65}" width="442" height="18" fill="white" opacity="0.04" rx="9"/>
+  <!-- Banner HUD corner brackets (gold) -->
+  <line x1="28"  y1="${CARD_H - 66}" x2="50"  y2="${CARD_H - 66}" stroke="#D4920A" stroke-width="1.5" opacity="0.60"/>
+  <line x1="28"  y1="${CARD_H - 66}" x2="28"  y2="${CARD_H - 46}" stroke="#D4920A" stroke-width="1.5" opacity="0.60"/>
+  <line x1="472" y1="${CARD_H - 66}" x2="450" y2="${CARD_H - 66}" stroke="#D4920A" stroke-width="1.5" opacity="0.60"/>
+  <line x1="472" y1="${CARD_H - 66}" x2="472" y2="${CARD_H - 46}" stroke="#D4920A" stroke-width="1.5" opacity="0.60"/>
+  <line x1="28"  y1="${CARD_H - 12}" x2="50"  y2="${CARD_H - 12}" stroke="#D4920A" stroke-width="1.5" opacity="0.60"/>
+  <line x1="28"  y1="${CARD_H - 12}" x2="28"  y2="${CARD_H - 32}" stroke="#D4920A" stroke-width="1.5" opacity="0.60"/>
+  <line x1="472" y1="${CARD_H - 12}" x2="450" y2="${CARD_H - 12}" stroke="#D4920A" stroke-width="1.5" opacity="0.60"/>
+  <line x1="472" y1="${CARD_H - 12}" x2="472" y2="${CARD_H - 32}" stroke="#D4920A" stroke-width="1.5" opacity="0.60"/>
+  <!-- Banner main text -->
+  <text x="${AV_CX}" y="${CARD_H - 34}"
+    fill="white" font-size="17" font-weight="bold" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif" letter-spacing="3">KONOSUBA · FAMILY</text>
+  <!-- Star inside banner (below text) -->
+  <text x="${AV_CX}" y="${CARD_H - 18}"
+    fill="#D4920A" font-size="11" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif">✦</text>
 </svg>`
 }
 
@@ -720,10 +732,11 @@ function fetchBuffer(url) {
   })
 }
 
-// ─── MAIN: GENERATE PROFILE CARD ─────────────────────────────────────────────
+// ─── MAIN: GENERATE PROFILE CARD (Konosuba style) ────────────────────────────
 async function generateProfileCard(user, ppBuffer = null, bgBuffer = null) {
-  const diameter = AV_R * 2
+  const diameter = AV_R * 2   // 270px
 
+  // ── Layer 1: Background ──
   let bgLayer
   if (bgBuffer) {
     bgLayer = await sharp(bgBuffer)
@@ -731,61 +744,80 @@ async function generateProfileCard(user, ppBuffer = null, bgBuffer = null) {
       .png()
       .toBuffer()
   } else {
+    const level = user.level || 1
     const bgSvg = `<svg width="${CARD_W}" height="${CARD_H}" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#0d0d1a"/>
-          <stop offset="100%" stop-color="#1a0a2e"/>
-        </linearGradient>
-      </defs>
-      <rect width="${CARD_W}" height="${CARD_H}" fill="url(#bg)" rx="16"/>
-    </svg>`
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#C5D0E2"/>
+      <stop offset="60%"  stop-color="#BCC8DA"/>
+      <stop offset="100%" stop-color="#B2C0D2"/>
+    </linearGradient>
+    <radialGradient id="goldBadge" cx="38%" cy="32%" r="72%">
+      <stop offset="0%"   stop-color="#F8E070"/>
+      <stop offset="55%"  stop-color="#E8B820"/>
+      <stop offset="100%" stop-color="#B86808"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Card base -->
+  <rect width="${CARD_W}" height="${CARD_H}" fill="url(#bgGrad)" rx="18"/>
+
+  <!-- Soft background blob shapes (abstract, no filter needed) -->
+  <ellipse cx="82"  cy="228" rx="190" ry="240" fill="white" opacity="0.16"/>
+  <ellipse cx="418" cy="390" rx="158" ry="202" fill="white" opacity="0.11"/>
+  <ellipse cx="262" cy="102" rx="142" ry="108" fill="white" opacity="0.09"/>
+  <ellipse cx="432" cy="138" rx="96"  ry="118" fill="white" opacity="0.07"/>
+
+  <!-- Left side HUD tick marks -->
+  <line x1="14" y1="196" x2="24" y2="196" stroke="#4A6888" stroke-width="1.4" opacity="0.48"/>
+  <line x1="14" y1="211" x2="20" y2="211" stroke="#4A6888" stroke-width="1.4" opacity="0.48"/>
+  <line x1="14" y1="226" x2="28" y2="226" stroke="#4A6888" stroke-width="1.4" opacity="0.48"/>
+  <line x1="14" y1="241" x2="20" y2="241" stroke="#4A6888" stroke-width="1.4" opacity="0.48"/>
+  <line x1="14" y1="256" x2="24" y2="256" stroke="#4A6888" stroke-width="1.4" opacity="0.48"/>
+
+  <!-- Top-right HUD bracket decoration -->
+  <line x1="460" y1="25" x2="490" y2="25" stroke="#4A6888" stroke-width="1.4" opacity="0.52"/>
+  <line x1="490" y1="25" x2="490" y2="55" stroke="#4A6888" stroke-width="1.4" opacity="0.52"/>
+
+  <!-- Level badge (gold circle, top-left) -->
+  <circle cx="66" cy="66" r="44" fill="url(#goldBadge)"/>
+  <circle cx="66" cy="66" r="44" fill="none" stroke="#986008" stroke-width="2.2"/>
+  <!-- Badge shine highlight (simulated, no filter) -->
+  <ellipse cx="54" cy="52" rx="13" ry="9" fill="white" opacity="0.28"/>
+  <!-- Level number -->
+  <text x="66" y="70" fill="#160E00" font-size="30" font-weight="bold" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif">${level}</text>
+  <!-- Plus below level number (inside badge) -->
+  <text x="66" y="95" fill="#160E00" font-size="14" font-weight="bold" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif">+</text>
+
+  <!-- X button (top-right) -->
+  <rect x="448" y="36" width="38" height="38" fill="rgba(232,240,252,0.84)" rx="7"/>
+  <rect x="448" y="36" width="38" height="38" fill="none" stroke="#7090B0" stroke-width="0.8" rx="7"/>
+  <text x="467" y="62" fill="#3A5880" font-size="20" font-weight="bold" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif">×</text>
+</svg>`
     bgLayer = await sharp(Buffer.from(bgSvg)).png().toBuffer()
   }
 
-  const frameId = user.profile_frame || 1
-  const frame = getFrame(frameId)
-  const statsLayer = Buffer.from(buildStatsSvg(user, frame.name))
-
+  // ── Layer 2: Circular avatar ──
   let avatarBuf
   if (ppBuffer) {
     avatarBuf = await makeCircleAvatar(ppBuffer, diameter)
   } else {
     avatarBuf = await makeInitialsAvatar(user.name || user.phone || '?', diameter)
   }
+  const avatarTop  = AV_CY - AV_R   // 265 - 135 = 130
+  const avatarLeft = AV_CX - AV_R   // 250 - 135 = 115
 
-  const avatarTop  = AV_CY - AV_R
-  const avatarLeft = AV_CX - AV_R
+  // ── Layer 3: Stats overlay (ring + text + banner) ──
+  const overlayBuf = Buffer.from(buildStatsSvg(user))
 
-  // ── Image frames (3D, 300×300 PNG centered on avatar) ──
-  if (frame.type === 'image') {
-    const FRAME_SIZE = 300
-    const frameSvgBuf = Buffer.from(buildImageFrameSvg(frame))
-    const framePng = await sharp(frameSvgBuf)
-      .resize(FRAME_SIZE, FRAME_SIZE)
-      .png()
-      .toBuffer()
-    const frameLeft = AV_CX - FRAME_SIZE / 2
-    const frameTop  = AV_CY - FRAME_SIZE / 2
-
-    return sharp(bgLayer)
-      .composite([
-        { input: statsLayer, top: 0,        left: 0        },
-        { input: avatarBuf,  top: avatarTop, left: avatarLeft },
-        { input: framePng,   top: frameTop,  left: frameLeft  },
-      ])
-      .png()
-      .toBuffer()
-  }
-
-  // ── Classic SVG frames (full-card overlay) ──
-  const frameLayer = Buffer.from(buildCardFrameSvg(frame))
-
+  // ── Composite: bg → avatar → overlay ──
   return sharp(bgLayer)
     .composite([
-      { input: statsLayer, top: 0,        left: 0        },
-      { input: avatarBuf,  top: avatarTop, left: avatarLeft },
-      { input: frameLayer, top: 0,         left: 0         },
+      { input: avatarBuf,  top: avatarTop,  left: avatarLeft },
+      { input: overlayBuf, top: 0,          left: 0          },
     ])
     .png()
     .toBuffer()

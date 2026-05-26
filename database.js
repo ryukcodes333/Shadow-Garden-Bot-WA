@@ -113,11 +113,20 @@ const userPokemonSchema = new mongoose.Schema({
   name:       String,
   pokemon_id: Number,
   level:      { type: Number, default: 1 },
+  xp:         { type: Number, default: 0 },
   hp:         Number,
   max_hp:     Number,
   base_xp:    Number,
   in_party:   { type: Boolean, default: true },
   is_shiny:   { type: Boolean, default: false },
+  types:      { type: [String], default: [] },
+  moves:      { type: [String], default: [] },
+  abilities:  { type: [String], default: [] },
+  ball:       { type: String, default: 'pokeball' },
+  slot:       { type: Number, default: 1 },
+  height:     Number,
+  weight:     Number,
+  location:   String,
 }, { timestamps: true })
 
 const gameSchema = new mongoose.Schema({
@@ -147,6 +156,16 @@ const guildMemberSchema = new mongoose.Schema({
   is_leader: { type: Boolean, default: false },
 })
 
+const loanSchema = new mongoose.Schema({
+  phone:       { type: String, unique: true },
+  amount:      { type: Number, default: 0 },
+  interest:    { type: Number, default: 0 },
+  total_due:   { type: Number, default: 0 },
+  tier:        { type: String, default: 'Bronze' },
+  issued_at:   { type: Date, default: Date.now },
+  due_date:    { type: Date },
+}, { timestamps: true })
+
 const blacklistSchema = new mongoose.Schema({
   group_id: String,
   word:     String,
@@ -174,6 +193,7 @@ const Game           = mongoose.model('Game',           gameSchema)
 const SummerToken    = mongoose.model('SummerToken',    summerTokenSchema)
 const Guild          = mongoose.model('Guild',          guildSchema)
 const GuildMember    = mongoose.model('GuildMember',    guildMemberSchema)
+const Loan           = mongoose.model('Loan',           loanSchema)
 const Blacklist      = mongoose.model('Blacklist',      blacklistSchema)
 const DisabledCommand= mongoose.model('DisabledCommand',disabledCommandSchema)
 
@@ -691,6 +711,59 @@ async function getCardByExternalId(externalId) {
   } catch { return null }
 }
 
+// ── Loan functions ─────────────────────────────────────────────────────────
+
+const LOAN_TIERS = {
+  Bronze: { max: 5000,   interest: 0.10 },
+  Silver: { max: 15000,  interest: 0.08 },
+  Gold:   { max: 50000,  interest: 0.06 },
+  Shadow: { max: 150000, interest: 0.04 },
+}
+
+function getLoanTierForLevel(level) {
+  if (level >= 50) return 'Shadow'
+  if (level >= 25) return 'Gold'
+  if (level >= 10) return 'Silver'
+  return 'Bronze'
+}
+
+async function getLoan(phone) {
+  phone = cleanPhone(phone)
+  return Loan.findOne({ phone }).lean()
+}
+
+async function createLoan(phone, amount, tier) {
+  phone = cleanPhone(phone)
+  const tierData = LOAN_TIERS[tier] || LOAN_TIERS.Bronze
+  const interest  = tierData.interest
+  const total_due = Math.ceil(amount * (1 + interest))
+  const due_date  = new Date(Date.now() + 7 * 24 * 3600000)
+  const doc = await Loan.findOneAndUpdate(
+    { phone },
+    { amount, interest, total_due, tier, issued_at: new Date(), due_date },
+    { upsert: true, new: true }
+  )
+  return doc.toObject()
+}
+
+async function repayLoan(phone, amount) {
+  phone = cleanPhone(phone)
+  const loan = await Loan.findOne({ phone }).lean()
+  if (!loan) return null
+  const remaining = loan.total_due - amount
+  if (remaining <= 0) {
+    await Loan.deleteOne({ phone })
+    return { paid: true, overpay: Math.abs(remaining) }
+  }
+  await Loan.findOneAndUpdate({ phone }, { total_due: remaining })
+  return { paid: false, remaining }
+}
+
+async function deleteLoan(phone) {
+  phone = cleanPhone(phone)
+  await Loan.deleteOne({ phone })
+}
+
 // ── Per-user mute within a group (stored in group doc) ────────────────────
 async function addMutedUser(groupId, phone) {
   await Group.findOneAndUpdate(
@@ -748,6 +821,8 @@ module.exports = {
   getDisabledCommands, disableCommand, enableCommand,
   // Suspensions
   getSuspension, addSuspension, removeSuspension, getSuspensions,
+  // Loans
+  getLoan, createLoan, repayLoan, deleteLoan, getLoanTierForLevel, LOAN_TIERS,
   // Mongoose instance
   mongoose,
 }
