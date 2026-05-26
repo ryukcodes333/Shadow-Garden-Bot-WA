@@ -238,11 +238,7 @@ async function getOrCreateUser(phone, name) {
 
 async function updateUser(phone, updates) {
   phone = cleanPhone(phone)
-  const u = await User.findOneAndUpdate(
-    { phone },
-    { $set: updates },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
-  ).lean()
+  const u = await User.findOneAndUpdate({ phone }, { $set: updates }, { new: true, upsert: false }).lean()
   return u
 }
 
