@@ -95,6 +95,8 @@ module.exports = {
       `┃ ⤷ .deposit <amount>\n` +
       `┃ ⤷ .withdraw <amount>\n` +
       `┃ ⤷ .pay @user <amount>\n` +
+      `┃ ⤷ .loan <amount>\n` +
+      `┃ ⤷ .repay <amount>\n` +
       `┃ ⤷ .daily\n` +
       `┃ ⤷ .fish\n` +
       `┃ ⤷ .dig\n` +
@@ -593,8 +595,12 @@ module.exports = {
         logger: { level: () => {}, info: () => {}, warn: () => {}, error: () => {} },
         reuploadRequest: sock.updateMediaMessage,
       })
-      const sticker = await makeSticker(buffer)
-      await sock.sendMessage(jid, { sticker }, { quoted: msg })
+      let imgBuf = buffer
+      try {
+        const sharp = require('sharp')
+        imgBuf = await sharp(buffer).jpeg({ quality: 90 }).toBuffer()
+      } catch {}
+      await sock.sendMessage(jid, { image: imgBuf }, { quoted: msg })
     } catch (err) {
       await reply(`❌ Sticker failed: ${err.message}`)
     }

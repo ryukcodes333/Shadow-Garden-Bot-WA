@@ -283,7 +283,7 @@ module.exports = {
     await reply(
       `✅ *CARD CLAIMED!*\n\n` +
       `${tierEmoji} *${card.name}*\n` +
-      `⭐ Tier: ${card.tier} - ${TIER_NAMES[card.tier] || card.tier}\n` +
+      `⭐ Tier: ${card.tier}\n` +
       `💰 Worth: $${(TIER_PRICES[card.tier] || 0).toLocaleString()}\n` +
       `🆔 ID: \`${card.id}\`\n\n` +
       `_Added to your collection! Use *.coll* to view it._`
@@ -469,18 +469,18 @@ module.exports = {
 
   async coll({ reply, sender, msg }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-    const targetPhone = mentioned.length ? mentioned[0].split("@")[0] : sender;
+    const targetPhone = mentioned.length ? mentioned[0].split("@")[0].split(":")[0] : sender;
     const cards = await db.getUserCards(targetPhone);
     if (!cards.length) {
       return reply(`*🃏 Card Collection*\n\n_No cards yet. Claim some when they spawn!_`);
     }
     const lines = cards.map((uc, i) => {
-      const cardData = uc.cards || uc;
+      const cardData = uc.card_id || uc;
       const tier = cardData?.tier || "?";
       const name = cardData?.name || "Unknown";
       return `${i + 1}. ${TIERS[tier] || "🎴"} *${name}* _(${tier})_`;
     }).join("\n");
-    await reply(`*🃏 Card Collection* - ${cards.length} card(s)\n\n${lines}\n\n_Use *.card <number>* to view a card._`);
+    await reply(`*🃏 Card Collection* - ${cards.length} card(s)\n\n${lines}\n\n_Use *.deck* to view your deck._`);
   },
 
   async collection(ctx) { return module.exports.coll(ctx); },
@@ -492,21 +492,21 @@ module.exports = {
     // Get owner counts for deck cards
     const deckSlice = cards.slice(0, 9);
     const deckExtIds = deckSlice.map(uc => {
-      const c = uc.cards || uc;
+      const c = uc.card_id || uc;
       return c?.external_id || c?.id || "?";
     });
     let ownerCounts = {};
     try { ownerCounts = await db.getOwnerCountsBatch(deckExtIds); } catch {}
 
     const cardLines = deckSlice.map((uc, i) => {
-      const c = uc.cards || uc;
+      const c = uc.card_id || uc;
       const tier = c?.tier || "?";
       const name = c?.name || "Unknown";
       const extId = deckExtIds[i];
       const owners = ownerCounts[extId] || 0;
       return (
         `\n🎴 *Name:* ${name}\n` +
-        `⭐ *Tier:* ${tier} - ${TIER_NAMES[tier] || tier}\n` +
+        `⭐ *Tier:* ${tier}\n` +
         `🔷 *Index:* #${i + 1}\n` +
         `#️⃣ *Owners:* (${owners})`
       );
@@ -514,7 +514,7 @@ module.exports = {
 
     const byTier = {};
     for (const uc of cards) {
-      const t = (uc.cards || uc)?.tier || "?";
+      const t = (uc.card_id || uc)?.tier || "?";
       byTier[t] = (byTier[t] || 0) + 1;
     }
     const tierSummary = Object.entries(byTier).map(([t, c]) => `${TIERS[t] || "🎴"} ${t}: ${c}`).join("  ");
@@ -589,7 +589,7 @@ module.exports = {
     const cards = await db.getUserCards(sender);
     if (index > cards.length) return reply(`❌ You only have ${cards.length} card(s).`);
     const uc = cards[index - 1];
-    const cardData = uc.cards || uc;
+    const cardData = uc.card_id || uc;
     await db.deleteUserCardById(uc.id);
     await reply(
       `🗑️ *CARD DISCARDED*\n\n` +

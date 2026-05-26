@@ -25,8 +25,14 @@ function generatePassword(length = 12) {
 
 module.exports = {
   async gay({ reply, sender, msg }) {
-    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    const target = mentioned.length ? mentioned[0].split('@')[0] : sender
+    const ctx = msg.message?.extendedTextMessage?.contextInfo
+    const mentioned = ctx?.mentionedJid || []
+    const quotedParticipant = ctx?.participant
+    const target = mentioned.length
+      ? mentioned[0].split('@')[0].split(':')[0]
+      : quotedParticipant
+        ? quotedParticipant.split('@')[0].split(':')[0]
+        : sender
     const pct = Math.floor(Math.random() * 101)
     await reply(`🏳️‍🌈 *Gay Meter*\n\n👤 @${target}\n\n${'🌈'.repeat(Math.ceil(pct/10))}${'⬛'.repeat(10-Math.ceil(pct/10))}\n\n*${pct}%*`)
   },

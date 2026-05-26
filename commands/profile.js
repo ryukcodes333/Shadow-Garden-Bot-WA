@@ -162,9 +162,18 @@ module.exports = {
       }
     } catch { bgBuffer = null }
 
+    // Compute global rank (leaderboard position)
+    let rankNum = null
+    try {
+      const lb = await db.getLeaderboard(9999).catch(() => [])
+      const idx = lb.findIndex(u => u.phone === sender)
+      rankNum = idx >= 0 ? idx + 1 : lb.length + 1
+    } catch {}
+    const displayUserWithRank = { ...displayUser, rank: rankNum }
+
     let cardBuffer
     try {
-      cardBuffer = await generateProfileCard(displayUser, ppBuffer, bgBuffer)
+      cardBuffer = await generateProfileCard(displayUserWithRank, ppBuffer, bgBuffer)
     } catch (err) {
       console.error('[profile] Card gen error:', err)
       return reply(`❌ Failed to generate profile card: ${err.message}`)

@@ -70,8 +70,8 @@ module.exports = {
     if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('❌ Usage: `.addmod @user`')
-    for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0], { role: STAFF_ROLES.MOD })
-    const names = mentioned.map(j => `@${j.split('@')[0]}`).join(', ')
+    for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0].split(':')[0], { role: STAFF_ROLES.MOD })
+    const names = mentioned.map(j => `@${j.split('@')[0].split(':')[0]}`).join(', ')
     await sock.sendMessage(jid, { text: `✅ *MOD ADDED*\n\n${names} is now a *Moderator*.`, mentions: mentioned }, { quoted: msg })
   },
 
@@ -79,8 +79,8 @@ module.exports = {
     if (!isOwner) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('❌ Usage: `.removemod @user`')
-    for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0], { role: 'member' })
-    const names = mentioned.map(j => `@${j.split('@')[0]}`).join(', ')
+    for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0].split(':')[0], { role: 'member' })
+    const names = mentioned.map(j => `@${j.split('@')[0].split(':')[0]}`).join(', ')
     await sock.sendMessage(jid, { text: `✅ *MOD REMOVED*\n\n${names} is no longer a moderator.`, mentions: mentioned }, { quoted: msg })
   },
 
@@ -88,8 +88,8 @@ module.exports = {
     if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('❌ Usage: `.addguardian @user`')
-    for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0], { role: STAFF_ROLES.GUARDIAN })
-    const names = mentioned.map(j => `@${j.split('@')[0]}`).join(', ')
+    for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0].split(':')[0], { role: STAFF_ROLES.GUARDIAN })
+    const names = mentioned.map(j => `@${j.split('@')[0].split(':')[0]}`).join(', ')
     await sock.sendMessage(jid, { text: `✅ *GUARDIAN ADDED*\n\n${names} is now a *Guardian*.`, mentions: mentioned }, { quoted: msg })
   },
 
@@ -97,8 +97,8 @@ module.exports = {
     if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('❌ Usage: `.removeguardian @user`')
-    for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0], { role: 'member' })
-    const names = mentioned.map(j => `@${j.split('@')[0]}`).join(', ')
+    for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0].split(':')[0], { role: 'member' })
+    const names = mentioned.map(j => `@${j.split('@')[0].split(':')[0]}`).join(', ')
     await sock.sendMessage(jid, { text: `✅ *GUARDIAN REMOVED*\n\n${names} is no longer a guardian.`, mentions: mentioned }, { quoted: msg })
   },
 
@@ -106,8 +106,8 @@ module.exports = {
     if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('❌ Usage: `.recruit @user`')
-    for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0], { role: STAFF_ROLES.CARD_MAKER })
-    const names = mentioned.map(j => `@${j.split('@')[0]}`).join(', ')
+    for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0].split(':')[0], { role: STAFF_ROLES.CARD_MAKER })
+    const names = mentioned.map(j => `@${j.split('@')[0].split(':')[0]}`).join(', ')
     await sock.sendMessage(jid, { text: `🎴 *CARD MAKER RECRUITED*\n\n${names} can now upload cards.`, mentions: mentioned }, { quoted: msg })
   },
 
@@ -115,8 +115,8 @@ module.exports = {
     if (!isOwner && !isMod) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('❌ Usage: `.firerecruit @user`')
-    for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0], { role: 'member' })
-    const names = mentioned.map(j => `@${j.split('@')[0]}`).join(', ')
+    for (const jidM of mentioned) await db.updateUser(jidM.split('@')[0].split(':')[0], { role: 'member' })
+    const names = mentioned.map(j => `@${j.split('@')[0].split(':')[0]}`).join(', ')
     await sock.sendMessage(jid, { text: `❌ *CARD MAKER REMOVED*\n\n${names} can no longer upload cards.`, mentions: mentioned }, { quoted: msg })
   },
 

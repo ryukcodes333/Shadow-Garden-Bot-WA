@@ -1,4 +1,9 @@
-const db = require('../database')
+const db   = require('../database')
+const fs   = require('fs')
+const path = require('path')
+
+const BANK_CARD_IMG  = path.join(__dirname, '../assets/bankcard.png')
+const TXN_APPROVED_IMG = path.join(__dirname, '../assets/txnapproved.jpg')
 
 const DAILY_COINS = [200, 350, 500, 750, 1000]
 const DAILY_GEMS  = [5, 10, 15, 20, 30]
@@ -50,14 +55,17 @@ module.exports = {
   async bal({ sock, msg, jid, reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
     const total = (u.wallet || 0) + (u.bank || 0)
-    await sock.sendMessage(jid, {
-      text:
-        `*💰 ACCOUNT BALANCE 💰*\n\n` +
-        `*🏦 Bank:* \`\`\`${(u.bank || 0).toLocaleString()}\`\`\`\n` +
-        `*👛 Wallet:* \`\`\`${(u.wallet || 0).toLocaleString()}\`\`\`\n\n` +
-        `*💫 Total:* \`\`\`${total.toLocaleString()}\`\`\``,
-      mentions: [`${sender}@s.whatsapp.net`],
-    }, { quoted: msg })
+    const caption =
+      `*💰 ACCOUNT BALANCE 💰*\n\n` +
+      `*🏦 Bank:* \`\`\`${(u.bank || 0).toLocaleString()}\`\`\`\n` +
+      `*👛 Wallet:* \`\`\`${(u.wallet || 0).toLocaleString()}\`\`\`\n\n` +
+      `*💫 Total:* \`\`\`${total.toLocaleString()}\`\`\``
+    if (fs.existsSync(BANK_CARD_IMG)) {
+      const buf = fs.readFileSync(BANK_CARD_IMG)
+      await sock.sendMessage(jid, { image: buf, caption, mentions: [`${sender}@s.whatsapp.net`] }, { quoted: msg })
+    } else {
+      await sock.sendMessage(jid, { text: caption, mentions: [`${sender}@s.whatsapp.net`] }, { quoted: msg })
+    }
   },
   async balance(ctx) { return module.exports.bal(ctx) },
   async wallet(ctx)  { return module.exports.bal(ctx) },
@@ -120,23 +128,32 @@ module.exports = {
   },
   async dep(ctx) { return module.exports.deposit(ctx) },
 
-  async donate({ sock, msg, jid, reply, sender, user, args }) {
+  async pay({ sock, msg, jid, reply, sender, user, args }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length || !args[1]) return reply('❌ Usage: `.donate @user <amount>`')
+    if (!mentioned.length) return reply('❌ Usage: `.pay @user <amount>`')
     const u = user || await db.getOrCreateUser(sender)
-    const amount = parseInt(args[1]) || parseInt(args[0])
+    const amount = parseInt(args.find(a => !isNaN(parseInt(a))))
     if (!amount || amount <= 0) return reply('❌ Enter a valid amount.')
     if (amount > (u.wallet || 0)) return reply(`❌ Not enough in wallet! You have $${(u.wallet || 0).toLocaleString()}`)
     const target = mentioned[0]
-    const tp     = target.split('@')[0]
+    const tp     = target.split('@')[0].split(':')[0]
     const tu     = await db.getOrCreateUser(tp)
     await db.updateUser(sender, { wallet: (u.wallet || 0) - amount })
     await db.updateUser(tp, { wallet: (tu.wallet || 0) + amount })
-    await sock.sendMessage(jid, {
-      text: `💸 *Donation Sent!*\n\n@${sender} → @${tp}\n💰 $${amount.toLocaleString()}`,
-      mentions: [msg.key.participant || msg.key.remoteJid, target]
-    })
+    const caption =
+      `*💸 TRANSACTION APPROVED ✅*\n\n` +
+      `*From:* @${sender}\n` +
+      `*To:* @${tp}\n` +
+      `*Amount:* $${amount.toLocaleString()}\n\n` +
+      `_Processed by Konosuba Bank_ 🖤`
+    if (fs.existsSync(TXN_APPROVED_IMG)) {
+      const buf = fs.readFileSync(TXN_APPROVED_IMG)
+      await sock.sendMessage(jid, { image: buf, caption, mentions: [msg.key.participant || msg.key.remoteJid, target] }, { quoted: msg })
+    } else {
+      await sock.sendMessage(jid, { text: caption, mentions: [msg.key.participant || msg.key.remoteJid, target] }, { quoted: msg })
+    }
   },
+  async donate(ctx) { return module.exports.pay(ctx) },
 
   async work({ reply, sender, user, pushName }) {
     const u = user || await db.getOrCreateUser(sender, pushName)
@@ -529,4 +546,144 @@ module.exports = {
   },
 
   async claim(ctx) { return module.exports.daily(ctx) },
+
+  async loan({ sock, msg, jid, reply, sender, user, args }) {
+    const u = user || await db.getOrCreateUser(sender)
+    const existing = await db.getLoan(sender).catch(() => null)
+    if (existing) {
+      const due = new Date(existing.due_date).toLocaleDateString('en-GB')
+      return reply(
+        `🏦 *ACTIVE LOAN*\n\n` +
+        `You already have an outstanding loan!\n\n` +
+        `*Tier:* ${existing.tier}\n` +
+        `*Original:* $${(existing.amount || 0).toLocaleString()}\n` +
+        `*Remaining:* $${(existing.total_due || 0).toLocaleString()}\n` +
+        `*Due:* ${due}\n\n` +
+        `Use *.repay <amount>* to pay it back.`
+      )
+    }
+    const amount = parseInt(args[0])
+    if (!amount || amount <= 0) {
+      const tier = db.getLoanTierForLevel(u.level || 1)
+      const { max, interest } = db.LOAN_TIERS[tier]
+      return reply(
+        `🏦 *SHADOW GARDEN BANK — LOAN*\n\n` +
+        `*Your Tier:* ${tier}\n` +
+        `*Max Loan:* $${max.toLocaleString()}\n` +
+        `*Interest Rate:* ${(interest * 100).toFixed(0)}%\n\n` +
+        `━━━━━━━━━━━━━━━━\n\n` +
+        `🥉 *Bronze* (Lv 1-9) - Max $5,000 | 10%\n` +
+        `🔵 *Silver* (Lv 10-24) - Max $15,000 | 8%\n` +
+        `🟢 *Gold* (Lv 25-49) - Max $50,000 | 6%\n` +
+        `✨ *Shadow* (Lv 50+) - Max $150,000 | 4%\n\n` +
+        `Usage: *.loan <amount>*`
+      )
+    }
+    const tier = db.getLoanTierForLevel(u.level || 1)
+    const { max, interest } = db.LOAN_TIERS[tier]
+    if (amount > max) return reply(`❌ Your *${tier}* tier max loan is $${max.toLocaleString()}.`)
+    const total_due = Math.ceil(amount * (1 + interest))
+    const loan = await db.createLoan(sender, amount, tier)
+    await db.updateUser(sender, { wallet: (u.wallet || 0) + amount })
+    await reply(
+      `✅ *LOAN APPROVED!*\n\n` +
+      `🏦 *Konosuba Bank*\n\n` +
+      `*Tier:* ${tier}\n` +
+      `*Amount:* $${amount.toLocaleString()}\n` +
+      `*Interest:* ${(interest * 100).toFixed(0)}%\n` +
+      `*Total Due:* $${total_due.toLocaleString()}\n` +
+      `*Due Date:* ${new Date(loan.due_date).toLocaleDateString('en-GB')}\n\n` +
+      `💵 $${amount.toLocaleString()} added to your wallet.\n\n` +
+      `Use *.repay <amount>* to pay back your loan. 🖤`
+    )
+  },
+
+  async repay({ sock, msg, jid, reply, sender, user, args }) {
+    const u = user || await db.getOrCreateUser(sender)
+    const existing = await db.getLoan(sender).catch(() => null)
+    if (!existing) return reply(`✅ *No Active Loan*\n\nYou have no outstanding loans!\n\n_Use *.loan <amount>* to take a loan._ 🖤`)
+    const amount = parseInt(args[0])
+    if (!amount || amount <= 0) {
+      return reply(
+        `🏦 *YOUR LOAN*\n\n` +
+        `*Tier:* ${existing.tier}\n` +
+        `*Remaining:* $${(existing.total_due || 0).toLocaleString()}\n` +
+        `*Due:* ${new Date(existing.due_date).toLocaleDateString('en-GB')}\n\n` +
+        `Usage: *.repay <amount>* or *.repay all*`
+      )
+    }
+    const repayAmount = args[0]?.toLowerCase() === 'all' ? (u.wallet || 0) : amount
+    if (repayAmount > (u.wallet || 0)) return reply(`❌ Not enough in wallet! You have $${(u.wallet || 0).toLocaleString()}.`)
+    const result = await db.repayLoan(sender, repayAmount)
+    if (!result) return reply(`❌ Loan not found.`)
+    await db.updateUser(sender, { wallet: (u.wallet || 0) - repayAmount })
+    if (result.paid) {
+      const refund = result.overpay || 0
+      if (refund > 0) await db.updateUser(sender, { wallet: (u.wallet || 0) - repayAmount + refund })
+      await reply(
+        `🎉 *LOAN FULLY REPAID!*\n\n` +
+        `✅ You've cleared your debt!\n` +
+        `💵 Paid: $${repayAmount.toLocaleString()}\n` +
+        (refund > 0 ? `💰 Overpayment refunded: $${refund.toLocaleString()}\n` : '') +
+        `\n_Your credit record is clean._ 🖤`
+      )
+    } else {
+      await reply(
+        `💳 *PARTIAL REPAYMENT*\n\n` +
+        `✅ Paid: $${repayAmount.toLocaleString()}\n` +
+        `💳 Remaining: $${(result.remaining || 0).toLocaleString()}\n\n` +
+        `_Keep paying to clear your debt!_ 🖤`
+      )
+    }
+  },
+
+  async usepp({ sock, msg, jid, reply, sender }) {
+    const ctx    = msg.message?.extendedTextMessage?.contextInfo
+    const quoted = ctx?.quotedMessage
+    if (!quoted?.imageMessage && !msg.message?.imageMessage) {
+      return reply(`🖼️ *PROFILE PICTURE*\n\nSend or reply to an image with *.usepp* to set it as your profile picture.`)
+    }
+    try {
+      const { downloadMediaMessage } = require('@whiskeysockets/baileys')
+      const targetMsg = quoted?.imageMessage
+        ? { message: quoted, key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant } }
+        : msg
+      const buffer = await downloadMediaMessage(targetMsg, 'buffer', {}, {
+        logger: { level: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+        reuploadRequest: sock.updateMediaMessage,
+      })
+      const sharp = require('sharp')
+      const jpegBuf = await sharp(buffer).resize(400, 400, { fit: 'cover' }).jpeg({ quality: 85 }).toBuffer()
+      const b64 = jpegBuf.toString('base64')
+      await db.updateUser(sender, { profile_pp: b64 })
+      await reply(`✅ *Profile picture updated!*\n\n_Use *.profile* to view your card._ 🖤`)
+    } catch (err) {
+      await reply(`❌ Failed: ${err.message}`)
+    }
+  },
+
+  async usebg({ sock, msg, jid, reply, sender }) {
+    const ctx    = msg.message?.extendedTextMessage?.contextInfo
+    const quoted = ctx?.quotedMessage
+    if (!quoted?.imageMessage && !msg.message?.imageMessage) {
+      return reply(`🎨 *PROFILE BACKGROUND*\n\nSend or reply to an image with *.usebg* to set it as your profile background.`)
+    }
+    try {
+      const { downloadMediaMessage } = require('@whiskeysockets/baileys')
+      const targetMsg = quoted?.imageMessage
+        ? { message: quoted, key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant } }
+        : msg
+      const buffer = await downloadMediaMessage(targetMsg, 'buffer', {}, {
+        logger: { level: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+        reuploadRequest: sock.updateMediaMessage,
+      })
+      const sharp = require('sharp')
+      const jpegBuf = await sharp(buffer).resize(800, 400, { fit: 'cover' }).jpeg({ quality: 80 }).toBuffer()
+      const b64 = jpegBuf.toString('base64')
+      await db.updateUser(sender, { profile_bg: b64 })
+      await reply(`✅ *Profile background updated!*\n\n_Use *.profile* to view your card._ 🖤`)
+    } catch (err) {
+      await reply(`❌ Failed: ${err.message}`)
+    }
+  },
 }
