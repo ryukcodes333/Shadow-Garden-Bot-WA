@@ -394,11 +394,11 @@ async function removeItem(phone, item, qty = 1) {
 // ── Leaderboard ────────────────────────────────────────────────────────────
 
 async function getLeaderboard(limit = 10) {
-  return User.find({}).sort({ xp: -1, level: -1 }).limit(limit).lean()
+  return User.find({}).sort({ level: -1, xp: -1 }).limit(limit).lean()
 }
 
 async function getRichList(limit = 10) {
-  return User.find({}).sort({ wallet: -1 }).limit(limit).lean()
+  return User.find({}).sort({ bank: -1, wallet: -1 }).limit(limit).lean()
 }
 
 async function getUserCount() {
@@ -430,7 +430,16 @@ async function getCard(id) {
 
 async function getUserCards(phone) {
   phone = cleanPhone(phone)
-  return UserCard.find({ phone }).populate('card_id').lean()
+  const docs = await UserCard.find({ phone }).lean()
+  if (!docs.length) return docs
+  const cardIds = docs.map(d => d.card_id).filter(Boolean)
+  const cards = await Card.find({ _id: { $in: cardIds } }).lean()
+  const cardMap = {}
+  for (const c of cards) cardMap[String(c._id)] = c
+  for (const d of docs) {
+    d.card_id = cardMap[String(d.card_id)] || null
+  }
+  return docs
 }
 
 async function getUserCardCount(phone) {
@@ -839,4 +848,4 @@ module.exports = {
   getLoan, createLoan, repayLoan, deleteLoan, getLoanTierForLevel, LOAN_TIERS,
   // Mongoose instance
   mongoose,
-}
+    }
