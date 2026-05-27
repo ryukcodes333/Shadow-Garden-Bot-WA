@@ -36,6 +36,7 @@ connectDB()
 const userSchema = new mongoose.Schema({
   phone:     { type: String, unique: true, sparse: true },
   name:      { type: String, default: 'Unknown' },
+  password:  { type: String, default: null },
   wallet:    { type: Number, default: 0 },
   bank:      { type: Number, default: 500 },
   gems:      { type: Number, default: 0 },
