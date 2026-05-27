@@ -222,26 +222,38 @@ module.exports = {
   async richlist({ reply }) {
     const rich = await db.getRichList(10)
     if (!rich.length) return reply('No users found yet.')
-    const medals = ['🥇', '🥈', '🥉']
-    const lines  = rich.map((u, i) => {
+    const cards = rich.map((u, i) => {
       const hasRealName = u.name && u.name !== u.phone && !/^\d{10,}$/.test(u.name)
       const display = hasRealName ? u.name : `@${u.phone}`
-      return `${medals[i] || `${i + 1}.`} ${display} - $${((u.wallet || 0) + (u.bank || 0)).toLocaleString()}`
+      return (
+        `═══════════════\n` +
+        `║ *🔖 Name:* ${display}\n` +
+        `║ *✨ Level:* ${u.level || 1}\n` +
+        `║ *🏦 Bank:* $${(u.bank || 0).toLocaleString()}\n` +
+        `║  *#️⃣ Position:* ${i + 1}\n` +
+        `═══════════════`
+      )
     })
-    await reply(`💎 *Rich List*\n\n${lines.join('\n')}`)
+    await reply(`╔═════════╗\n    🏆 Tᴏᴘ 10 Rɪᴄʜᴇsᴛ\n╚═════════╝\n\n${cards.join('\n\n')}`)
   },
   async richLg(ctx) { return module.exports.richlist(ctx) },
 
   async leaderboard({ reply }) {
     const board = await db.getLeaderboard(10)
     if (!board.length) return reply('Leaderboard is empty.')
-    const medals = ['🥇', '🥈', '🥉']
-    const lines  = board.map((u, i) => {
+    const cards = board.map((u, i) => {
       const hasRealName = u.name && u.name !== u.phone && !/^\d{10,}$/.test(u.name)
       const display = hasRealName ? u.name : `@${u.phone}`
-      return `${medals[i] || `${i + 1}.`} ${display} - $${(u.wallet || 0).toLocaleString()}`
+      return (
+        `═══════════════\n` +
+        `║ *🔖 Name:* ${display}\n` +
+        `║ *✨ Level:* ${u.level || 1}\n` +
+        `║ *🏦 Bank:* $${(u.bank || 0).toLocaleString()}\n` +
+        `║  *#️⃣ Position:* ${i + 1}\n` +
+        `═══════════════`
+      )
     })
-    await reply(`🏆 *Leaderboard*\n\n${lines.join('\n')}`)
+    await reply(`╔═════════╗\n    🏆 Tᴏᴘ 10 Pʟᴀʏᴇʀs\n╚═════════╝\n\n${cards.join('\n\n')}`)
   },
   async lb(ctx) { return module.exports.leaderboard(ctx) },
 
@@ -394,7 +406,7 @@ module.exports = {
         lines.push(`✅ .${cmd} - ready`)
       }
     }
-    await reply(`⏱️ *Cooldowns*\n\n${lines.join('\n')}`)
+     await reply(`⏱️ *Cooldowns*\n\n${lines.join('\n')}`)
   },
   async bc(ctx) { return module.exports.cds(ctx) },
 
@@ -510,8 +522,40 @@ module.exports = {
     }
   },
 
-  async topmoney({ reply }) { return module.exports.richlist({ reply }) },
-  async topbank({ reply })  { return module.exports.richlist({ reply }) },
+  async topmoney({ reply }) {
+    const rich = await db.getRichList(10)
+    if (!rich.length) return reply('No users found yet.')
+    const cards = rich.map((u, i) => {
+      const hasRealName = u.name && u.name !== u.phone && !/^\d{10,}$/.test(u.name)
+      const display = hasRealName ? u.name : `@${u.phone}`
+      return (
+        `═══════════════\n` +
+        `║ *🔖 Name:* ${display}\n` +
+        `║ *✨ Level:* ${u.level || 1}\n` +
+        `║ *🏦 Bank:* $${(u.bank || 0).toLocaleString()}\n` +
+        `║  *#️⃣ Position:* ${i + 1}\n` +
+        `═══════════════`
+      )
+    })
+    await reply(`╔═════════╗\n    🏆 Tᴏᴘ 10 Rɪᴄʜᴇsᴛ\n╚═════════╝\n\n${cards.join('\n\n')}`)
+  },
+  async topbank({ reply }) {
+    const rich = await db.getRichList(10)
+    if (!rich.length) return reply('No users found yet.')
+    const cards = rich.map((u, i) => {
+      const hasRealName = u.name && u.name !== u.phone && !/^\d{10,}$/.test(u.name)
+      const display = hasRealName ? u.name : `@${u.phone}`
+      return (
+        `═══════════════\n` +
+        `║ *🔖 Name:* ${display}\n` +
+        `║ *✨ Level:* ${u.level || 1}\n` +
+        `║ *🏦 Bank:* $${(u.bank || 0).toLocaleString()}\n` +
+        `║  *#️⃣ Position:* ${i + 1}\n` +
+        `═══════════════`
+      )
+    })
+    await reply(`╔═════════╗\n    🏆 Tᴏᴘ 10 Bᴀɴᴋ Bᴀʟᴀɴᴄᴇ\n╚═════════╝\n\n${cards.join('\n\n')}`)
+  },
 
   async achievements({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
@@ -701,4 +745,4 @@ module.exports = {
       await reply(`❌ Failed: ${err.message}`)
     }
   },
-}
+      }
