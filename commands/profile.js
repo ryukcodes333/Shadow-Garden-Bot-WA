@@ -516,4 +516,66 @@ module.exports = {
       `_Your shadow wears a new crown._ 🖤`
     )
   },
+
+  // ── .reg <name> | <password> ────────────────────────────────────────────
+  async reg({ reply, sender, pushName, args, textRaw }) {
+    const rawInput = textRaw.replace(/^\.\s*reg\s*/i, '').trim()
+
+    if (!rawInput.includes('|')) {
+      return reply(
+        `📝 *REGISTER*\n\n` +
+        `To create your account, use:\n` +
+        `*.reg <name> | <password>*\n\n` +
+        `*Example:*\n` +
+        `_.reg Shadow | mypassword123_\n\n` +
+        `> Your name is displayed on leaderboards and your profile card.\n` +
+        `> Keep your password safe — it's used to log in to the website.`
+      )
+    }
+
+    const pipeIndex = rawInput.indexOf('|')
+    const name      = rawInput.slice(0, pipeIndex).trim()
+    const password  = rawInput.slice(pipeIndex + 1).trim()
+
+    if (!name || name.length < 2) {
+      return reply('❌ Name must be at least 2 characters.\n\nUsage: *.reg <name> | <password>*')
+    }
+    if (name.length > 24) {
+      return reply('❌ Name must be 24 characters or fewer.\n\nUsage: *.reg <name> | <password>*')
+    }
+    if (!password || password.length < 4) {
+      return reply('❌ Password must be at least 4 characters.\n\nUsage: *.reg <name> | <password>*')
+    }
+
+    const db = require('../database')
+
+    const existing = await db.getUser(sender).catch(() => null)
+    if (existing?.registered && existing?.password) {
+      return reply(
+        `⚠️ *Already Registered*\n\n` +
+        `You already have an account, *${existing.name || existing.username || 'Adventurer'}*.\n` +
+        `Use *.profile* to view your stats.\n\n` +
+        `> Contact a mod if you need to reset your account.`
+      )
+    }
+
+    await db.updateUser(sender, {
+      name,
+      username: name,
+      password,
+      registered: true,
+    })
+
+    await reply(
+      `🌑 *REGISTRATION COMPLETE*\n\n` +
+      `*👤 Name:* ${name}\n` +
+      `*🔐 Password:* ${'*'.repeat(password.length)}\n\n` +
+      `Welcome to the Shadow Garden, *${name}*! 🖤\n\n` +
+      `You can now use:\n` +
+      `• *.profile* — view your profile\n` +
+      `• *.bal* — check your balance\n` +
+      `• *.daily* — claim daily coins\n\n` +
+      `_Every journey begins with a single step._`
+    )
+  },
 }

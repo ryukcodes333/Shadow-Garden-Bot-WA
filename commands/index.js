@@ -373,6 +373,9 @@ async function handleMessage(sock, msg) {
     // Admin / group management
     if (adminCmds[cmd])         return await adminCmds[cmd](ctx)
 
+    // Registration
+    if (cmd === 'reg' || cmd === 'register') return await profileCmds['reg'](ctx)
+
     // Profile commands
     if (profileCmds[cmd])       return await profileCmds[cmd](ctx)
 
@@ -418,6 +421,7 @@ async function handleMessage(sock, msg) {
     if (converterCmds[cmd])     return await converterCmds[cmd](ctx)
 
     // Staff commands
+    if (cmd === 'resetallusers') return await staffCmds['resetallusers'](ctx)
     if (staffCmds[cmd])         return await staffCmds[cmd](ctx)
     // Group join/exit/list commands (routed through staffCmds)
     if (cmd === 'join')          return await staffCmds['join'] ? staffCmds['join'](ctx) : ctx.reply('❌ .join <invite link>')

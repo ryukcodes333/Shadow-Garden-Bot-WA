@@ -436,4 +436,32 @@ module.exports = {
     const role = isOwner ? '👑 Owner' : isMod ? '⚙️ Moderator' : isGuardian ? '🛡️ Guardian' : (user?.role || 'Member')
     await reply(`🎭 *Your Role*\n\n${role}`)
   },
+
+  // ── .resetallusers — owner only, deletes every user document ────────────
+  async resetallusers({ reply, isOwner, args }) {
+    if (!isOwner) return reply('*🚫 Access Denied* — Owner only command.')
+
+    const confirm = (args[0] || '').toUpperCase()
+    if (confirm !== 'CONFIRM') {
+      return reply(
+        `⚠️ *RESET ALL USERS*\n\n` +
+        `This will *permanently delete ALL user profiles* from the database.\n` +
+        `Cards, warnings, Pokémon, and other data are NOT affected — only user accounts.\n\n` +
+        `Everyone will need to re-register using *.reg <name> | <password>*\n\n` +
+        `*To confirm, type:*\n` +
+        `_.resetallusers CONFIRM_`
+      )
+    }
+
+    const db = require('../database')
+    const count = await db.deleteAllUsers()
+
+    await reply(
+      `🗑️ *ALL USERS DELETED*\n\n` +
+      `*${count}* user profiles have been removed from the database.\n\n` +
+      `Users must now re-register using:\n` +
+      `*.reg <name> | <password>*\n\n` +
+      `_The slate is clean._ 🌑`
+    )
+  },
 }
