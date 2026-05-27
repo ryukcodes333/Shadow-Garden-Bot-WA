@@ -338,7 +338,16 @@ module.exports = {
     const existing = await db.getUser(sender).catch(() => null)
     if (existing && existing.bio && existing.bio !== '') return reply('⚠️ Already registered.')
 
-    const name = args.join(' ') || pushName || sender
+    const raw = args.join(' ')
+    const pipeIdx = raw.indexOf('|')
+    if (pipeIdx === -1) {
+      return reply('❌ Usage: `.reg <name> | <password>`\nExample: `.reg Shadow Reaper | mypassword123`')
+    }
+    const name     = raw.slice(0, pipeIdx).trim() || pushName || sender
+    const password = raw.slice(pipeIdx + 1).trim()
+    if (!password) {
+      return reply('❌ Password cannot be empty.\nUsage: `.reg <name> | <password>`')
+    }
 
     // Ensure user document exists — getOrCreateUser handles duplicates gracefully
     const userDoc = await db.getOrCreateUser(sender, name).catch(() => null)
@@ -347,11 +356,14 @@ module.exports = {
     }
 
     // Update registration fields; don't gate success on the return value
-    await db.updateUser(sender, { name, bio: 'Konosuba Member' }).catch(() => {})
+    await db.updateUser(sender, { name, password, bio: 'Konosuba Member' }).catch(() => {})
 
     await reply(
       `✅ *REGISTERED!*\n\n` +
       `Welcome to the Konosuba family, *${name}*!\n\n` +
+      `📱 *Phone:* ${sender.split('@')[0]}\n` +
+      `🔑 *Password:* ${password}\n\n` +
+      `Use these to login at the Konosuba website!\n` +
       `Type *.p* to view your profile card.\n\n` +
       `_Your adventure begins now._ ✦`
     )
