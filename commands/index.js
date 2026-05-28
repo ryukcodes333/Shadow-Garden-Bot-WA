@@ -290,6 +290,7 @@ async function handleMessage(sock, msg) {
     'market','wallet','bank','weekly','monthly','crime','rob','heist','topmoney','topbank','howgay','lockgroup','unlockgroup','join','exit','listgc',
     // ── new-user / registration commands always allowed ──────────
     'register','reg','start','p','profile','bal','balance','help','menu',
+    'myid','id',
   ])
 
   const reply = (text) => sock.sendMessage(jid, { text }, { quoted: msg })

@@ -725,4 +725,28 @@ module.exports = {
         : `✅ *All systems healthy.*`)
     )
   },
+
+  async myid({ sock, jid, sender, msg, reply }) {
+    const websiteUrl = process.env.WEBSITE_URL || 'https://konosuba-bot.vercel.app'
+    await reply(
+      `🆔 *Your Bot ID*\n` +
+      `━━━━━━━━━━━━━━━━━\n\n` +
+      `Your unique ID is:\n` +
+      `*${sender}*\n\n` +
+      `📋 _Copy the number above (no spaces)._\n\n` +
+      `🌐 *To login on the website:*\n` +
+      `1. Go to: ${websiteUrl}\n` +
+      `2. Tap *Login*\n` +
+      `3. Enter *${sender}* as your Phone / ID\n` +
+      `4. Enter the password you set with *.reg*\n\n` +
+      `❓ *Haven't registered yet?*\n` +
+      `Send: *.reg YourName | YourPassword*\n` +
+      `Example: _.reg Shadow | mypass123_\n\n` +
+      `> This ID is how the bot and website recognise you.`
+    )
+  },
+
+  async id({ sock, jid, sender, msg, reply }) {
+    return module.exports.myid({ sock, jid, sender, msg, reply })
+  },
 }
