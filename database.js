@@ -34,20 +34,23 @@ connectDB()
 // ── Schemas ────────────────────────────────────────────────────────────────
 
 const userSchema = new mongoose.Schema({
-  phone:     { type: String, unique: true, sparse: true },
-  name:      { type: String, default: 'Unknown' },
-  password:  { type: String, default: null },
-  wallet:    { type: Number, default: 0 },
-  bank:      { type: Number, default: 500 },
-  gems:      { type: Number, default: 0 },
-  xp:        { type: Number, default: 0 },
-  level:     { type: Number, default: 1 },
-  streak:    { type: Number, default: 0 },
-  banned:    { type: Boolean, default: false },
-  premium:   { type: Boolean, default: false },
-  role:      { type: String, default: 'member' },
-  title:     { type: String, default: 'Newcomer' },
-  bio:       { type: String, default: '' },
+  phone:      { type: String, unique: true, sparse: true },
+  name:       { type: String, default: 'Unknown' },
+  password:   { type: String, default: null },
+  wallet:     { type: Number, default: 0 },
+  bank:       { type: Number, default: 500 },
+  bank_limit: { type: Number, default: 50000 },
+  gems:       { type: Number, default: 0 },
+  xp:         { type: Number, default: 0 },
+  rpg_xp:     { type: Number, default: 0 },
+  rpg_wallet: { type: Number, default: 0 },
+  level:      { type: Number, default: 1 },
+  streak:     { type: Number, default: 0 },
+  banned:     { type: Boolean, default: false },
+  premium:    { type: Boolean, default: false },
+  role:       { type: String, default: 'member' },
+  title:      { type: String, default: 'Newcomer' },
+  bio:        { type: String, default: '' },
   pokemon_badges: { type: Number, default: 0 },
   pokemon_wins:   { type: Number, default: 0 },
   pokemon_losses: { type: Number, default: 0 },
@@ -561,7 +564,8 @@ async function getGuildByMember(phone) {
   if (!member) return null
   const guild = await Guild.findById(member.guild_id).lean()
   if (!guild) return null
-  return { ...guild, guild_id: member.guild_id, is_leader: member.is_leader }
+  const liveCount = await GuildMember.countDocuments({ guild_id: member.guild_id })
+  return { ...guild, member_count: liveCount, guild_id: member.guild_id, is_leader: member.is_leader }
 }
 const getUserGuild = getGuildByMember
 

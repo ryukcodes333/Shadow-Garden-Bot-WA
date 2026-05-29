@@ -232,6 +232,45 @@ async function startBot() {
         if (msg.key.fromMe) continue
         if (isJidBroadcast(msg.key.remoteJid || '')) continue
         await handleMessage(sock, msg)
+        // ── Link preview (non-command messages with URLs) ──────────
+        const jid     = msg.key.remoteJid
+        const textRaw = msg.message?.conversation ||
+          msg.message?.extendedTextMessage?.text || ''
+        const PREFIX  = global.prefix || '.'
+        const isCmd   = textRaw.startsWith(PREFIX) || textRaw.startsWith('#')
+        const urlRegex = /https?:\/\/[^\s]+/gi
+        const urls    = textRaw.match(urlRegex)
+        if (!isCmd && urls && urls.length > 0) {
+          try {
+            const url = urls[0]
+            const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(5000) })
+            const html = await res.text().catch(() => '')
+            const getTag = (name) => {
+              const m = html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${name}["'][^>]*content=["']([^"']+)["']`, 'i')) ||
+                        html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']${name}["']`, 'i'))
+              return m ? m[1] : null
+            }
+            const title       = getTag('og:title') || getTag('twitter:title') || html.match(/<title>([^<]{1,100})<\/title>/i)?.[1]?.trim() || url
+            const description = getTag('og:description') || getTag('twitter:description') || getTag('description') || ''
+            const image       = getTag('og:image') || getTag('twitter:image')
+            const siteName    = getTag('og:site_name') || ''
+
+            if (title && title.length > 3) {
+              const previewText =
+                `🔗 *${title}*` +
+                (siteName ? `\n🌐 ${siteName}` : '') +
+                (description ? `\n\n${description.slice(0, 180)}${description.length > 180 ? '…' : ''}` : '') +
+                `\n\n${url}`
+              if (image && image.startsWith('http')) {
+                await sock.sendMessage(jid, { image: { url: image }, caption: previewText }, { quoted: msg }).catch(() =>
+                  sock.sendMessage(jid, { text: previewText }, { quoted: msg }).catch(() => {})
+                )
+              } else {
+                await sock.sendMessage(jid, { text: previewText }, { quoted: msg }).catch(() => {})
+              }
+            }
+          } catch {}
+        }
       } catch (err) {
         console.error('Message handler error:', err.message)
       }
@@ -243,7 +282,7 @@ async function startBot() {
       const db = require('./database')
       const groupMeta = await sock.groupMetadata(id).catch(() => null)
       if (!groupMeta) return
-      const groupSettings = await db.getGroup(id)
+      const groupSettings = await db.getOrCreateGroup(id, groupMeta.subject || '').catch(() => null)
       if (!groupSettings) return
       for (const participant of participants) {
         const pushName = participant.split('@')[0]
