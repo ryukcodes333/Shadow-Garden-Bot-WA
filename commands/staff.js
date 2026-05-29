@@ -45,21 +45,23 @@ module.exports = {
     // Display text always uses just the phone number (not the @lid number)
     const callerName = pushName || sender || 'there'
     const modLines = modList.length
-      ? modList.map(u => `💙 @${u.phone}`).join('\n')
+      ? modList.map(u => `⌬ @${u.phone}`).join('\n')
       : '(none)'
 
     const guardianLines = guardianList.length
-      ? guardianList.map(u => `💙 @${u.phone}`).join('\n')
+      ? guardianList.map(u => `◈ @${u.phone}`).join('\n')
       : '(none)'
 
     const text =
-      `Hᴇʟʟᴏ ${callerName}, ᴛʜɪᴜ ᴀʀᴇ ᴍʏ ᴍᴏᴅᴇʀᴀᴛᴏʀᴜ ɪɴ 𝐊Ω𝐍Ω𝐒𝐔𝐁Φ, ᴏᴋᴀʏ?! 💙\n\n` +
-      `> Aɴᴅ ʜᴇʏ! ʏᴏᴜ'ʀᴇ ᴏɴʟʏ ᴜᴜᴘᴘᴏᴜᴇᴅ ᴛᴏ ᴅᴍ ᴛʜᴇᴍ ᶣᴏʀ *Iᴍᴘᴏʀᴛᴀɴᴛ Rᴇᴀᴜᴏɴᴜ!!*\n\n` +
-      `*👑 Moderators 👑*\n\n` +
+      `╔═════ ⋆⋅☆⋅⋆ ═════╗\n` +
+      `          ⚜️ 𝗠𝗢𝗗𝗦 ⚜️\n` +
+      `╚═════ ⋆⋅☆⋅⋆ ═════╝\n\n` +
       `${modLines}\n\n` +
-      `*🛡️ Guardians 🛡️*\n\n` +
+      `╔════ ⋆⋅🛡️⋅⋆ ════╗\n` +
+      `         𝗚𝗨𝗔𝗥𝗗𝗜𝗔𝗡𝗦\n` +
+      `╚════ ⋆⋅⚔️⋅⋆ ════╝\n\n` +
       `${guardianLines}\n\n` +
-      `> Do *not* spam their DMs to *avoid* getting *blocked* 🚫`
+      `> *DO NOT* spam their DMs to *avoid* getting *blocked* 🚫`
     await sock.sendMessage(jid, { text, mentions: allMentions }, { quoted: msg })
   },
 

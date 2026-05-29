@@ -442,31 +442,31 @@ module.exports = {
 
   async cds({ reply, sender }) {
     const commands = [
-      { key: 'work',   label: '.work'   },
-      { key: 'fish',   label: '.fish'   },
-      { key: 'dig',    label: '.dig'    },
-      { key: 'beg',    label: '.beg'    },
-      { key: 'crime',  label: '.crime'  },
-      { key: 'rob',    label: '.rob'    },
-      { key: 'heist',  label: '.heist'  },
-      { key: 'bonus',  label: '.bonus'  },
-      { key: 'dungeon',label: '.dungeon'},
-      { key: 'adventure',label: '.adventure'},
+      { key: 'work',      label: '.work'      },
+      { key: 'fish',      label: '.fish'      },
+      { key: 'dig',       label: '.dig'       },
+      { key: 'beg',       label: '.beg'       },
+      { key: 'crime',     label: '.crime'     },
+      { key: 'rob',       label: '.rob'       },
+      { key: 'heist',     label: '.heist'     },
+      { key: 'bonus',     label: '.bonus'     },
+      { key: 'dungeon',   label: '.dungeon'   },
+      { key: 'adventure', label: '.adventure' },
     ]
     const lines = []
     for (const { key, label } of commands) {
       const remaining = await db.getCooldown(sender, key)
       if (remaining > 0) {
-        const hrs  = Math.floor(remaining / 3600000)
-        const mins = Math.floor((remaining % 3600000) / 60000)
-        const secs = Math.floor((remaining % 60000) / 1000)
+        const hrs     = Math.floor(remaining / 3600000)
+        const mins    = Math.floor((remaining % 3600000) / 60000)
+        const secs    = Math.floor((remaining % 60000) / 1000)
         const timeStr = hrs > 0 ? `${hrs}h ${mins}m` : mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
-        lines.push(`⏳ \`${label}\` | *${timeStr}*`)
+        lines.push(`* \`${label}\` | *${timeStr}*`)
       } else {
-        lines.push(`✅ \`${label}\` | *Ready!*`)
+        lines.push(`* \`${label}\` | *Ready!*`)
       }
     }
-    await reply(`⏳ *Your Active Cooldowns* ⏳\n\n${lines.join('\n')}`)
+    await reply(`⏳ Your Active Cooldowns ⏳\n\n${lines.join('\n')}`)
   },
   async bc(ctx) { return module.exports.cds(ctx) },
 

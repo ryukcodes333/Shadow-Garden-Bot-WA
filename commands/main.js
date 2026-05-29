@@ -309,17 +309,11 @@ module.exports = {
   },
 
   async ping({ sock, msg, jid }) {
-    const start  = Date.now()
-    const sent   = await sock.sendMessage(jid, { text: '🏓 Measuring latency...' }, { quoted: msg })
-    const ping   = Date.now() - start
-    const mem    = process.memoryUsage()
+    const start = Date.now()
+    await sock.sendMessage(jid, { text: '...' }, { quoted: msg })
+    const ping  = Date.now() - start
     await sock.sendMessage(jid, {
-      text:
-        `🏓 *PONG!*\n\n` +
-        `⚡ *Latency:* ${ping} ms\n` +
-        `⏱️ *Uptime:* ${uptime()}\n` +
-        `🧠 *RAM:* ${(mem.heapUsed / 1024 / 1024).toFixed(1)} MB\n` +
-        `📡 *Status:* 🟢 Online`
+      text: `Aqua's here\n> ${ping}ms`
     }, { quoted: msg })
   },
 
@@ -427,16 +421,20 @@ module.exports = {
     await reply(`💤 AFK set\n📌 ${reason}\n\nAnyone who tags you will be notified.`)
   },
 
-  async website({ reply }) {
-    const url = process.env.WEBSITE_URL || 'https://shadow-garden-bot.vercel.app'
-    await reply(
-      `🌐 *SHADOW GARDEN BOT*\n\n` +
-      `🔗 Website: ${url}\n\n` +
-      `📝 *Login with:*\n` +
-      `• Your phone number (use *.myid*)\n` +
-      `• Password set with *.reg*\n\n` +
-      `_Not registered? Send *.reg* in DM._ 🖤`
-    )
+  async website({ sock, jid, msg, reply }) {
+    const url = 'https://konosuba-bot.vercel.app/'
+    const previewText =
+      `🌐 *Konosuba Bot Website*\n\n` +
+      `The official Konosuba Community Bot dashboard — manage your profile, stats, inventory, and more.\n\n` +
+      `${url}`
+    try {
+      await sock.sendMessage(jid, {
+        image: { url: 'https://konosuba-bot.vercel.app/og-image.png' },
+        caption: previewText,
+      }, { quoted: msg })
+    } catch {
+      await reply(previewText)
+    }
   },
 
   async community({ reply }) {
@@ -531,69 +529,60 @@ module.exports = {
   async setms(ctx) { return require('./pokemon').setms(ctx) },
   async delms(ctx) { return require('./pokemon').delms(ctx) },
 
-  async tagall({ sock, msg, jid, senderJid, sender, isGroup, isOwner, args, reply }) {
+  async tagall({ sock, msg, jid, senderJid, isGroup, isOwner, args, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const meta = await sock.groupMetadata(jid)
+    const meta   = await sock.groupMetadata(jid)
     const admins = meta.participants.filter(p => p.admin).map(p => p.id)
     if (!admins.includes(senderJid) && !isOwner) return reply('⚠️ Admin only.')
 
-    const message      = args.join(' ') || 'Attention everyone!'
-    const actualJids   = meta.participants.map(p => p.id)
-    const activePhones = await db.getActiveUsers(jid, 24 * 7).catch(() => [])
-    const activeSet    = new Set(activePhones)
-
-    const activeMembers   = meta.participants.filter(p => activeSet.has(p.id.split('@')[0].split(':')[0]))
-    const inactiveMembers = meta.participants.filter(p => !activeSet.has(p.id.split('@')[0].split(':')[0]))
-
-    const activeLines   = activeMembers.map(p => `🟢 @${p.id.split('@')[0].split(':')[0]}`).join('\n') || '   _None_'
-    const inactiveLines = inactiveMembers.slice(0, 20).map(p => `🔴 @${p.id.split('@')[0].split(':')[0]}`).join('\n') || '   _None_'
+    const message    = args.join(' ') || 'Attention everyone!'
+    const actualJids = meta.participants.map(p => p.id)
+    const memberLines = meta.participants
+      .map(p => `💠 @${p.id.split('@')[0].split(':')[0]}`)
+      .join('\n')
 
     await sock.sendMessage(jid, {
       text:
-        `📣 *${message}*\n\n` +
-        `👥 *${meta.participants.length} Members* | 🟢 ${activeMembers.length} Active | 🔴 ${inactiveMembers.length} Inactive\n\n` +
-        `━━━━━━━━━━━━━━━━━━━\n` +
-        `🟢 *ACTIVE (last 7 days)*\n${activeLines}\n\n` +
-        `🔴 *INACTIVE*\n${inactiveLines}` +
-        (inactiveMembers.length > 20 ? `\n   _...and ${inactiveMembers.length - 20} more_` : ''),
+        `*🔖 Message:* ${message}\n` +
+        `*🎃 Group:* ${meta.subject}\n` +
+        `*👥 Members:* ${meta.participants.length}\n\n` +
+        memberLines,
       mentions: actualJids,
-    })
+    }, { quoted: msg })
   },
 
   async active({ sock, msg, jid, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const meta = await sock.groupMetadata(jid)
+    const meta   = await sock.groupMetadata(jid)
     const admins = meta.participants.filter(p => p.admin).map(p => p.id)
     if (!admins.includes(senderJid) && !isOwner) return reply('⚠️ Admin only.')
 
-    const activePhones = await db.getActiveUsers(jid, 24 * 7).catch(() => [])
+    const activePhones = await db.getActiveUsers(jid, 24 * 5).catch(() => [])
     const activeSet    = new Set(activePhones)
     const active       = meta.participants.filter(p => activeSet.has(p.id.split('@')[0].split(':')[0]))
 
-    if (!active.length) return reply('📊 No active members found in the last 7 days.')
-    const lines    = active.map(p => `🟢 @${p.id.split('@')[0].split(':')[0]}`).join('\n')
+    const lines    = active.map(p => `□ @${p.id.split('@')[0].split(':')[0]}`).join('\n') || '□ (none)'
     const mentions = active.map(p => p.id)
     await sock.sendMessage(jid, {
-      text: `🟢 *ACTIVE MEMBERS* (last 7 days)\n\n👥 ${active.length} active\n\n${lines}`,
+      text: `⏳ Showing active members in the last 5 days...\n\n${lines}`,
       mentions,
     }, { quoted: msg })
   },
 
   async inactive({ sock, msg, jid, senderJid, isGroup, isOwner, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const meta = await sock.groupMetadata(jid)
+    const meta   = await sock.groupMetadata(jid)
     const admins = meta.participants.filter(p => p.admin).map(p => p.id)
     if (!admins.includes(senderJid) && !isOwner) return reply('⚠️ Admin only.')
 
-    const activePhones = await db.getActiveUsers(jid, 24 * 7).catch(() => [])
+    const activePhones = await db.getActiveUsers(jid, 24 * 5).catch(() => [])
     const activeSet    = new Set(activePhones)
     const inactive     = meta.participants.filter(p => !activeSet.has(p.id.split('@')[0].split(':')[0]))
 
-    if (!inactive.length) return reply('📊 Everyone has been active in the last 7 days!')
-    const lines    = inactive.map(p => `🔴 @${p.id.split('@')[0].split(':')[0]}`).join('\n')
+    const lines    = inactive.map(p => `□ @${p.id.split('@')[0].split(':')[0]}`).join('\n') || '□ (none)'
     const mentions = inactive.map(p => p.id)
     await sock.sendMessage(jid, {
-      text: `🔴 *INACTIVE MEMBERS* (last 7 days)\n\n👥 ${inactive.length} inactive\n\n${lines}`,
+      text: `⏳ Showing inactive members in the last 5 days...\n\n${lines}`,
       mentions,
     }, { quoted: msg })
   },
@@ -785,22 +774,37 @@ module.exports = {
   },
 
   async myid({ sock, jid, sender, msg, reply }) {
-    const websiteUrl = process.env.WEBSITE_URL || 'https://konosuba-bot.vercel.app'
     await reply(
-      `🆔 *Your Bot ID*\n` +
-      `━━━━━━━━━━━━━━━━━\n\n` +
-      `Your unique ID is:\n` +
+      `🆔 *Your Bot ID + Full Setup Guide*\n` +
+      `━━━━━━━━━━━━━━\n\n` +
+      `Hey there 👋 Welcome to Konosuba Bot!\n\n` +
+      `Your unique account ID is:\n` +
       `*${sender}*\n\n` +
-      `📋 _Copy the number above (no spaces)._\n\n` +
-      `🌐 *To login on the website:*\n` +
-      `1. Go to: ${websiteUrl}\n` +
-      `2. Tap *Login*\n` +
-      `3. Enter *${sender}* as your Phone / ID\n` +
-      `4. Enter the password you set with *.reg*\n\n` +
-      `❓ *Haven't registered yet?*\n` +
-      `Send: *.reg YourName | YourPassword*\n` +
-      `Example: _.reg Shadow | mypass123_\n\n` +
-      `> This ID is how the bot and website recognise you.`
+      `📋 *How to copy it*\n` +
+      `Tap and hold the number above → Copy.\n` +
+      `Make sure there are no spaces before or after it. That number is basically your username in the bot system.\n\n` +
+      `🌐 *Logging into the website*\n` +
+      `1. *Open the site*: Go to https://konosuba-bot.vercel.app in Chrome, Safari, or whatever browser you use.\n` +
+      `2. *Tap Login*: You'll see the Login button right on the homepage.\n` +
+      `3. *Enter your ID*: Paste \`${sender}\` into the Phone / ID field. This tells the website which bot account is yours.\n` +
+      `4. *Enter your password*: Use the password you set when you registered with \`.reg\`. If you forgot it, you'll need to re-register with a new one.\n\n` +
+      `🔒 *Why this ID matters*\n` +
+      `Think of it like your game save file. The bot in WhatsApp and the dashboard on the website both use this ID to recognize you, load your stats, inventory, balance, etc. Without it, the site won't know which account to open.\n\n` +
+      `❓ *First time here? You need to register*\n` +
+      `If you've never set a password, do this first in WhatsApp:\n` +
+      `Send: \`.reg YourName | YourPassword\`\n\n` +
+      `*Example*: \`.reg Shadow | mypass123\`\n\n` +
+      `Rules for it:\n` +
+      `*YourName*: Pick anything you want people to see. No spaces if you want it clean.\n` +
+      `*YourPassword*: Make it something you'll remember. You'll use this on the website too.\n\n` +
+      `After you send that, the bot will reply with your ID. Save it somewhere safe.\n\n` +
+      `⚠️ *Important tips*\n` +
+      `1. *Keep your ID + password private*. Anyone with both can log into your account.\n` +
+      `2. *One ID per person*. Don't share it even with friends.\n` +
+      `3. *Lost password?* Just run \`.reg\` again with a new password. Your ID stays the same.\n` +
+      `4. *Site not loading?* Refresh and check your internet. Vercel links work best on mobile data or WiFi with no VPN.\n\n` +
+      `That's the whole setup. Once you're in, you can manage coins, items, profiles, and more from the dashboard.\n\n` +
+      `Need help with \`.reg\` or can't get into the site? Contact the mods and tell them what error you're seeing and they'll walk you through it.`
     )
   },
 
