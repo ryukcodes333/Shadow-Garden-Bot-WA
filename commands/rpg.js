@@ -302,7 +302,7 @@ function getPlayerStats(user) {
   const hpBonus = cls ? cls.hpBonus : 0
   const atkBonus = cls ? cls.atkBonus : 0
   return {
-    maxHp: 100 + level * 12 + hpBonus,
+    maxHp: 200 + hpBonus,
     atk: 20 + level * 3 + atkBonus,
     cls,
   }
@@ -814,9 +814,19 @@ module.exports = {
     await sendImgOrReply(sock, jid, img, battleText, reply)
   },
 
-  async heal({ sock, jid, reply, sender }) {
+  async heal({ sock, jid, reply, sender, user }) {
     const s = dungeonSessions[sender]
-    if (!s) return reply(`💊 Use *.dungeon* first.`)
+    if (!s) {
+      // Outside dungeon — show restored status
+      const u = user || await db.getOrCreateUser(sender).catch(() => null)
+      const stats = u ? getPlayerStats(u) : { maxHp: 200, atk: 20 }
+      return reply(
+        `💊 *HP FULLY RESTORED*\n\n` +
+        `❤️  HP: ${stats.maxHp}/${stats.maxHp}  💪 Ready for battle!\n\n` +
+        `_Use *.dungeon* to enter the dungeon._\n` +
+        `_Use *.pheal* to heal your Pokémon party._ 🖤`
+      )
+    }
     if (s.playerHp >= s.playerMaxHp) return reply(
       `❤️ *ALREADY FULL*\n\nYour HP is at maximum — save the potion!\n\n` +
       `⚔️  YOU  ${hpBar(s.playerHp, s.playerMaxHp)}  ${s.playerHp}/${s.playerMaxHp}`
@@ -958,8 +968,10 @@ module.exports = {
 
   // ─── SKILL USE HELPER ────────────────────────────────────────
   async _useSkill(sender, user, baseSkill, session) {
+    // Always fetch fresh skill_xp from DB to avoid stale evolution state
+    const freshUser = await db.getOrCreateUser(sender).catch(() => user)
     let skillXp = {}
-    try { skillXp = JSON.parse(user.skill_xp || '{}') } catch {}
+    try { skillXp = JSON.parse((freshUser || user).skill_xp || '{}') } catch {}
 
     // Find the current evolution of the base skill
     let currentSkill = baseSkill
@@ -1005,17 +1017,18 @@ module.exports = {
       reward.xp    = Math.floor(reward.xp    * 1.5)
     }
 
-    // Level up check
-    const newXp    = (user.xp || 0) + reward.xp
-    const xpNeeded = (user.level || 1) * 1000
-    const levelUp  = newXp >= xpNeeded
-    const newLevel = levelUp ? (user.level || 1) + 1 : (user.level || 1)
+    // Level up check (uses rpg_xp to keep RPG XP separate from economy XP)
+    const newRpgXp  = (user.rpg_xp || 0) + reward.xp
+    const xpNeeded  = (user.level || 1) * 1000
+    const levelUp   = newRpgXp >= xpNeeded
+    const newLevel  = levelUp ? (user.level || 1) + 1 : (user.level || 1)
+    const newXp     = levelUp ? newRpgXp - xpNeeded : newRpgXp
 
     await db.updateUser(sender, {
-      wallet: (user.wallet || 0) + reward.coins,
-      gems:   (user.gems   || 0) + reward.gems,
-      xp:     levelUp ? newXp - xpNeeded : newXp,
-      level:  newLevel,
+      rpg_wallet: (user.rpg_wallet || 0) + reward.coins,
+      gems:       (user.gems       || 0) + reward.gems,
+      rpg_xp:     newXp,
+      level:      newLevel,
     })
 
     // Advance session to next floor
@@ -1062,6 +1075,10 @@ module.exports = {
         await sock.sendMessage(jid, { image: monsterImg, caption: `👾 *${session.enemy.name}* appears on Floor ${nextFloor}!\n⚡ *${session.enemy.ability.name}* — _${session.enemy.ability.desc}_\n\n_Choose your move wisely._ 🖤` })
       }
     } catch {}
+  },
+
+  async pheal({ reply }) {
+    await reply(`💊 Use *#pheal* (with # prefix) to heal your Pokémon party.\n\n_Example: #pheal_`)
   },
 
   async _dungeonLoss(reply, sender, session) {

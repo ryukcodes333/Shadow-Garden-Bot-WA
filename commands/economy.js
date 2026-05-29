@@ -8,29 +8,31 @@ const TXN_APPROVED_IMG = path.join(__dirname, '../assets/txnapproved.jpg')
 const DAILY_COINS = [200, 350, 500, 750, 1000]
 const DAILY_GEMS  = [5, 10, 15, 20, 30]
 const SHOP_ITEMS  = {
-  sword:      { name: 'Sword',           price: 500,   type: 'weapon',   emoji: '⚔️' },
-  shield:     { name: 'Shield',          price: 400,   type: 'weapon',   emoji: '🛡️' },
-  bow:        { name: 'Bow',             price: 350,   type: 'weapon',   emoji: '🏹' },
-  dagger:     { name: 'Dagger',          price: 300,   type: 'weapon',   emoji: '🗡️' },
-  axe:        { name: 'Battle Axe',      price: 650,   type: 'weapon',   emoji: '🪓' },
-  staff_wep:  { name: 'Magic Staff',     price: 700,   type: 'weapon',   emoji: '🪄' },
-  spear:      { name: 'Spear',           price: 550,   type: 'weapon',   emoji: '🔱' },
-  armor:      { name: 'Iron Armor',      price: 800,   type: 'armor',    emoji: '🥋' },
-  helmet:     { name: 'Steel Helmet',    price: 450,   type: 'armor',    emoji: '⛑️' },
-  boots:      { name: 'Shadow Boots',    price: 380,   type: 'armor',    emoji: '👟' },
-  potion:     { name: 'Health Potion',   price: 100,   type: 'consumable',emoji: '🧪' },
-  elixir:     { name: 'Mana Elixir',     price: 120,   type: 'consumable',emoji: '💙' },
-  energy:     { name: 'Energy Drink',    price: 80,    type: 'consumable',emoji: '⚡' },
-  antidote:   { name: 'Antidote',        price: 90,    type: 'consumable',emoji: '💊' },
-  bomb:       { name: 'Shadow Bomb',     price: 200,   type: 'consumable',emoji: '💣' },
-  ticket:     { name: 'Luck Ticket',     price: 150,   type: 'tool',     emoji: '🎟️' },
-  pickaxe:    { name: 'Pickaxe',         price: 280,   type: 'tool',     emoji: '⛏️' },
-  fishingrod: { name: 'Fishing Rod',     price: 220,   type: 'tool',     emoji: '🎣' },
-  map:        { name: 'Treasure Map',    price: 500,   type: 'tool',     emoji: '🗺️' },
-  lantern:    { name: 'Shadow Lantern',  price: 180,   type: 'tool',     emoji: '🏮' },
-  ring:       { name: 'Power Ring',      price: 950,   type: 'accessory',emoji: '💍' },
-  amulet:     { name: 'Mana Amulet',     price: 850,   type: 'accessory',emoji: '📿' },
-  cloak:      { name: 'Shadow Cloak',    price: 1200,  type: 'accessory',emoji: '🧣' },
+  sword:        { name: 'Sword',              price: 500,   type: 'weapon',    emoji: '⚔️' },
+  shield:       { name: 'Shield',             price: 400,   type: 'weapon',    emoji: '🛡️' },
+  bow:          { name: 'Bow',                price: 350,   type: 'weapon',    emoji: '🏹' },
+  dagger:       { name: 'Dagger',             price: 300,   type: 'weapon',    emoji: '🗡️' },
+  axe:          { name: 'Battle Axe',         price: 650,   type: 'weapon',    emoji: '🪓' },
+  staff_wep:    { name: 'Magic Staff',        price: 700,   type: 'weapon',    emoji: '🪄' },
+  spear:        { name: 'Spear',              price: 550,   type: 'weapon',    emoji: '🔱' },
+  armor:        { name: 'Iron Armor',         price: 800,   type: 'armor',     emoji: '🥋' },
+  helmet:       { name: 'Steel Helmet',       price: 450,   type: 'armor',     emoji: '⛑️' },
+  boots:        { name: 'Shadow Boots',       price: 380,   type: 'armor',     emoji: '👟' },
+  potion:       { name: 'Health Potion',      price: 100,   type: 'consumable',emoji: '🧪' },
+  elixir:       { name: 'Mana Elixir',        price: 120,   type: 'consumable',emoji: '💙' },
+  energy:       { name: 'Energy Drink',       price: 80,    type: 'consumable',emoji: '⚡' },
+  antidote:     { name: 'Antidote',           price: 90,    type: 'consumable',emoji: '💊' },
+  bomb:         { name: 'Shadow Bomb',        price: 200,   type: 'consumable',emoji: '💣' },
+  ticket:       { name: 'Luck Ticket',        price: 150,   type: 'tool',      emoji: '🎟️' },
+  pickaxe:      { name: 'Pickaxe',            price: 280,   type: 'tool',      emoji: '⛏️' },
+  fishingrod:   { name: 'Fishing Rod',        price: 220,   type: 'tool',      emoji: '🎣' },
+  map:          { name: 'Treasure Map',       price: 500,   type: 'tool',      emoji: '🗺️' },
+  lantern:      { name: 'Shadow Lantern',     price: 180,   type: 'tool',      emoji: '🏮' },
+  ring:         { name: 'Power Ring',         price: 950,   type: 'accessory', emoji: '💍' },
+  amulet:       { name: 'Mana Amulet',        price: 850,   type: 'accessory', emoji: '📿' },
+  cloak:        { name: 'Shadow Cloak',       price: 1200,  type: 'accessory', emoji: '🧣' },
+  bank_note_10k:  { name: 'Bank Note (10K)',  price: 5000,  type: 'bank',      emoji: '💵', bankBonus: 50000 },
+  bank_note_100k: { name: 'Bank Note (100K)', price: 40000, type: 'bank',      emoji: '💴', bankBonus: 500000 },
 }
 
 const CD_DAILY = 24 * 3600
@@ -58,6 +60,7 @@ module.exports = {
     const caption =
       `*💰 ACCOUNT BALANCE 💰*\n\n` +
       `*🏦 Bank:* \`\`\`${(u.bank || 0).toLocaleString()}\`\`\`\n` +
+      `*🏦 Bank Limit:* \`\`\`${(u.bank_limit || 50000).toLocaleString()}\`\`\`\n` +
       `*👛 Wallet:* \`\`\`${(u.wallet || 0).toLocaleString()}\`\`\`\n\n` +
       `*💫 Total:* \`\`\`${total.toLocaleString()}\`\`\``
     if (fs.existsSync(BANK_CARD_IMG)) {
@@ -123,8 +126,17 @@ module.exports = {
     const amount = args[0]?.toLowerCase() === 'all' ? u.wallet : parseInt(args[0])
     if (!amount || amount <= 0) return reply('❌ Usage: `.deposit <amount>` or `.deposit all`')
     if (amount > (u.wallet || 0)) return reply(`❌ Not enough in wallet! Wallet: $${(u.wallet || 0).toLocaleString()}`)
-    await db.updateUser(sender, { wallet: (u.wallet || 0) - amount, bank: (u.bank || 0) + amount })
-    await reply(`🎉 You have successfully deposited ${amount.toLocaleString()} to your bank.`)
+    const bankLimit = u.bank_limit || 50000
+    const currentBank = u.bank || 0
+    const remaining = bankLimit - currentBank
+    if (remaining <= 0) return reply(`❌ Bank full! Limit: $${bankLimit.toLocaleString()}\n\n💵 Buy a *Bank Note* at *.shop* to increase your limit.`)
+    const actualDeposit = Math.min(amount, remaining)
+    await db.updateUser(sender, { wallet: (u.wallet || 0) - actualDeposit, bank: currentBank + actualDeposit })
+    if (actualDeposit < amount) {
+      await reply(`🎉 Deposited $${actualDeposit.toLocaleString()} (bank limit reached!)\n\n🏦 Bank: $${(currentBank + actualDeposit).toLocaleString()} / $${bankLimit.toLocaleString()}\n💵 Buy a *Bank Note* at *.shop* to increase your limit.`)
+    } else {
+      await reply(`🎉 Deposited $${actualDeposit.toLocaleString()} to your bank.\n\n🏦 Bank: $${(currentBank + actualDeposit).toLocaleString()} / $${bankLimit.toLocaleString()}`)
+    }
   },
   async dep(ctx) { return module.exports.deposit(ctx) },
 
@@ -296,6 +308,16 @@ module.exports = {
       if ((u.wallet || 0) < data.price) return reply(`❌ Need $${data.price}. You have $${(u.wallet || 0).toLocaleString()}`)
       await db.updateUser(sender, { wallet: (u.wallet || 0) - data.price })
     }
+    // Bank note: instantly applies bank limit bonus instead of going to inventory
+    if (data.bankBonus) {
+      const newLimit = (u.bank_limit || 50000) + data.bankBonus
+      await db.updateUser(sender, { bank_limit: newLimit })
+      return reply(
+        `✅ *Bank Note Applied!*\n\n${data.emoji} *${data.name}*\n\n` +
+        `🏦 Bank limit increased by $${data.bankBonus.toLocaleString()}!\n` +
+        `📈 New limit: $${newLimit.toLocaleString()}`
+      )
+    }
     await db.addItem(sender, data.name)
     await reply(`✅ *Purchased!*\n\n${data.emoji} *${data.name}* added to your inventory.`)
   },
@@ -334,7 +356,22 @@ module.exports = {
     await reply(`✨ Used *${found.item}* - effect applied!`)
   },
 
-  async register({ reply, sender, pushName, args }) {
+  async register({ sock, jid, reply, sender, senderJid, pushName, args, isGroup }) {
+    // Registration must be done in DM for security
+    if (isGroup) {
+      try {
+        await sock.sendMessage(`${sender}@s.whatsapp.net`, {
+          text:
+            `🔐 *REGISTRATION*\n\n` +
+            `For security, registration must be done here in DM.\n\n` +
+            `📝 *Usage:* \`.reg <name> | <password>\`\n` +
+            `Example: \`.reg Shadow Reaper | mypassword123\`\n\n` +
+            `_Your password is private — never share it in groups._ 🖤`,
+        })
+      } catch {}
+      return reply(`🔐 Registration is private! Please check your *DMs* for instructions.`)
+    }
+
     const existing = await db.getUser(sender).catch(() => null)
     if (existing && existing.bio && existing.bio !== '') return reply('⚠️ Already registered.')
 
@@ -349,13 +386,11 @@ module.exports = {
       return reply('❌ Password cannot be empty.\nUsage: `.reg <name> | <password>`')
     }
 
-    // Ensure user document exists — getOrCreateUser handles duplicates gracefully
     const userDoc = await db.getOrCreateUser(sender, name).catch(() => null)
     if (!userDoc) {
       return reply('❌ Registration failed — the database may be offline. Please try again in a moment.')
     }
 
-    // Update registration fields; don't gate success on the return value
     await db.updateUser(sender, { name, password, bio: 'Konosuba Member' }).catch(() => {})
 
     await reply(
@@ -406,19 +441,32 @@ module.exports = {
   async pstats(ctx) { return module.exports.stats(ctx) },
 
   async cds({ reply, sender }) {
-    const commands = ['daily', 'work', 'fish', 'dig', 'beg']
-    const lines    = []
-    for (const cmd of commands) {
-      const remaining = await db.getCooldown(sender, cmd)
+    const commands = [
+      { key: 'work',   label: '.work'   },
+      { key: 'fish',   label: '.fish'   },
+      { key: 'dig',    label: '.dig'    },
+      { key: 'beg',    label: '.beg'    },
+      { key: 'crime',  label: '.crime'  },
+      { key: 'rob',    label: '.rob'    },
+      { key: 'heist',  label: '.heist'  },
+      { key: 'bonus',  label: '.bonus'  },
+      { key: 'dungeon',label: '.dungeon'},
+      { key: 'adventure',label: '.adventure'},
+    ]
+    const lines = []
+    for (const { key, label } of commands) {
+      const remaining = await db.getCooldown(sender, key)
       if (remaining > 0) {
-        const mins = Math.floor(remaining / 60000)
+        const hrs  = Math.floor(remaining / 3600000)
+        const mins = Math.floor((remaining % 3600000) / 60000)
         const secs = Math.floor((remaining % 60000) / 1000)
-        lines.push(`⏳ .${cmd} - ${mins > 0 ? `${mins}m ` : ''}${secs}s`)
+        const timeStr = hrs > 0 ? `${hrs}h ${mins}m` : mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
+        lines.push(`⏳ \`${label}\` | *${timeStr}*`)
       } else {
-        lines.push(`✅ .${cmd} - ready`)
+        lines.push(`✅ \`${label}\` | *Ready!*`)
       }
     }
-     await reply(`⏱️ *Cooldowns*\n\n${lines.join('\n')}`)
+    await reply(`⏳ *Your Active Cooldowns* ⏳\n\n${lines.join('\n')}`)
   },
   async bc(ctx) { return module.exports.cds(ctx) },
 
@@ -604,8 +652,19 @@ module.exports = {
     await reply('✨ *Prestige*\n\n_Prestige system coming soon! Keep grinding._')
   },
 
-  async bankupgrade({ reply }) {
-    await reply('🏦 *Bank Upgrade*\n\n_Bank upgrades coming soon!_')
+  async bankupgrade({ reply, sender, user }) {
+    const u = user || await db.getOrCreateUser(sender)
+    await reply(
+      `🏦 *BANK UPGRADE*\n\n` +
+      `📊 *Current Limit:* $${(u.bank_limit || 50000).toLocaleString()}\n` +
+      `💰 *Current Bank:* $${(u.bank || 0).toLocaleString()}\n\n` +
+      `━━━━━━━━━━━━━━━━━━━\n\n` +
+      `📋 *Available Bank Notes:*\n\n` +
+      `💵 *Bank Note (10K)* — $5,000\n   Increases limit by +$50,000\n   \`.buy bank_note_10k\`\n\n` +
+      `💴 *Bank Note (100K)* — $40,000\n   Increases limit by +$500,000\n   \`.buy bank_note_100k\`\n\n` +
+      `━━━━━━━━━━━━━━━━━━━\n` +
+      `_Bank notes are applied instantly!_ 🖤`
+    )
   },
 
   async withdrawall({ reply, sender, user }) {

@@ -456,11 +456,16 @@ module.exports = {
 
     await db.updateUser(sender, { xp: newXp, level: newLvl })
 
+    // Enforce party max of 6 — overflow goes to PC
+    const allPokemon  = await db.getUserPokemon(sender).catch(() => [])
+    const partyCount  = (allPokemon || []).filter(p => p.in_party).length
+    const goToParty   = partyCount < 6
+
     try {
       await db.addPokemon(sender, {
         pokemon_id: poke.id, name: poke.name, types: poke.types,
         level: 1, xp: 0, moves: poke.moves || [], abilities: poke.abilities || [],
-        ball: ballKey, slot, in_party: true, base_xp: poke.baseXp,
+        ball: ballKey, slot: goToParty ? slot : null, in_party: goToParty, base_xp: poke.baseXp,
         height: poke.height, weight: poke.weight, location: poke.location,
       })
     } catch {}
@@ -473,9 +478,10 @@ module.exports = {
       `📛 *${poke.name}* (No. ${poke.id})\n` +
       `⚡ *Type:* ${poke.types.join(' / ')}\n` +
       `🎯 *Ball Used:* ${ballData.emoji} ${ballData.name}\n` +
-      `📍 *Party Slot:* #${slot}\n\n` +
+      `📍 *Location:* ${goToParty ? `Party Slot #${slot}` : '📦 PC Storage (party full)'}\n\n` +
       `⭐ *+${xpGained} XP gained!*\n` +
       (leveled ? `\n🆙 *LEVEL UP!* ${oldLvl} → ${newLvl} 🎊\n` : '') +
+      (!goToParty ? `\n⚠️ *Party is full!* ${poke.name} sent to PC.\n` : '') +
       `\n_The shadow garden grows stronger._ 🖤`
 
     if (poke.imageUrl) {
@@ -583,10 +589,18 @@ module.exports = {
     await sock.sendMessage(jid, { text: caption }, { quoted: msg })
   },
 
-  // ── #heal ─────────────────────────────────────────────────────
-  async heal({ reply }) {
-    await reply(`✨ *TEAM HEALED!*\n\n💚 All Pokémon fully restored!\n\n_The healing light washes over your team._ 🖤`)
+  // ── #heal / #pheal ────────────────────────────────────────────
+  async heal({ reply, sender }) {
+    const cd = await db.getCooldown(sender, 'pheal').catch(() => 0)
+    if (cd > 0) {
+      const mins = Math.floor(cd / 60000)
+      const secs = Math.floor((cd % 60000) / 1000)
+      return reply(`⏳ *Team already healing!*\n\n⏰ Ready in *${mins > 0 ? `${mins}m ` : ''}${secs}s*`)
+    }
+    await db.setCooldown(sender, 'pheal', 30 * 60)
+    await reply(`✨ *TEAM HEALED!*\n\n💚 All Pokémon fully restored!\n\n⏳ Next heal in *30 minutes*.\n\n_The healing light washes over your team._ 🖤`)
   },
+  async pheal(ctx) { return module.exports.heal(ctx) },
 
   // ── #boost ────────────────────────────────────────────────────
   async boost({ reply, sender }) {

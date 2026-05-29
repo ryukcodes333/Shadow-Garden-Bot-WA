@@ -309,9 +309,18 @@ module.exports = {
   },
 
   async ping({ sock, msg, jid }) {
-    const start = Date.now()
-    const ping = Date.now() - start
-    await sock.sendMessage(jid, { text: `🏓 Pong! ${ping}ms` }, { quoted: msg })
+    const start  = Date.now()
+    const sent   = await sock.sendMessage(jid, { text: '🏓 Measuring latency...' }, { quoted: msg })
+    const ping   = Date.now() - start
+    const mem    = process.memoryUsage()
+    await sock.sendMessage(jid, {
+      text:
+        `🏓 *PONG!*\n\n` +
+        `⚡ *Latency:* ${ping} ms\n` +
+        `⏱️ *Uptime:* ${uptime()}\n` +
+        `🧠 *RAM:* ${(mem.heapUsed / 1024 / 1024).toFixed(1)} MB\n` +
+        `📡 *Status:* 🟢 Online`
+    }, { quoted: msg })
   },
 
   async speed({ sock, msg, jid }) {
@@ -419,7 +428,15 @@ module.exports = {
   },
 
   async website({ reply }) {
-    await reply(`🌐 Website coming soon`)
+    const url = process.env.WEBSITE_URL || 'https://shadow-garden-bot.vercel.app'
+    await reply(
+      `🌐 *SHADOW GARDEN BOT*\n\n` +
+      `🔗 Website: ${url}\n\n` +
+      `📝 *Login with:*\n` +
+      `• Your phone number (use *.myid*)\n` +
+      `• Password set with *.reg*\n\n` +
+      `_Not registered? Send *.reg* in DM._ 🖤`
+    )
   },
 
   async community({ reply }) {
@@ -520,20 +537,65 @@ module.exports = {
     const admins = meta.participants.filter(p => p.admin).map(p => p.id)
     if (!admins.includes(senderJid) && !isOwner) return reply('⚠️ Admin only.')
 
-    const message    = args.join(' ') || 'Attention everyone!'
-    const actualJids = meta.participants.map(p => p.id)
+    const message      = args.join(' ') || 'Attention everyone!'
+    const actualJids   = meta.participants.map(p => p.id)
     const activePhones = await db.getActiveUsers(jid, 24 * 7).catch(() => [])
-    const activeSet  = new Set(activePhones)
+    const activeSet    = new Set(activePhones)
 
-    const memberLines = meta.participants.map(p => {
-      const num = p.id.split('@')[0].split(':')[0]
-      return `${activeSet.has(num) ? '🟢' : '🔴'} @${num}`
-    }).join('\n')
+    const activeMembers   = meta.participants.filter(p => activeSet.has(p.id.split('@')[0].split(':')[0]))
+    const inactiveMembers = meta.participants.filter(p => !activeSet.has(p.id.split('@')[0].split(':')[0]))
+
+    const activeLines   = activeMembers.map(p => `🟢 @${p.id.split('@')[0].split(':')[0]}`).join('\n') || '   _None_'
+    const inactiveLines = inactiveMembers.slice(0, 20).map(p => `🔴 @${p.id.split('@')[0].split(':')[0]}`).join('\n') || '   _None_'
 
     await sock.sendMessage(jid, {
-      text: `📣 *${message}*\n\n👥 ${meta.participants.length} members\n\n${memberLines}`,
-      mentions: actualJids
+      text:
+        `📣 *${message}*\n\n` +
+        `👥 *${meta.participants.length} Members* | 🟢 ${activeMembers.length} Active | 🔴 ${inactiveMembers.length} Inactive\n\n` +
+        `━━━━━━━━━━━━━━━━━━━\n` +
+        `🟢 *ACTIVE (last 7 days)*\n${activeLines}\n\n` +
+        `🔴 *INACTIVE*\n${inactiveLines}` +
+        (inactiveMembers.length > 20 ? `\n   _...and ${inactiveMembers.length - 20} more_` : ''),
+      mentions: actualJids,
     })
+  },
+
+  async active({ sock, msg, jid, senderJid, isGroup, isOwner, reply }) {
+    if (!isGroup) return reply('❌ Groups only.')
+    const meta = await sock.groupMetadata(jid)
+    const admins = meta.participants.filter(p => p.admin).map(p => p.id)
+    if (!admins.includes(senderJid) && !isOwner) return reply('⚠️ Admin only.')
+
+    const activePhones = await db.getActiveUsers(jid, 24 * 7).catch(() => [])
+    const activeSet    = new Set(activePhones)
+    const active       = meta.participants.filter(p => activeSet.has(p.id.split('@')[0].split(':')[0]))
+
+    if (!active.length) return reply('📊 No active members found in the last 7 days.')
+    const lines    = active.map(p => `🟢 @${p.id.split('@')[0].split(':')[0]}`).join('\n')
+    const mentions = active.map(p => p.id)
+    await sock.sendMessage(jid, {
+      text: `🟢 *ACTIVE MEMBERS* (last 7 days)\n\n👥 ${active.length} active\n\n${lines}`,
+      mentions,
+    }, { quoted: msg })
+  },
+
+  async inactive({ sock, msg, jid, senderJid, isGroup, isOwner, reply }) {
+    if (!isGroup) return reply('❌ Groups only.')
+    const meta = await sock.groupMetadata(jid)
+    const admins = meta.participants.filter(p => p.admin).map(p => p.id)
+    if (!admins.includes(senderJid) && !isOwner) return reply('⚠️ Admin only.')
+
+    const activePhones = await db.getActiveUsers(jid, 24 * 7).catch(() => [])
+    const activeSet    = new Set(activePhones)
+    const inactive     = meta.participants.filter(p => !activeSet.has(p.id.split('@')[0].split(':')[0]))
+
+    if (!inactive.length) return reply('📊 Everyone has been active in the last 7 days!')
+    const lines    = inactive.map(p => `🔴 @${p.id.split('@')[0].split(':')[0]}`).join('\n')
+    const mentions = inactive.map(p => p.id)
+    await sock.sendMessage(jid, {
+      text: `🔴 *INACTIVE MEMBERS* (last 7 days)\n\n👥 ${inactive.length} inactive\n\n${lines}`,
+      mentions,
+    }, { quoted: msg })
   },
 
   async modlist({ sock, jid, msg, reply, isGroup }) {
@@ -591,16 +653,12 @@ module.exports = {
       : msg
 
     try {
-      const buffer  = await downloadMediaMessage(targetMsg, 'buffer', {}, {
+      const buffer = await downloadMediaMessage(targetMsg, 'buffer', {}, {
         logger: { level: () => {}, info: () => {}, warn: () => {}, error: () => {} },
         reuploadRequest: sock.updateMediaMessage,
       })
-      let imgBuf = buffer
-      try {
-        const sharp = require('sharp')
-        imgBuf = await sharp(buffer).jpeg({ quality: 90 }).toBuffer()
-      } catch {}
-      await sock.sendMessage(jid, { image: imgBuf }, { quoted: msg })
+      const stickerBuf = await makeSticker(buffer)
+      await sock.sendMessage(jid, { sticker: stickerBuf }, { quoted: msg })
     } catch (err) {
       await reply(`❌ Sticker failed: ${err.message}`)
     }

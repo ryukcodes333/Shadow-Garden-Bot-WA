@@ -368,7 +368,9 @@ async function handleMessage(sock, msg) {
     // Image filter commands
     if (imagesCmds[cmd])        return await imagesCmds[cmd](ctx)
 
-    // Main commands (menu, ping, sticker, etc.)
+    // Main commands (menu, ping, sticker, active/inactive, etc.)
+    if (cmd === 'active')       return await mainCmds.active(ctx)
+    if (cmd === 'inactive')     return await mainCmds.inactive(ctx)
     if (mainCmds[cmd])          return await mainCmds[cmd](ctx)
 
     // Admin / group management
@@ -403,7 +405,8 @@ async function handleMessage(sock, msg) {
     // Fun commands
     if (funCmds[cmd])           return await funCmds[cmd](ctx)
 
-    // RPG commands
+    // RPG commands (pheal redirects to pokemon heal)
+    if (cmd === 'pheal')        return await pokemonCmds.pheal(ctx)
     if (rpgCmds[cmd])           return await rpgCmds[cmd](ctx)
 
     // UNO commands

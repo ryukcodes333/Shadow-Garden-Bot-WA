@@ -205,7 +205,7 @@ module.exports = {
       if (existing) return reply('❌ Leave your current guild first.')
       const guild = await db.getGuildByName(name)
       if (!guild) return reply('❌ Guild not found.')
-      await db.joinGuild(sender, guild.id)
+      await db.joinGuild(sender, guild._id || guild.id)
       return reply(`✅ *JOINED GUILD*\n\n🏰 ${guild.name}`)
     }
 
@@ -395,17 +395,18 @@ module.exports = {
     if (!targetName) return reply('⚠️ Usage: .guildbattle <guild name>')
     const targetGuild = await db.getGuildByName(targetName)
     if (!targetGuild) return reply(`❌ Guild "${targetName}" not found.`)
-    if (targetGuild.id === myGuild.guild_id) return reply('❌ You can\'t battle your own guild!')
+    const targetGuildId = targetGuild._id || targetGuild.id
+    if (String(targetGuildId) === String(myGuild.guild_id)) return reply('❌ You can\'t battle your own guild!')
     const myScore = (myGuild.level || 1) * 100 + (myGuild.member_count || 1) * 50 + Math.random() * 200
     const theirScore = (targetGuild.level || 1) * 100 + (targetGuild.member_count || 1) * 50 + Math.random() * 200
     const won = myScore > theirScore
     const reward = 500
     if (won) {
       await db.updateGuild(myGuild.guild_id, { wins: (myGuild.wins || 0) + 1, treasury: (myGuild.treasury || 0) + reward })
-      await db.updateGuild(targetGuild.id, { losses: (targetGuild.losses || 0) + 1 })
+      await db.updateGuild(targetGuildId, { losses: (targetGuild.losses || 0) + 1 })
     } else {
       await db.updateGuild(myGuild.guild_id, { losses: (myGuild.losses || 0) + 1 })
-      await db.updateGuild(targetGuild.id, { wins: (targetGuild.wins || 0) + 1, treasury: (targetGuild.treasury || 0) + reward })
+      await db.updateGuild(targetGuildId, { wins: (targetGuild.wins || 0) + 1, treasury: (targetGuild.treasury || 0) + reward })
     }
     await reply(`⚔️ *GUILD BATTLE*\n\n🏰 *${myGuild.name}* vs *${targetGuild.name}*\n\n💥 Score:\n${myGuild.name}: ${Math.floor(myScore)}\n${targetGuild.name}: ${Math.floor(theirScore)}\n\n🏆 Winner: *${won ? myGuild.name : targetGuild.name}*\n💰 +${reward} coins to treasury`)
   },
