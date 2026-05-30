@@ -804,6 +804,25 @@ async function deleteAllUsers() {
   return result.deletedCount
 }
 
+// ── Per-group disabled commands ────────────────────────────────────────────
+async function getGroupDisabledCmds(groupJid) {
+  const g = await Group.findOne({ group_id: groupJid }).lean()
+  return g?.disabled_cmds || []
+}
+
+async function setGroupDisabledCmds(groupJid, cmds) {
+  await Group.findOneAndUpdate(
+    { group_id: groupJid },
+    { disabled_cmds: cmds },
+    { upsert: true }
+  )
+}
+
+// ── Get all staff members (role !== 'member') ──────────────────────────────
+async function getAllStaff() {
+  return User.find({ role: { $nin: ['member', null, ''] } }).lean()
+}
+
 module.exports = {
   supabase,
   // Users
@@ -846,6 +865,10 @@ module.exports = {
   getSuspension, addSuspension, removeSuspension, getSuspensions,
   // Loans
   getLoan, createLoan, repayLoan, deleteLoan, getLoanTierForLevel, LOAN_TIERS,
+  // Per-group disabled commands
+  getGroupDisabledCmds, setGroupDisabledCmds,
+  // All staff
+  getAllStaff,
   // Mongoose instance
   mongoose,
 }
