@@ -168,8 +168,8 @@ async function handleMessage(sock, msg) {
       const quotedParticipant = (msg.message?.extendedTextMessage?.contextInfo?.participant || '').split('@')[0]
       if (quotedParticipant !== mentionedPhone) {
         try {
-          const ms = pokemonCmds.getMentionStickers()
-          if (ms[mentionedPhone]) {
+          const ms = pokemonCmds.getMentionStickers && pokemonCmds.getMentionStickers()
+          if (ms && ms[mentionedPhone]) {
             const stickerBuf = Buffer.from(ms[mentionedPhone].data, 'base64')
             await sock.sendMessage(jid, { sticker: stickerBuf }, { quoted: msg })
           }
@@ -218,7 +218,7 @@ async function handleMessage(sock, msg) {
   const args  = body.split(/\s+/)
   const cmd   = args.shift().toLowerCase()
 
-  const user = await db.getOrCreateUser(sender, msg.pushName || sender).catch(() => null)
+  let user = await db.getOrCreateUser(sender, msg.pushName || sender).catch(() => null)
 
   // ── Banned: silently ignore ───────────────────────────────────
   if (user?.banned && !isOwner) return
@@ -263,10 +263,23 @@ async function handleMessage(sock, msg) {
     }
   }
 
+  // ── Global disabled commands ──────────────────────────────────
   const disabledCmds = await db.getDisabledCommands().catch(() => [])
   if (disabledCmds.some(d => d.command === cmd) && !isOwner) {
-    await sock.sendMessage(jid, { text: `⚠️ *.${cmd}* is currently disabled.` })
+    await sock.sendMessage(jid, { text: `⚠️ *.${cmd}* is currently disabled globally.` })
     return
+  }
+
+  // ── Per-group disabled commands (skip for owner/mod/guardian) ─
+  const isStaff = isOwner || isMod || isGuardian
+  if (isGroup && !isStaff) {
+    try {
+      const groupDisabled = await staffCmds.loadGroupDisabled(jid)
+      if (groupDisabled.has(cmd)) {
+        await sock.sendMessage(jid, { text: `🔒 *.${cmd}* is disabled in this group.` }, { quoted: msg })
+        return
+      }
+    } catch {}
   }
 
   const NO_DB_CMDS = new Set([
@@ -288,75 +301,85 @@ async function handleMessage(sock, msg) {
     'removebg','nobg','enhance','remini','upscale','night','sunset','rain','city','gun','jail','toanime','cartoon','carbon',
     'suspend','unsuspend','suspendlist',
     'market','wallet','bank','weekly','monthly','crime','rob','heist','topmoney','topbank','howgay','lockgroup','unlockgroup','join','exit','listgc',
-    // ── new-user / registration commands always allowed ──────────
     'register','reg','start','p','profile','bal','balance','help','menu',
     'myid','id',
   ])
 
   const reply = (text) => sock.sendMessage(jid, { text }, { quoted: msg })
 
-  // ── Real DB connectivity check (not a user-existence check) ───
   const isDbReady = db.mongoose.connection.readyState === 1
 
   if (!isDbReady && !NO_DB_CMDS.has(cmd)) {
-    return reply(
-      `⏳ *Database Connecting...*\n\nThe bot is still connecting to the database.\nPlease wait a moment and try again!`
-    )
+    return reply(`⏳ *Database Connecting...*\n\nPlease wait a moment and try again!`)
   }
 
-  // If DB is ready but user wasn't fetched (race condition on startup), retry once
   if (isDbReady && !user) {
     try { user = await db.getOrCreateUser(sender, msg.pushName || sender) } catch {}
   }
 
+  // Build mentionedJid list from message
+  const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+
   const ctx = {
     sock, msg, jid, senderJid, sender, args, cmd, user, isGroup, isOwner, isMod, isGuardian, PREFIX,
     pushName: msg.pushName || sender, msgType, textRaw,
+    mentionedJid,
+    groupMetadata: null,   // lazy-loaded below when needed
     reply,
     replyImage: (image, caption) => sock.sendMessage(jid, { image, caption }, { quoted: msg }),
     react: (emoji) => sock.sendMessage(jid, { react: { text: emoji, key: msg.key } }),
+  }
+
+  // Lazy-load groupMetadata for commands that need it
+  const groupCmds = new Set(['addmod','addguardian','removemod','ban','unban','warn','setrole','kick','promote','demote','addbl','rmbl'])
+  if (isGroup && groupCmds.has(cmd)) {
+    ctx.groupMetadata = await sock.groupMetadata(jid).catch(() => null)
   }
 
   try {
     // ── # prefix → Pokémon commands ─────────────────────────────
     if (isPokemon) {
       const pk = pokemonCmds
-      if (cmd === 'phelp')                       return await pk.phelp(ctx)
-      if (cmd === 'start')                       return await pk.start(ctx)
-      if (cmd === 'trainer')                     return await pk.trainer(ctx)
-      if (cmd === 'pdaily')                      return await pk.pdaily(ctx)
-      if (cmd === 'quests')                      return await pk.quests(ctx)
-      if (cmd === 'rank')                        return await pk.rank(ctx)
+      if (cmd === 'phelp')                       return await pk.phelp?.(ctx)
+      if (cmd === 'start')                       return await pk.start?.(ctx)
+      if (cmd === 'trainer')                     return await pk.trainer?.(ctx)
+      if (cmd === 'pdaily')                      return await pk.pdaily?.(ctx)
+      if (cmd === 'quests')                      return await pk.quests?.(ctx)
+      if (cmd === 'rank')                        return await pk.rank?.(ctx)
       if (cmd === 'hunt' || cmd === 'wb')        return await pk.hunt(ctx)
       if (cmd === 'catch' || cmd === 'c')        return await pk.catch(ctx)
-      if (cmd === 'spawnp' || cmd === 'spawn')   return await pk.spawnp(ctx)
-      if (cmd === 'team')                        return await pk.team(ctx)
+      if (cmd === 'spawnp' || cmd === 'spawn')   return await pk.spawnp?.(ctx)
+      if (cmd === 'team')                        return await pk.team?.(ctx)
       if (cmd === 'party')                       return await pk.party(ctx)
-      if (cmd === 'pc')                          return await pk.pc(ctx)
-      if (cmd === 'swap' || cmd === 'pswap')     return await pk.swap(ctx)
+      if (cmd === 'pc')                          return await pk.pc?.(ctx)
+      if (cmd === 'swap' || cmd === 'pswap')     return await pk.swap?.(ctx)
       if (cmd === 'battle' || cmd === 'pbattle') return await pk.battle(ctx)
-      if (cmd === 'gym')                         return await pk.gym(ctx)
-      if (cmd === 'raid')                        return await pk.raid(ctx)
-      if (cmd === 'heal' || cmd === 'pheal')     return await pk.heal(ctx)
-      if (cmd === 'boost')                       return await pk.boost(ctx)
+      if (cmd === 'gym')                         return await pk.gym?.(ctx)
+      if (cmd === 'raid')                        return await pk.raid?.(ctx)
+      if (cmd === 'heal' || cmd === 'pheal')     return await pk.pheal(ctx)
+      if (cmd === 'fight')                       return await pk.fight(ctx)
+      if (cmd === 'move')                        return await pk.move(ctx)
+      if (cmd === 'flee')                        return await pk.flee(ctx)
+      if (cmd === 'boost')                       return await pk.boost?.(ctx)
       if (cmd === 'evolve')                      return await pk.evolve(ctx)
-      if (cmd === 'train')                       return await pk.train(ctx)
-      if (cmd === 'moves')                       return await pk.moves(ctx)
-      if (cmd === 'learn')                       return await pk.learn(ctx)
-      if (cmd === 'stats' || cmd === 'pstats')   return await pk.stats(ctx)
-      if (cmd === 'mart')                        return await pk.mart(ctx)
-      if (cmd === 'mbuy')                        return await pk.mbuy(ctx)
-      if (cmd === 'use' || cmd === 'puse')       return await pk.use(ctx)
-      if (cmd === 'trade' || cmd === 'ptrade')   return await pk.trade(ctx)
-      if (cmd === 'gift' || cmd === 'pgive')     return await pk.gift(ctx)
-      if (cmd === 'dex')                         return await pk.dex(ctx)
-      if (cmd === 'event')                       return await pk.event(ctx)
-      if (cmd === 'legend')                      return await pk.legend(ctx)
-      if (cmd === 'achieve')                     return await pk.achieve(ctx)
-      if (cmd === 'cooldown')                    return await pk.cooldown(ctx)
-      if (cmd === 'pokemon')                     return await pk.pokemon(ctx)
-      if (cmd === 'setms')                       return await pk.setms(ctx)
-      if (cmd === 'delms')                       return await pk.delms(ctx)
+      if (cmd === 'pokedex' || cmd === 'dex')    return await pk.pokedex(ctx)
+      if (cmd === 'release')                     return await pk.release(ctx)
+      if (cmd === 'train')                       return await pk.train?.(ctx)
+      if (cmd === 'moves')                       return await pk.moves?.(ctx)
+      if (cmd === 'learn')                       return await pk.learn?.(ctx)
+      if (cmd === 'stats' || cmd === 'pstats')   return await pk.stats?.(ctx)
+      if (cmd === 'mart')                        return await pk.mart?.(ctx)
+      if (cmd === 'mbuy')                        return await pk.mbuy?.(ctx)
+      if (cmd === 'use' || cmd === 'puse')       return await pk.use?.(ctx)
+      if (cmd === 'trade' || cmd === 'ptrade')   return await pk.trade?.(ctx)
+      if (cmd === 'gift' || cmd === 'pgive')     return await pk.gift?.(ctx)
+      if (cmd === 'event')                       return await pk.event?.(ctx)
+      if (cmd === 'legend')                      return await pk.legend?.(ctx)
+      if (cmd === 'achieve')                     return await pk.achieve?.(ctx)
+      if (cmd === 'cooldown')                    return await pk.cooldown?.(ctx)
+      if (cmd === 'pokemon')                     return await pk.pokemon?.(ctx)
+      if (cmd === 'setms')                       return await pk.setms?.(ctx)
+      if (cmd === 'delms')                       return await pk.delms?.(ctx)
       return
     }
 
@@ -368,7 +391,7 @@ async function handleMessage(sock, msg) {
     // Image filter commands
     if (imagesCmds[cmd])        return await imagesCmds[cmd](ctx)
 
-    // Main commands (menu, ping, sticker, active/inactive, etc.)
+    // Main commands
     if (cmd === 'active')       return await mainCmds.active(ctx)
     if (cmd === 'inactive')     return await mainCmds.inactive(ctx)
     if (mainCmds[cmd])          return await mainCmds[cmd](ctx)
@@ -391,13 +414,17 @@ async function handleMessage(sock, msg) {
     // Game commands
     if (gameCmds[cmd])          return await gameCmds[cmd](ctx)
 
-    // Legacy . prefix Pokémon commands
-    if (cmd === 'wb')           return await pokemonCmds.hunt(ctx)
-    if (cmd === 'phelp')        return await pokemonCmds.phelp(ctx)
-    if (cmd === 'pokemon')      return await pokemonCmds.pokemon(ctx)
-    if (cmd === 'setms')        return await pokemonCmds.setms(ctx)
-    if (cmd === 'delms')        return await pokemonCmds.delms(ctx)
-    if (pokemonCmds[cmd])       return await pokemonCmds[cmd](ctx)
+    // ── Dot-prefix Pokémon commands ──────────────────────────────
+    if (cmd === 'hunt' || cmd === 'wb')    return await pokemonCmds.hunt(ctx)
+    if (cmd === 'phelp')                   return await pokemonCmds.pheal(ctx)
+    if (cmd === 'fight')                   return await pokemonCmds.fight(ctx)
+    if (cmd === 'move')                    return await pokemonCmds.move(ctx)
+    if (cmd === 'flee')                    return await pokemonCmds.flee(ctx)
+    if (cmd === 'party')                   return await pokemonCmds.party(ctx)
+    if (cmd === 'pokedex' || cmd === 'dex')return await pokemonCmds.pokedex(ctx)
+    if (cmd === 'evolve')                  return await pokemonCmds.evolve(ctx)
+    if (cmd === 'release')                 return await pokemonCmds.release(ctx)
+    if (pokemonCmds[cmd])                  return await pokemonCmds[cmd](ctx)
 
     // Interactions (hug, kiss, slap, etc.)
     if (interactionCmds[cmd])   return await interactionCmds[cmd](ctx)
@@ -405,14 +432,25 @@ async function handleMessage(sock, msg) {
     // Fun commands
     if (funCmds[cmd])           return await funCmds[cmd](ctx)
 
-    // RPG commands (pheal redirects to pokemon heal)
+    // ── RPG commands ─────────────────────────────────────────────
     if (cmd === 'pheal')        return await pokemonCmds.pheal(ctx)
+
+    // RPG map/quest commands
+    if (cmd === 'explore')      return await rpgCmds.explore(ctx)
+    if (cmd === 'move')         return await rpgCmds.move(ctx)
+    if (cmd === 'myquest')      return await rpgCmds.myquest(ctx)
+    if (cmd === 'quest')        return await rpgCmds.quest(ctx)
+    if (cmd === 'abandquest')   return await rpgCmds.abandquest(ctx)
+    if (cmd === 'questclaim')   return await rpgCmds.questclaim(ctx)
+    if (cmd === 'worldmap')     return await rpgCmds.worldmap(ctx)
+    if (cmd === 'loot')         return await rpgCmds.loot(ctx)
     if (rpgCmds[cmd])           return await rpgCmds[cmd](ctx)
 
     // UNO commands
     if (unoCmds[cmd])           return await unoCmds[cmd](ctx)
 
-    // Gamble commands (bet, slots, roulette, horse, casino, etc.)
+    // Gamble commands
+    if (cmd === 'gamble' || cmd === 'bet') return await gambleCmds[cmd]?.(ctx) || gambleCmds['gamble']?.(ctx)
     if (gambleCmds[cmd])        return await gambleCmds[cmd](ctx)
 
     // Summer event commands
@@ -424,50 +462,59 @@ async function handleMessage(sock, msg) {
     // Converter / calc / currency commands
     if (converterCmds[cmd])     return await converterCmds[cmd](ctx)
 
-    // Staff commands
-    if (cmd === 'resetallusers') return await staffCmds['resetallusers'](ctx)
-    if (staffCmds[cmd])         return await staffCmds[cmd](ctx)
-    // Group join/exit/list commands (routed through staffCmds)
-    if (cmd === 'join')          return await staffCmds['join'] ? staffCmds['join'](ctx) : ctx.reply('❌ .join <invite link>')
-    if (cmd === 'exit')          return await staffCmds['exit'] ? staffCmds['exit'](ctx) : ctx.reply('❌ Groups only.')
-    if (cmd === 'listgc')        return await staffCmds['listgc'] ? staffCmds['listgc'](ctx) : ctx.reply('❌ Access Denied')
+    // ── Staff commands (with per-group disable shortcuts) ─────────
+    if (cmd === 'disable')       return await staffCmds.disable(ctx)
+    if (cmd === 'enable')        return await staffCmds.enable(ctx)
+    if (cmd === 'disabledlist')  return await staffCmds.disabledlist(ctx)
+    if (cmd === 'gambleoff')     return await staffCmds.gambleoff(ctx)
+    if (cmd === 'gambleon')      return await staffCmds.gambleon(ctx)
 
-    // Renamed commands
-    if (cmd === 'lockgroup')     return await adminCmds['close']   ? adminCmds['close'](ctx)   : ctx.reply('❌ Groups only.')
-    if (cmd === 'unlockgroup')   return await adminCmds['open']    ? adminCmds['open'](ctx)    : ctx.reply('❌ Groups only.')
-    if (cmd === 'howgay')        return await funCmds['gay']       ? funCmds['gay'](ctx)       : ctx.reply('❌ Fun cmd missing.')
-    if (cmd === 'market')        return await economyCmds['market']? economyCmds['market'](ctx): ctx.reply('❌ Economy cmd missing.')
-    if (cmd === 'wallet')        return await economyCmds['wallet']? economyCmds['wallet'](ctx): economyCmds['bal'](ctx)
-    if (cmd === 'bank')          return await economyCmds['bankbal']?economyCmds['bankbal'](ctx): economyCmds['bal'](ctx)
-    if (cmd === 'weekly')        return await economyCmds['weekly']? economyCmds['weekly'](ctx): ctx.reply('⏳ Coming soon.')
-    if (cmd === 'monthly')       return await economyCmds['monthly']?economyCmds['monthly'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'crime')         return await economyCmds['crime']? economyCmds['crime'](ctx) : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'rob')           return await economyCmds['rob']   ? economyCmds['rob'](ctx)   : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'heist')         return await economyCmds['heist'] ? economyCmds['heist'](ctx) : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'topmoney')      return await economyCmds['topmoney']?economyCmds['topmoney'](ctx):economyCmds['richlist'](ctx)
-    if (cmd === 'topbank')       return await economyCmds['topbank']?economyCmds['topbank'](ctx):economyCmds['richlist'](ctx)
-    if (cmd === 'achievements')  return await economyCmds['achievements']?economyCmds['achievements'](ctx):ctx.reply('🏆 Achievements coming soon!')
-    if (cmd === 'claim')         return await economyCmds['claim'] ? economyCmds['claim'](ctx) : economyCmds['daily'](ctx)
-    if (cmd === 'bonus')         return await economyCmds['bonus'] ? economyCmds['bonus'](ctx) : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'upgrade')       return await economyCmds['upgrade']?economyCmds['upgrade'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'prestige')      return await economyCmds['prestige']?economyCmds['prestige'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'bankupgrade')   return await economyCmds['bankupgrade']?economyCmds['bankupgrade'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'withdrawall')   return await economyCmds['withdrawall']?economyCmds['withdrawall'](ctx):(()=>{ctx.args=['all'];return economyCmds['withdraw'](ctx)})()
-    if (cmd === 'goodbye')       return await adminCmds['leave']   ? adminCmds['leave'](ctx)   : ctx.reply('❌ Usage: .goodbye on/off')
-    if (cmd === 'invitelink')    return await adminCmds['invitelink']?adminCmds['invitelink'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'stafflist')     return await staffCmds['mods']    ? staffCmds['mods'](ctx)    : ctx.reply('No staff found.')
-    if (cmd === 'myrole')        return await staffCmds['myrole']  ? staffCmds['myrole'](ctx)  : ctx.reply('⏳ Coming soon.')
+    if (cmd === 'resetallusers') return await staffCmds['resetallusers']?.(ctx)
+    if (staffCmds[cmd])         return await staffCmds[cmd](ctx)
+
+    // Named aliases
+    if (cmd === 'join')          return await staffCmds['join']?.(ctx) || reply('❌ .join <invite link>')
+    if (cmd === 'exit')          return await staffCmds['exit']?.(ctx) || reply('❌ Groups only.')
+    if (cmd === 'listgc')        return await staffCmds['listgc']?.(ctx) || reply('❌ Access Denied')
+    if (cmd === 'lockgroup')     return await adminCmds['close']?.  (ctx) || reply('❌ Groups only.')
+    if (cmd === 'unlockgroup')   return await adminCmds['open']?.   (ctx) || reply('❌ Groups only.')
+    if (cmd === 'howgay')        return await funCmds['gay']?.       (ctx) || reply('❌ Fun cmd missing.')
+    if (cmd === 'market')        return await economyCmds['market']?.(ctx) || reply('❌ Economy cmd missing.')
+    if (cmd === 'wallet')        return await economyCmds['wallet']?.(ctx) || economyCmds['bal']?.(ctx)
+    if (cmd === 'bank')          return await economyCmds['bankbal']?.(ctx) || economyCmds['bal']?.(ctx)
+    if (cmd === 'weekly')        return await economyCmds['weekly']?.(ctx) || reply('⏳ Coming soon.')
+    if (cmd === 'monthly')       return await economyCmds['monthly']?.(ctx) || reply('⏳ Coming soon.')
+    if (cmd === 'crime')         return await economyCmds['crime']?. (ctx) || reply('⏳ Coming soon.')
+    if (cmd === 'rob')           return await economyCmds['rob']?.   (ctx) || reply('⏳ Coming soon.')
+    if (cmd === 'heist')         return await economyCmds['heist']?. (ctx) || reply('⏳ Coming soon.')
+    if (cmd === 'topmoney')      return await economyCmds['topmoney']?.(ctx) || economyCmds['richlist']?.(ctx)
+    if (cmd === 'topbank')       return await economyCmds['topbank']?.(ctx) || economyCmds['richlist']?.(ctx)
+    if (cmd === 'achievements')  return await economyCmds['achievements']?.(ctx) || reply('🏆 Achievements coming soon!')
+    if (cmd === 'claim')         return await economyCmds['claim']?. (ctx) || economyCmds['daily']?.(ctx)
+    if (cmd === 'bonus')         return await economyCmds['bonus']?. (ctx) || reply('⏳ Coming soon.')
+    if (cmd === 'upgrade')       return await economyCmds['upgrade']?.(ctx) || reply('⏳ Coming soon.')
+    if (cmd === 'prestige')      return await economyCmds['prestige']?.(ctx) || reply('⏳ Coming soon.')
+    if (cmd === 'bankupgrade')   return await economyCmds['bankupgrade']?.(ctx) || reply('⏳ Coming soon.')
+    if (cmd === 'withdrawall')   { ctx.args = ['all']; return await economyCmds['withdraw']?.(ctx) }
+    if (cmd === 'goodbye')       return await adminCmds['leave']?.(ctx) || reply('❌ Usage: .goodbye on/off')
+    if (cmd === 'invitelink')    return await adminCmds['invitelink']?.(ctx) || reply('⏳ Coming soon.')
+    if (cmd === 'stafflist')     return await staffCmds['stafflist']?.(ctx) || staffCmds['mods']?.(ctx) || reply('No staff found.')
+    if (cmd === 'myrole')        return await staffCmds['myrole']?.(ctx) || reply('⏳ Coming soon.')
 
     // Poll commands
     if (pollCmds[cmd])          return await pollCmds[cmd](ctx)
 
     // Lottery commands
-    if (lotteryCmds[cmd])       return await lotteryCmds[cmd](ctx)
+    if (cmd === 'lottery')       return await lotteryCmds.lottery(ctx)
+    if (cmd === 'startlottery')  return await lotteryCmds.startlottery(ctx)
+    if (cmd === 'buylottery')    return await lotteryCmds.buylottery(ctx)
+    if (cmd === 'endlottery')    return await lotteryCmds.endlottery(ctx)
+    if (lotteryCmds[cmd])        return await lotteryCmds[cmd](ctx)
 
-    // AI commands (Groq, image gen, anime)
+    // AI commands
     if (aiCmds[cmd])            return await aiCmds[cmd](ctx)
 
-    // Utility commands (weather, wiki, translate, download, etc.)
+    // Utility commands
     if (utilityCmds[cmd])       return await utilityCmds[cmd](ctx)
 
   } catch (err) {

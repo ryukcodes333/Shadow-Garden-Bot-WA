@@ -2,90 +2,109 @@ const db = require('../database')
 const fs = require('fs')
 const path = require('path')
 const https = require('https')
-const http = require('http')
+const http  = require('http')
 
-const PHELP_IMAGE = path.join(__dirname, '../assets/phelp.jpg')
-
-// ── Pending wild pokemon & battles ───────────────────────────────
-const pendingPokemon = {}
-const activeBattles  = {}
-
-// ── Mention sticker store (file-based) ───────────────────────────
-const MS_FILE = path.join(__dirname, '../mention_stickers.json')
-function loadMS() {
-  try { return JSON.parse(fs.readFileSync(MS_FILE, 'utf8')) } catch { return {} }
-}
-function saveMS(data) {
-  try { fs.writeFileSync(MS_FILE, JSON.stringify(data, null, 2)) } catch {}
-}
+// ── In-memory state ───────────────────────────────────────────────
+const pendingPokemon   = {}   // jid → { ...pokemonData, spawnedAt, weakened }
+const activeBattles    = {}   // sender → battle session
+const pvpChallenges    = {}   // challengerSender → { targetSender, jid, expiresAt }
 
 // ── Constants ─────────────────────────────────────────────────────
-const POKE_CATCH_WINDOW = 90 * 1000
-const MAX_POKEMON_ID    = 1025
-const CD_PDAILY         = 24 * 3600
-const CD_HUNT           = 3 * 60
+const CATCH_WINDOW_MS  = 90 * 1000
+const HUNT_SUCCESS_PCT = 0.05   // 5% chance
 
-const BALL_RATES = {
-  pokeball: 0.50, greatball: 0.65, ultraball: 0.80, masterball: 1.00,
-}
-
-const SHOP_ITEMS = {
-  pokeball:     { name: 'Poké Ball',     price: 200,  emoji: '🔴', type: 'ball' },
-  greatball:    { name: 'Great Ball',    price: 600,  emoji: '🔵', type: 'ball' },
-  ultraball:    { name: 'Ultra Ball',    price: 1200, emoji: '🟡', type: 'ball' },
-  masterball:   { name: 'Master Ball',   price: 50,   emoji: '💜', type: 'ball',  gem: true },
-  potion:       { name: 'Potion',        price: 300,  emoji: '🧪', type: 'heal' },
-  superpotion:  { name: 'Super Potion',  price: 700,  emoji: '💉', type: 'heal' },
-  fullrestore:  { name: 'Full Restore',  price: 3000, emoji: '✨', type: 'heal' },
-  revive:       { name: 'Revive',        price: 1500, emoji: '💫', type: 'revive' },
-  luckycharm:   { name: 'Lucky Charm',   price: 500,  emoji: '🍀', type: 'boost' },
-  expboost:     { name: 'EXP Booster',   price: 800,  emoji: '⬆️', type: 'boost' },
-  shadowstone:  { name: 'Shadow Stone',  price: 100,  emoji: '🌑', type: 'evolution', gem: true },
-  firestone:    { name: 'Fire Stone',    price: 50,   emoji: '🔥', type: 'evolution', gem: true },
-  waterstone:   { name: 'Water Stone',   price: 50,   emoji: '💧', type: 'evolution', gem: true },
-  thunderstone: { name: 'Thunder Stone', price: 50,   emoji: '⚡', type: 'evolution', gem: true },
-  leafstone:    { name: 'Leaf Stone',    price: 50,   emoji: '🍃', type: 'evolution', gem: true },
-}
-
-const RARITY_TABLE = [
-  { max: 100,  rarity: 'common',    emoji: '⚪' },
-  { max: 200,  rarity: 'rare',      emoji: '🟢' },
-  { max: 300,  rarity: 'epic',      emoji: '🔵' },
-  { max: 9999, rarity: 'legendary', emoji: '🟡' },
+// Baby/starter/common pokemon get higher spawn weight at low levels
+const BABY_POKEMON_IDS = [
+  172, 173, 174, 175, 238, 239, 240, 298, 360, 406, 433, 438, 439, 440, 446, 447, 458,
+  // Regular starters and commons
+  1, 4, 7, 25, 35, 39, 52, 54, 56, 58, 60, 63, 66, 69, 74, 77, 79, 81, 84, 86, 88, 90,
+  92, 96, 98, 100, 102, 104, 109, 111, 113, 114, 116, 118, 120, 123, 127, 128,
 ]
 
-const REGIONS = ['Kanto', 'Johto', 'Hoenn', 'Sinnoh', 'Unova', 'Kalos', 'Alola', 'Galar', 'Paldea']
-const TEAMS   = ['Valor', 'Mystic', 'Instinct', 'Shadow']
+const WILD_POKEMON_POOL = [
+  // id, name, type, base_hp, base_atk, moves, evolves_at_level (0 = no evolve)
+  { id:1,   name:'Bulbasaur',   type:'Grass/Poison', hp:45, atk:49, moves:['Tackle','Vine Whip','Leech Seed','Razor Leaf'],               evolvesAt:16, evolvesTo:2   },
+  { id:2,   name:'Ivysaur',     type:'Grass/Poison', hp:60, atk:62, moves:['Vine Whip','Razor Leaf','Sleep Powder','Solar Beam'],         evolvesAt:32, evolvesTo:3   },
+  { id:3,   name:'Venusaur',    type:'Grass/Poison', hp:80, atk:82, moves:['Solar Beam','Petal Dance','Earthquake','Sludge Bomb'],        evolvesAt:0,  evolvesTo:null },
+  { id:4,   name:'Charmander',  type:'Fire',         hp:39, atk:52, moves:['Scratch','Ember','Growl','Metal Claw'],                       evolvesAt:16, evolvesTo:5   },
+  { id:5,   name:'Charmeleon',  type:'Fire',         hp:58, atk:64, moves:['Ember','Fire Fang','Slash','Flamethrower'],                   evolvesAt:36, evolvesTo:6   },
+  { id:6,   name:'Charizard',   type:'Fire/Flying',  hp:78, atk:84, moves:['Flamethrower','Fire Blast','Fly','Dragon Rage'],             evolvesAt:0,  evolvesTo:null },
+  { id:7,   name:'Squirtle',    type:'Water',        hp:44, atk:48, moves:['Tackle','Water Gun','Withdraw','Bubble'],                     evolvesAt:16, evolvesTo:8   },
+  { id:8,   name:'Wartortle',   type:'Water',        hp:59, atk:63, moves:['Water Gun','Bite','Rapid Spin','Surf'],                      evolvesAt:36, evolvesTo:9   },
+  { id:9,   name:'Blastoise',   type:'Water',        hp:79, atk:83, moves:['Surf','Hydro Pump','Ice Beam','Flash Cannon'],               evolvesAt:0,  evolvesTo:null },
+  { id:25,  name:'Pikachu',     type:'Electric',     hp:35, atk:55, moves:['Thundershock','Quick Attack','Tail Whip','Thunder Wave'],    evolvesAt:0,  evolvesTo:26, stoneEvolve:'Thunder Stone' },
+  { id:26,  name:'Raichu',      type:'Electric',     hp:60, atk:90, moves:['Thunderbolt','Thunder','Quick Attack','Iron Tail'],          evolvesAt:0,  evolvesTo:null },
+  { id:39,  name:'Jigglypuff',  type:'Normal/Fairy', hp:115,atk:45, moves:['Sing','Doubleslap','Rest','Body Slam'],                     evolvesAt:0,  evolvesTo:40, stoneEvolve:'Moon Stone' },
+  { id:52,  name:'Meowth',      type:'Normal',       hp:40, atk:45, moves:['Scratch','Bite','Pay Day','Slash'],                         evolvesAt:28, evolvesTo:53  },
+  { id:54,  name:'Psyduck',     type:'Water',        hp:50, atk:52, moves:['Scratch','Water Gun','Confusion','Disable'],                evolvesAt:33, evolvesTo:55  },
+  { id:58,  name:'Growlithe',   type:'Fire',         hp:55, atk:70, moves:['Bite','Ember','Roar','Flame Wheel'],                        evolvesAt:0,  evolvesTo:59, stoneEvolve:'Fire Stone' },
+  { id:63,  name:'Abra',        type:'Psychic',      hp:25, atk:20, moves:['Teleport','Confusion'],                                     evolvesAt:16, evolvesTo:64  },
+  { id:64,  name:'Kadabra',     type:'Psychic',      hp:40, atk:35, moves:['Confusion','Psybeam','Recover','Psychic'],                  evolvesAt:36, evolvesTo:65  },
+  { id:65,  name:'Alakazam',    type:'Psychic',      hp:55, atk:50, moves:['Psychic','Recover','Reflect','Future Sight'],              evolvesAt:0,  evolvesTo:null },
+  { id:74,  name:'Geodude',     type:'Rock/Ground',  hp:40, atk:80, moves:['Tackle','Rock Throw','Defense Curl','Magnitude'],          evolvesAt:25, evolvesTo:75  },
+  { id:79,  name:'Slowpoke',    type:'Water/Psychic',hp:90, atk:65, moves:['Confusion','Water Gun','Yawn','Amnesia'],                  evolvesAt:37, evolvesTo:80  },
+  { id:92,  name:'Gastly',      type:'Ghost/Poison', hp:30, atk:35, moves:['Lick','Night Shade','Hypnosis','Mean Look'],               evolvesAt:25, evolvesTo:93  },
+  { id:93,  name:'Haunter',     type:'Ghost/Poison', hp:45, atk:50, moves:['Shadow Ball','Hypnosis','Dream Eater','Night Shade'],      evolvesAt:36, evolvesTo:94  },
+  { id:94,  name:'Gengar',      type:'Ghost/Poison', hp:60, atk:65, moves:['Shadow Ball','Sludge Bomb','Thunderbolt','Hypnosis'],      evolvesAt:0,  evolvesTo:null },
+  { id:113, name:'Chansey',     type:'Normal',       hp:250,atk:5,  moves:['Softboiled','Egg Bomb','Minimize','Double Slap'],          evolvesAt:0,  evolvesTo:242  },
+  { id:116, name:'Horsea',      type:'Water',        hp:30, atk:40, moves:['Bubble','Water Gun','Smokescreen','Agility'],             evolvesAt:32, evolvesTo:117  },
+  { id:129, name:'Magikarp',    type:'Water',        hp:20, atk:10, moves:['Splash','Tackle'],                                        evolvesAt:20, evolvesTo:130  },
+  { id:130, name:'Gyarados',    type:'Water/Flying', hp:95, atk:125,moves:['Surf','Ice Beam','Hyper Beam','Thrash'],                  evolvesAt:0,  evolvesTo:null },
+  { id:133, name:'Eevee',       type:'Normal',       hp:55, atk:55, moves:['Tackle','Sand Attack','Tail Whip','Quick Attack'],        evolvesAt:0,  evolvesTo:134, stoneEvolve:'Fire Stone' },
+  { id:143, name:'Snorlax',     type:'Normal',       hp:160,atk:110,moves:['Body Slam','Rest','Hyper Beam','Yawn'],                   evolvesAt:0,  evolvesTo:null },
+  { id:147, name:'Dratini',     type:'Dragon',       hp:41, atk:64, moves:['Wrap','Leer','Thunder Wave','Dragon Rage'],              evolvesAt:30, evolvesTo:148  },
+  { id:148, name:'Dragonair',   type:'Dragon',       hp:61, atk:84, moves:['Slam','Dragon Rage','Agility','Hyper Beam'],             evolvesAt:55, evolvesTo:149  },
+  { id:149, name:'Dragonite',   type:'Dragon/Flying',hp:91, atk:134,moves:['Dragon Claw','Hyper Beam','Thunder','Fire Punch'],        evolvesAt:0,  evolvesTo:null },
+  { id:172, name:'Pichu',       type:'Electric',     hp:20, atk:35, moves:['Thundershock','Charm','Tail Whip','Sweet Kiss'],         evolvesAt:0,  evolvesTo:25, friendEvolve:true },
+  { id:174, name:'Igglybuff',   type:'Normal/Fairy', hp:90, atk:30, moves:['Sing','Charm','Pound','Sweet Kiss'],                    evolvesAt:0,  evolvesTo:39, friendEvolve:true },
+  { id:175, name:'Togepi',      type:'Fairy',        hp:35, atk:20, moves:['Growl','Charm','Metronome','Sweet Kiss'],               evolvesAt:0,  evolvesTo:176, friendEvolve:true },
+  { id:179, name:'Mareep',      type:'Electric',     hp:55, atk:40, moves:['Thundershock','Cotton Spore','Thunder Wave','Signal Beam'],evolvesAt:15,evolvesTo:180  },
+  { id:193, name:'Yanma',       type:'Bug/Flying',   hp:65, atk:65, moves:['Wing Attack','Quick Attack','Ancient Power','Air Slash'],evolvesAt:0,  evolvesTo:469  },
+  { id:197, name:'Umbreon',     type:'Dark',         hp:95, atk:65, moves:['Moonlight','Dark Pulse','Bite','Quick Attack'],          evolvesAt:0,  evolvesTo:null },
+  { id:228, name:'Houndour',    type:'Dark/Fire',    hp:45, atk:60, moves:['Ember','Bite','Howl','Flamethrower'],                   evolvesAt:24, evolvesTo:229  },
+  { id:229, name:'Houndoom',    type:'Dark/Fire',    hp:75, atk:90, moves:['Flamethrower','Crunch','Dark Pulse','Fire Blast'],      evolvesAt:0,  evolvesTo:null },
+  { id:246, name:'Larvitar',    type:'Rock/Ground',  hp:50, atk:64, moves:['Bite','Sandstorm','Rock Slide','Earthquake'],           evolvesAt:30, evolvesTo:247  },
+  { id:247, name:'Pupitar',     type:'Rock/Ground',  hp:70, atk:84, moves:['Rock Slide','Crunch','Earthquake','Hyper Beam'],        evolvesAt:55, evolvesTo:248  },
+  { id:248, name:'Tyranitar',   type:'Rock/Dark',    hp:100,atk:134,moves:['Crunch','Stone Edge','Earthquake','Dragon Dance'],      evolvesAt:0,  evolvesTo:null },
+  { id:252, name:'Treecko',     type:'Grass',        hp:40, atk:45, moves:['Pound','Absorb','Quick Attack','Leaf Blade'],           evolvesAt:16, evolvesTo:253  },
+  { id:255, name:'Torchic',     type:'Fire',         hp:45, atk:60, moves:['Scratch','Ember','Growl','Flame Charge'],               evolvesAt:16, evolvesTo:256  },
+  { id:258, name:'Mudkip',      type:'Water',        hp:50, atk:70, moves:['Tackle','Water Gun','Mud-Slap','Muddy Water'],          evolvesAt:16, evolvesTo:259  },
+  { id:280, name:'Ralts',       type:'Psychic/Fairy',hp:28, atk:25, moves:['Growl','Confusion','Double Team','Calm Mind'],          evolvesAt:20, evolvesTo:281  },
+  { id:304, name:'Aron',        type:'Steel/Rock',   hp:50, atk:70, moves:['Tackle','Iron Defense','Metal Claw','Iron Head'],       evolvesAt:32, evolvesTo:305  },
+  { id:333, name:'Swablu',      type:'Normal/Flying',hp:45, atk:40, moves:['Peck','Growl','Astonish','Sing'],                       evolvesAt:35, evolvesTo:334  },
+  { id:371, name:'Bagon',       type:'Dragon',       hp:45, atk:75, moves:['Rage','Bite','Headbutt','Dragon Breath'],               evolvesAt:30, evolvesTo:372  },
+  { id:374, name:'Beldum',      type:'Steel/Psychic',hp:40, atk:55, moves:['Take Down'],                                            evolvesAt:20, evolvesTo:375  },
+  { id:387, name:'Turtwig',     type:'Grass',        hp:55, atk:68, moves:['Tackle','Absorb','Razor Leaf','Crunch'],               evolvesAt:18, evolvesTo:388  },
+  { id:390, name:'Chimchar',    type:'Fire',         hp:44, atk:58, moves:['Scratch','Ember','Taunt','Mach Punch'],                 evolvesAt:14, evolvesTo:391  },
+  { id:393, name:'Piplup',      type:'Water',        hp:53, atk:51, moves:['Pound','Bubble','Peck','Bubblebeam'],                   evolvesAt:16, evolvesTo:394  },
+  { id:447, name:'Riolu',       type:'Fighting',     hp:40, atk:70, moves:['Quick Attack','Force Palm','Endure','Aura Sphere'],    evolvesAt:0,  evolvesTo:448, friendEvolve:true },
+  { id:495, name:'Snivy',       type:'Grass',        hp:45, atk:45, moves:['Tackle','Vine Whip','Wrap','Leaf Tornado'],             evolvesAt:17, evolvesTo:496  },
+  { id:501, name:'Oshawott',    type:'Water',        hp:55, atk:55, moves:['Tackle','Water Gun','Razor Shell','Aqua Jet'],          evolvesAt:17, evolvesTo:502  },
+  { id:504, name:'Patrat',      type:'Normal',       hp:45, atk:55, moves:['Tackle','Bite','Detect','Work Up'],                    evolvesAt:20, evolvesTo:505  },
+  { id:610, name:'Axew',        type:'Dragon',       hp:46, atk:87, moves:['Scratch','Dragon Rage','Slash','Dragon Dance'],        evolvesAt:38, evolvesTo:611  },
+  { id:633, name:'Deino',       type:'Dark/Dragon',  hp:52, atk:65, moves:['Tackle','Dragon Rage','Bite','Hyper Voice'],           evolvesAt:50, evolvesTo:634  },
+  { id:650, name:'Chespin',     type:'Grass',        hp:56, atk:61, moves:['Tackle','Vine Whip','Pin Missile','Take Down'],        evolvesAt:16, evolvesTo:651  },
+  { id:653, name:'Fennekin',    type:'Fire',         hp:40, atk:45, moves:['Scratch','Ember','Howl','Flame Charge'],               evolvesAt:16, evolvesTo:654  },
+  { id:656, name:'Froakie',     type:'Water',        hp:41, atk:56, moves:['Pound','Bubble','Quick Attack','Water Pulse'],         evolvesAt:16, evolvesTo:657  },
+  { id:722, name:'Rowlet',      type:'Grass/Flying', hp:68, atk:55, moves:['Tackle','Leafage','Growl','Peck'],                     evolvesAt:17, evolvesTo:723  },
+  { id:725, name:'Litten',      type:'Fire',         hp:45, atk:65, moves:['Scratch','Ember','Growl','Lick'],                      evolvesAt:17, evolvesTo:726  },
+  { id:728, name:'Popplio',     type:'Water',        hp:50, atk:54, moves:['Pound','Water Gun','Growl','Disarming Voice'],         evolvesAt:17, evolvesTo:729  },
+  { id:810, name:'Grookey',     type:'Grass',        hp:50, atk:65, moves:['Scratch','Branch Poke','Growl','Razor Leaf'],         evolvesAt:16, evolvesTo:811  },
+  { id:813, name:'Scorbunny',   type:'Fire',         hp:50, atk:71, moves:['Tackle','Ember','Growl','Quick Attack'],              evolvesAt:16, evolvesTo:814  },
+  { id:816, name:'Sobble',      type:'Water',        hp:50, atk:40, moves:['Pound','Water Gun','Tearful Look','Liquidation'],     evolvesAt:16, evolvesTo:817  },
+]
 
-// ── Utilities ─────────────────────────────────────────────────────
-function randInt(a, b) { return a + Math.floor(Math.random() * (b - a + 1)) }
+function randInt(min, max) { return min + Math.floor(Math.random() * (max - min + 1)) }
 
-function getRarity(baseXp) {
-  return RARITY_TABLE.find(r => baseXp <= r.max) || RARITY_TABLE[RARITY_TABLE.length - 1]
+function hpBar(current, max, len = 12) {
+  const pct    = Math.max(0, current / max)
+  const filled = Math.round(pct * len)
+  const bar    = '█'.repeat(filled) + '░'.repeat(len - filled)
+  const dot    = pct > 0.6 ? '💚' : pct > 0.3 ? '🟡' : '🔴'
+  return `${dot} \`${bar}\``
 }
 
-function capName(s) {
-  if (!s) return 'Unknown'
-  return s.charAt(0).toUpperCase() + s.slice(1).replace(/-/g, ' ')
-}
-
-// ── HTTP helpers ──────────────────────────────────────────────────
-function fetchJSON(url) {
-  return new Promise((resolve) => {
-    const client = url.startsWith('https') ? https : http
-    const req = client.get(url, { timeout: 12000 }, (res) => {
-      if (res.statusCode !== 200) { res.resume(); return resolve(null) }
-      let body = ''
-      res.on('data', c => body += c)
-      res.on('end', () => { try { resolve(JSON.parse(body)) } catch { resolve(null) } })
-      res.on('error', () => resolve(null))
-    })
-    req.on('error', () => resolve(null))
-    req.on('timeout', () => { req.destroy(); resolve(null) })
-  })
-}
-
-function downloadBuffer(url, timeoutMs = 15000) {
+function downloadBuffer(url, timeoutMs = 12000) {
   return new Promise((resolve) => {
     const client = url.startsWith('https') ? https : http
     const req = client.get(url, { timeout: timeoutMs }, (res) => {
@@ -100,908 +119,383 @@ function downloadBuffer(url, timeoutMs = 15000) {
   })
 }
 
-// ── PokeAPI ───────────────────────────────────────────────────────
-async function fetchPokeData(nameOrId) {
-  const poke = await fetchJSON(`https://pokeapi.co/api/v2/pokemon/${nameOrId}`)
-  if (!poke) return null
+// Spawn a random Pokémon — baby/low-level weighted heavily
+function spawnWildPokemon(playerLevel = 1) {
+  // Select from pool — weight toward baby/starter pokemon at low player levels
+  const maxId = Math.min(251 + playerLevel * 10, 900)
+  const eligible = WILD_POKEMON_POOL.filter(p => p.id <= Math.max(251, maxId))
+  const pool = eligible.length > 0 ? eligible : WILD_POKEMON_POOL
 
-  let location = 'Unknown'
-  try {
-    const enc = await fetchJSON(`https://pokeapi.co/api/v2/pokemon/${poke.id}/encounters`)
-    if (enc && enc.length > 0) {
-      const raw = enc[0].location_area?.name || ''
-      location = raw.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Unknown'
-    }
-  } catch {}
+  // Higher weight for baby pokemon
+  let chosen
+  if (Math.random() < 0.4) {
+    // 40% chance to pick from baby/starter pool
+    const babyPool = pool.filter(p => BABY_POKEMON_IDS.includes(p.id))
+    chosen = babyPool.length > 0
+      ? babyPool[Math.floor(Math.random() * babyPool.length)]
+      : pool[Math.floor(Math.random() * pool.length)]
+  } else {
+    chosen = pool[Math.floor(Math.random() * pool.length)]
+  }
 
-  let description = 'No description available.'
-  let catchRate   = 45
-  try {
-    const species = await fetchJSON(`https://pokeapi.co/api/v2/pokemon-species/${poke.id}`)
-    if (species) {
-      catchRate = species.capture_rate || 45
-      const entry = (species.flavor_text_entries || []).find(e => e.language?.name === 'en')
-      if (entry) description = entry.flavor_text.replace(/[\f\n]/g, ' ').trim()
-    }
-  } catch {}
-
-  const getStat = (name) => (poke.stats || []).find(s => s?.stat?.name === name)?.base_stat || 45
-
+  const level = Math.max(1, randInt(1, Math.max(1, Math.min(playerLevel + 5, 40))))
+  const scaledHp = Math.floor(chosen.hp + level * 3)
   return {
-    id:          poke.id,
-    name:        capName(poke.name),
-    types:       (poke.types || []).map(t => capName(t?.type?.name)),
-    baseXp:      poke.base_experience || 50,
-    height:      ((poke.height || 0) / 10).toFixed(1),
-    weight:      ((poke.weight || 0) / 10).toFixed(1),
-    moves:       (poke.moves || []).slice(0, 5).map(m => capName(m?.move?.name)),
-    abilities:   (poke.abilities || []).map(a => capName(a?.ability?.name)),
-    hp:          getStat('hp'),
-    attack:      getStat('attack'),
-    defense:     getStat('defense'),
-    speed:       getStat('speed'),
-    location,
-    description,
-    catchRate:   Math.round((catchRate / 255) * 100),
-    imageUrl:    poke.sprites?.other?.['official-artwork']?.front_default || poke.sprites?.front_default || null,
+    pokemon_id: chosen.id,
+    name: chosen.name,
+    type: chosen.type,
+    level,
+    hp: scaledHp,
+    maxHp: scaledHp,
+    atk: chosen.atk + level * 2,
+    moves: chosen.moves,
+    evolvesAt: chosen.evolvesAt,
+    evolvesTo: chosen.evolvesTo,
+    stoneEvolve: chosen.stoneEvolve || null,
+    friendEvolve: chosen.friendEvolve || false,
   }
 }
 
-// ── Captions ──────────────────────────────────────────────────────
-const WEATHER_BOOSTS = ['Sunny ☀️', 'Rainy 🌧️', 'Windy 🌬️', 'Cloudy ⛅', 'Snowy ❄️', 'Foggy 🌫️', 'Stormy ⚡']
-const MOODS = ['curious', 'aggressive', 'playful', 'timid', 'confused', 'hungry', 'sleepy', 'excited']
-const STATUSES = ['Wild 🟢', 'Weakened 🔴', 'Energized ⚡', 'Cautious 👀', 'Raging 🔥']
-
-function buildSpawnCaption(data, extras = {}) {
-  const level   = extras.level   || randInt(2, 50)
-  const weather = extras.weather || WEATHER_BOOSTS[Math.floor(Math.random() * WEATHER_BOOSTS.length)]
-  const mood    = extras.mood    || MOODS[Math.floor(Math.random() * MOODS.length)]
-  const status  = extras.status  || STATUSES[Math.floor(Math.random() * STATUSES.length)]
-  const maxHp   = data.hp || 45
-  const curHp   = Math.floor(maxHp * (0.5 + Math.random() * 0.5))
-  const pokeball  = extras.pokeball  ?? randInt(1, 8)
-  const greatball = extras.greatball ?? randInt(0, 4)
-  const ultraball = extras.ultraball ?? randInt(0, 2)
-  const berry     = extras.berry     ?? randInt(0, 5)
-  const ability = (data.abilities && data.abilities.length) ? data.abilities[0] : 'Unknown'
-
-  return (
-    `🎊 *A wild Pokémon has appeared!* 🎊\n\n` +
-    `*📛 Name:* ${data.name}\n` +
-    `*✨ Level:* ${level}\n` +
-    `*⚡ Type:* ${data.types.join(' / ')}\n` +
-    `*🔥 Ability:* ${ability}\n` +
-    `*❤️ HP:* ${curHp}/${maxHp}\n` +
-    `*⚔️ Attack:* ${data.attack || 50}\n` +
-    `*🛡️ Defense:* ${data.defense || 45}\n` +
-    `*💨 Speed:* ${data.speed || 45}\n\n` +
-    `*📍 Location:* ${data.location}\n` +
-    `*🌦️ Weather Boost:* ${weather}\n` +
-    `*✨ Status:* ${status}\n\n` +
-    `👀 The wild ${data.name} is staring at you… it looks ${mood}.\n\n` +
-    `💭 It might flee if you hesitate too long!\n\n` +
-    `*🎒 Your Items:*\n` +
-    `*  🟡 Poké Ball × ${pokeball}*\n` +
-    `*  🔵 Great Ball × ${greatball}*\n` +
-    `*  🔴 Ultra Ball × ${ultraball}*\n` +
-    `*  🍓 Berry × ${berry}*\n\n` +
-    `🌀 What will you do?\n\n` +
-    `> *#catch <slot> | <ball>* — Catch the Pokémon\n` +
-    `> *.fight* — Battle it with your moves\n` +
-    `> *.flee* — Escape safely (maybe…)`
-  )
+// Check if a pokemon in party should evolve by level
+function checkLevelEvolution(pokemon) {
+  const template = WILD_POKEMON_POOL.find(p => p.id === pokemon.pokemon_id)
+  if (!template) return null
+  if (!template.evolvesAt || template.evolvesAt === 0) return null
+  if (template.stoneEvolve || template.friendEvolve) return null  // not level-based
+  const level = pokemon.level || 1
+  if (level >= template.evolvesAt && template.evolvesTo) {
+    const evoTarget = WILD_POKEMON_POOL.find(p => p.id === template.evolvesTo)
+    return evoTarget || null
+  }
+  return null
 }
 
-function buildDexCaption(data) {
-  return (
-    `📘 *Pokémon Info*\n\n` +
-    `🆔 *ID:* ${data.id}\n` +
-    `🔖 *Name:* ${data.name}\n\n` +
-    `📏 *Height:* ${data.height} m\n` +
-    `⚖️ *Weight:* ${data.weight} kg\n\n` +
-    `🔄 *Type:* ${data.types.join(' / ')}\n` +
-    `🌍 *Location:* ${data.location}\n\n` +
-    `🎮 *Moves:*\n${data.moves.slice(0, 4).join('\n')}\n\n` +
-    `🧬 *Abilities:*\n${data.abilities.join('\n')}\n\n` +
-    `📊 *Base Exp:* ${data.baseXp}\n` +
-    `🎯 *Catch Rate:* ${data.catchRate}%\n\n` +
-    `📝 *Info:* ${data.description}`
-  )
+// Generate battle image using Pollinations
+async function fetchBattleImage(myPokemon, wildPokemon) {
+  try {
+    const myName   = (myPokemon?.name || 'trainer pokemon').toLowerCase()
+    const wildName = (wildPokemon?.name || 'wild pokemon').toLowerCase()
+    const prompt   = `pokemon battle scene ${myName} vs ${wildName} forest nature background lush green trees dramatic lighting anime style pokemon game art high detail`
+    const url      = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=640&height=360&nologo=true&model=flux&seed=${Date.now()%9999}`
+    return await downloadBuffer(url, 20000)
+  } catch { return null }
 }
 
-// ─────────────────────────────────────────────────────────────────
+async function fetchPvpBattleImage(p1name, p2name) {
+  try {
+    const prompt = `epic pokemon pvp battle ${p1name.toLowerCase()} vs ${p2name.toLowerCase()} stadium arena dramatic lighting crowd anime art style cinematic`
+    const url    = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=640&height=360&nologo=true&model=flux&seed=${Date.now()%9999}`
+    return await downloadBuffer(url, 20000)
+  } catch { return null }
+}
+
 module.exports = {
-
-  // ── #phelp ────────────────────────────────────────────────────
-  async phelp({ sock, jid, msg }) {
-    const helpText =
-      `📜 *𝗣𝗢𝗞𝗘́𝗠𝗢𝗡 𝗖𝗢𝗠𝗠𝗔𝗡𝗗 𝗠𝗘𝗡𝗨* 📜\n\n` +
-      `🌿 *START & PROFILE*\n> *#start* → Begin your Pokémon journey\n*#trainer* → View trainer profile card\n*#pdaily* → Claim daily rewards\n*#quests* → Active missions & rewards\n*#rank* → Global trainer ranking\n\n` +
-      `🐾 *CATCH & TRAIN*\n> *#hunt* → Search & encounter wild Pokémon\n*#catch / #c <slot> --<ball type>* → Attempt capture\n*#team* → View active squad\n*#pc* → Pokémon storage system\n*#swap <a> <b>* → Rearrange team slots\n\n` +
-      `⚔️ *BATTLES*\n> *#battle @user* → PvP trainer duel\n*#gym* → Challenge gym leaders\n*#raid* → Raid boss fights\n*#heal* → Restore entire team\n*#boost* → Temporary battle buff\n\n` +
-      `🔄 *EVOLUTION & GROWTH*\n> *#evolve <slot>* → Evolve Pokémon\n*#train <slot>* → Train & gain XP\n*#moves <slot>* → View & manage moves\n*#learn <slot>* → Unlock new abilities\n*#stats <slot>* → Detailed Pokémon stats\n\n` +
-      `🛒 *SHOP & ECONOMY*\n> *#mart* → PokéMart store\n*#mbuy <item>* → Purchase items\n*#use <item>* → Use item on Pokémon\n*#trade @user* → Start Pokémon trade\n*#gift <slot> @user* → Send Pokémon\n\n` +
-      `🧠 *EXTRA SYSTEMS*\n> *#dex <name/id>* → Pokédex database\n*#event* → Special limited events\n*#legend* → Legendary tracker\n*#achieve* → Unlock achievements\n*#cooldown* → Check command timers`
-
-    if (fs.existsSync(PHELP_IMAGE)) {
-      await sock.sendMessage(jid, { image: { url: PHELP_IMAGE }, caption: helpText }, { quoted: msg })
-    } else {
-      await sock.sendMessage(jid, { text: helpText }, { quoted: msg })
-    }
-  },
-
-  // ── #start ────────────────────────────────────────────────────
-  async start({ reply, sender, user, pushName }) {
+  // ── .hunt ────────────────────────────────────────────────────────
+  async hunt({ sock, jid, msg, reply, sender, user, pushName }) {
     const u = user || await db.getOrCreateUser(sender, pushName)
-    const region = REGIONS[Math.floor(Math.random() * REGIONS.length)]
-    const team   = TEAMS[Math.floor(Math.random() * TEAMS.length)]
-    await db.updateUser(sender, { bio: `A trainer from ${region}` })
-    await reply(
-      `🌟 *WELCOME TO THE POKÉMON WORLD!*\n\n` +
-      `👤 *Trainer:* ${u.name || pushName || sender}\n` +
-      `🌍 *Assigned Region:* ${region}\n` +
-      `🧭 *Team:* ${team}\n\n` +
-      `🎒 *Your journey begins now!*\n\n` +
-      `• *#hunt* — Search for wild Pokémon\n` +
-      `• *#pdaily* — Claim your daily starter pack\n` +
-      `• *#phelp* — View all Pokémon commands\n\n` +
-      `_The shadows welcome you, Trainer._ 🖤`
-    )
-  },
 
-  // ── #trainer ──────────────────────────────────────────────────
-  async trainer({ sock, jid, msg, reply, sender, user, pushName }) {
-    const u       = user || await db.getOrCreateUser(sender, pushName)
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const region  = (u.bio || '').includes('from') ? u.bio.replace('A trainer from ', '') : 'Unknown'
-    const joined  = u.created_at ? new Date(u.created_at).toLocaleDateString('en-GB') : 'Unknown'
+    const cdMs = await db.getCooldown(sender, 'hunt')
+    if (cdMs > 0) {
+      const mins = Math.floor(cdMs / 60000)
+      const secs = Math.floor((cdMs % 60000) / 1000)
+      return reply(`⏳ *Hunt cooldown:* ${mins}m ${secs}s remaining.\n\n_The wild needs time to recover._ 🖤`)
+    }
 
-    const profileText =
-      `👤 *Trainer Profile*\n\n` +
-      `🆔 *Trainer ID:* ${sender.slice(-6)}\n` +
-      `🔖 *Name:* ${u.name || pushName || sender}\n\n` +
-      `🌍 *Region:* ${region}\n` +
-      `🎯 *Level:* ${u.level || 1}\n` +
-      `⭐ *XP:* ${(u.xp || 0).toLocaleString()}\n\n` +
-      `🏆 *Badges:* ${u.pokemon_badges || 0}\n` +
-      `🎒 *Pokémon Owned:* ${(pokemon || []).length}\n\n` +
-      `⚔️ *Wins:* ${u.pokemon_wins || 0}\n` +
-      `💥 *Losses:* ${u.pokemon_losses || 0}\n\n` +
-      `📝 *Bio:* ${u.bio || 'No bio set.'}\n` +
-      `📆 *Joined:* ${joined}`
+    await db.setCooldown(sender, 'hunt', 3 * 60)
 
-    // Pick a "signature" Pokémon for this trainer — seeded from their phone number
-    const seed    = parseInt(sender.replace(/\D/g, '').slice(-4) || '1') || 1
-    const pokeId  = (seed % 898) + 1   // stay within Gen 1-8 for best artwork coverage
-    const artUrl  = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${pokeId}.png`
+    // 5% success rate
+    if (Math.random() > HUNT_SUCCESS_PCT) {
+      const noFindLines = [
+        '🌿 You searched the tall grass... nothing stirred.',
+        '🌲 The forest was quiet. Not even a rustle.',
+        '🍃 You heard something, but it vanished before you could see it.',
+        '⛺ You spotted tracks, but the trail went cold.',
+        '🌧️ The rain washed away all traces. Hunt failed.',
+        '🌑 Too dark to find anything today.',
+        '🔇 Silence. The wild Pokémon sensed you coming.',
+        '🐾 You found paw prints... but the Pokémon was long gone.',
+        '🌿 *A shape moved through the grass!* But it got away.',
+      ]
+      const line = noFindLines[Math.floor(Math.random() * noFindLines.length)]
+      return reply(`${line}\n\n_Success rate: 5%  |  Try again in 3 minutes!_ 🖤`)
+    }
+
+    // Found one!
+    const pokemon = spawnWildPokemon(u.level || 1)
+    pendingPokemon[jid] = { ...pokemon, spawnedAt: Date.now(), weakened: false }
+
+    const spriteUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemon.pokemon_id}.png`
+    const evolveLine = pokemon.evolvesAt
+      ? `_Evolves at Level ${pokemon.evolvesAt}_`
+      : '_Does not evolve by level_'
+
+    const caption =
+      `🌿 *A wild ${pokemon.name} appeared!*\n\n` +
+      `📊 Level: ${pokemon.level}  •  🔷 ${pokemon.type}\n` +
+      `❤️ HP: ${pokemon.hp}/${pokemon.maxHp}\n\n` +
+      `${evolveLine}\n\n` +
+      `━━━━━━━━━━━━━━━━\n\n` +
+      `📌 *#catch <slot> | <ball>* to capture  _(90s window)_\n` +
+      `📌 *#fight <slot>* to battle it first\n\n` +
+      `_Slots: 1–6  |  Balls: normal, great, ultra, master_`
 
     try {
-      await sock.sendMessage(jid, {
-        image: { url: artUrl },
-        caption: profileText,
-      }, { quoted: msg })
-    } catch {
-      // Fallback: home-gen sprite (smaller, always available)
-      const fallbackUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokeId}.png`
-      try {
-        await sock.sendMessage(jid, { image: { url: fallbackUrl }, caption: profileText }, { quoted: msg })
-      } catch {
-        await reply(profileText)
-      }
-    }
-  },
-
-  // ── #pdaily ───────────────────────────────────────────────────
-  async pdaily({ reply, sender, user, pushName }) {
-    const u  = user || await db.getOrCreateUser(sender, pushName)
-    const cd = await db.getCooldown(sender, 'pdaily').catch(() => 0)
-    if (cd > 0) {
-      const hrs  = Math.floor(cd / 3600000)
-      const mins = Math.floor((cd % 3600000) / 60000)
-      return reply(`⏳ *POKÉMON DAILY ALREADY CLAIMED*\n\n⏰ Come back in *${hrs}h ${mins}m*\n\n_The Pokémon world refreshes each day._ 🖤`)
-    }
-    const coins = randInt(300, 800)
-    const balls = randInt(2, 5)
-    await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
-    await db.setCooldown(sender, 'pdaily', CD_PDAILY)
-    await reply(
-      `🎁 *POKÉMON DAILY REWARDS*\n\n` +
-      `👤 *Trainer:* ${u.name || sender}\n\n` +
-      `💰 *+${coins} coins* added to wallet\n` +
-      `🔴 *+${balls} Poké Balls* added to bag\n\n` +
-      `🔥 *Streak:* ${(u.streak || 0) + 1} days\n\n` +
-      `⏳ Come back in *24 hours*\n\n` +
-      `_Keep training, Trainer!_ 🖤`
-    )
-  },
-
-  // ── #quests ───────────────────────────────────────────────────
-  async quests({ reply, sender, user }) {
-    const u       = user || await db.getOrCreateUser(sender)
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const caught  = (pokemon || []).length
-    await reply(
-      `📋 *ACTIVE QUESTS*\n\n` +
-      `👤 *Trainer:* ${u.name || sender}\n\n` +
-      `━━━━━━━━━━━━━━━━━\n\n` +
-      `🐾 *Catch 5 Pokémon* — ${Math.min(caught, 5)}/5 ${caught >= 5 ? '✅' : '⬜'}\n   Reward: 500 coins\n\n` +
-      `⚔️ *Win 3 Battles* — ${Math.min(u.pokemon_wins || 0, 3)}/3 ${(u.pokemon_wins || 0) >= 3 ? '✅' : '⬜'}\n   Reward: 1 Great Ball\n\n` +
-      `🎯 *Catch a Rare Pokémon* — 0/1 ⬜\n   Reward: 200 gems\n\n` +
-      `━━━━━━━━━━━━━━━━━\n\n` +
-      `_Complete quests to earn big rewards!_ 🖤`
-    )
-  },
-
-  // ── #rank ─────────────────────────────────────────────────────
-  async rank({ reply }) {
-    const top = await db.getLeaderboard(10).catch(() => [])
-    if (!top.length) return reply('No trainers ranked yet!')
-    const medals = ['🥇', '🥈', '🥉']
-    const lines = top.map((u, i) =>
-      `${medals[i] || `${i + 1}.`} *${u.name || u.phone}* — Lvl ${u.level || 1} | XP: ${(u.xp || 0).toLocaleString()}`
-    ).join('\n')
-    await reply(
-      `🏆 *POKÉMON TRAINER RANKINGS*\n\n━━━━━━━━━━━━━━━━━\n\n${lines}\n\n━━━━━━━━━━━━━━━━━\n\n_Only the strongest claim the top._ 🖤`
-    )
-  },
-
-  // ── #hunt ─────────────────────────────────────────────────────
-  async hunt({ sock, jid, msg, reply, sender }) {
-    const cd = await db.getCooldown(sender, 'hunt').catch(() => 0)
-    if (cd > 0) {
-      const mins = Math.floor(cd / 60000)
-      const secs = Math.floor((cd % 60000) / 1000)
-      return reply(`⏳ *HUNT COOLDOWN*\n\n⏰ Wait *${mins}m ${secs}s* before hunting again.\n\n_The Pokémon need time to respawn._ 🖤`)
-    }
-    if (pendingPokemon[jid]) {
-      return reply(`⚠️ A wild Pokémon is already here!\n\nUse *#catch <slot> | <ball>* to catch it first!`)
-    }
-    await db.setCooldown(sender, 'hunt', CD_HUNT)
-    await module.exports.spawnPokemon(sock, jid, msg)
-  },
-
-  // ── Internal spawn ─────────────────────────────────────────────
-  async spawnPokemon(sock, jid, msg) {
-    const id   = randInt(1, MAX_POKEMON_ID)
-    const data = await fetchPokeData(id).catch(() => null)
-
-    if (!data) {
-      pendingPokemon[jid] = { id, name: `Shadow-${id}`, types: ['Shadow'], baseXp: 60, spawnedAt: Date.now(), imageUrl: null, moves: ['Tackle'], abilities: ['Shadow Force'], height: '?', weight: '?', location: 'Unknown' }
-      await sock.sendMessage(jid, {
-        text: `🎊 *A wild Pokémon has appeared!*\n\n🆔 *Poke ID:* ${id}\n🔖 *Name:* Shadow-${id}\n\n💡 *Hint:*\n> Use *#catch <pokeslot> | <ball type>* to catch this pokemon`
-      }, { quoted: msg })
-      return
-    }
-
-    pendingPokemon[jid] = { ...data, spawnedAt: Date.now() }
-    const caption = buildSpawnCaption(data)
-
-    if (data.imageUrl) {
-      try {
-        await sock.sendMessage(jid, { image: { url: data.imageUrl }, caption }, { quoted: msg })
-        setTimeout(() => { if (pendingPokemon[jid]?.id === id) delete pendingPokemon[jid] }, POKE_CATCH_WINDOW)
+      const spriteData = await downloadBuffer(spriteUrl, 8000)
+      if (spriteData && spriteData.length > 500) {
+        await sock.sendMessage(jid, { image: spriteData, caption }, { quoted: msg })
         return
-      } catch {}
-    }
-    await sock.sendMessage(jid, { text: caption }, { quoted: msg })
-    setTimeout(() => { if (pendingPokemon[jid]?.id === id) delete pendingPokemon[jid] }, POKE_CATCH_WINDOW)
+      }
+    } catch {}
+    await reply(caption)
   },
 
-  // ── #spawnp (staff) ───────────────────────────────────────────
-  async spawnp({ sock, jid, msg, reply, args, isOwner, isMod, isGuardian }) {
-    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
-    const nameOrId = args[0]?.toLowerCase()
-    if (!nameOrId) return reply('⚠️ Usage: *#spawnp <name or id>*')
-    await reply(`🔍 Fetching *${nameOrId}* from PokéAPI...`)
-    const data = await fetchPokeData(nameOrId).catch(() => null)
-    if (!data) return reply(`❌ *${nameOrId}* not found on PokéAPI.`)
-    pendingPokemon[jid] = { ...data, spawnedAt: Date.now() }
-    const caption = buildSpawnCaption(data)
-    try {
-      await sock.sendMessage(jid, { image: { url: data.imageUrl }, caption }, { quoted: msg })
-    } catch {
-      await sock.sendMessage(jid, { text: caption }, { quoted: msg })
+  // ── #catch ───────────────────────────────────────────────────────
+  async catch({ sock, jid, msg, reply, sender, user, pushName, args }) {
+    const u = user || await db.getOrCreateUser(sender, pushName)
+
+    const wild = pendingPokemon[jid]
+    if (!wild) return reply('❌ No wild Pokémon here right now. Use *.hunt* to find one!')
+    if (Date.now() - wild.spawnedAt > CATCH_WINDOW_MS)
+      return reply('❌ The Pokémon fled! The catch window expired. Use *.hunt* to find another.')
+
+    const slotArg = args[0] ? parseInt(args[0]) : 1
+    const ballArg = (args[1] || 'normal').toLowerCase()
+    const slot    = Math.max(1, Math.min(6, slotArg || 1))
+
+    const ballRates = { normal: 0.35, great: 0.55, ultra: 0.75, master: 1.0 }
+    const ballCosts = { normal: 0, great: 50, ultra: 150, master: 500 }
+
+    const catchRate  = ballRates[ballArg] || 0.35
+    const ballCost   = ballCosts[ballArg] || 0
+    const bonusRate  = wild.weakened ? 0.25 : 0
+    const finalRate  = Math.min(0.95, catchRate + bonusRate)
+
+    if (ballCost > 0 && (u.wallet || 0) < ballCost)
+      return reply(`❌ A ${ballArg} ball costs $${ballCost}. You only have $${u.wallet || 0}.`)
+    if (ballCost > 0) await db.updateUser(sender, { wallet: (u.wallet || 0) - ballCost })
+
+    const caught = Math.random() < finalRate
+    if (!caught) {
+      return reply(
+        `🎯 *MISS!*\n\n` +
+        `The ${ballArg} ball wobbled... and the wild *${wild.name}* broke free!\n\n` +
+        `_(Catch rate was ${Math.round(finalRate * 100)}%)_\n\n` +
+        `Try again! Catch window: ~${Math.max(0, Math.floor((CATCH_WINDOW_MS - (Date.now() - wild.spawnedAt)) / 1000))}s left`
+      )
     }
-    setTimeout(() => { if (pendingPokemon[jid]?.id === data.id) delete pendingPokemon[jid] }, POKE_CATCH_WINDOW)
-  },
-
-  // ── #catch / #c ───────────────────────────────────────────────
-  async catch({ sock, jid, msg, reply, react, sender, user, args }) {
-    const poke = pendingPokemon[jid]
-    if (!poke) return reply(`❌ *No wild Pokémon here!*\n\nUse *#hunt* to search for one.`)
-    if (Date.now() - poke.spawnedAt > POKE_CATCH_WINDOW) {
-      delete pendingPokemon[jid]
-      return reply(`⏱️ *Too slow!* The Pokémon fled!\n\n_Be quicker next time._ 🖤`)
-    }
-
-    // Parse: #catch <slot> | <ball>  OR  #catch <slot> --<ball>
-    const raw     = args.join(' ')
-    const parts   = raw.split(/\||\-\-/)
-    const slot    = parseInt(parts[0]?.trim()) || 1
-    const ballRaw = (parts[1]?.trim()?.toLowerCase() || 'pokeball').replace(/\s+/g, '')
-    const ballKey = Object.keys(BALL_RATES).find(k => k === ballRaw || k.startsWith(ballRaw)) || 'pokeball'
-    const ballData = SHOP_ITEMS[ballKey] || SHOP_ITEMS.pokeball
-
-    if (slot < 1 || slot > 6) return reply(`⚠️ Slot must be between 1 and 6.`)
-
-    const u = user || await db.getOrCreateUser(sender)
-
-    const battleLog = [
-      `⚔️ *BATTLE LOG*\n`,
-      `🏃 Trainer threw a *${ballData.name}*!`,
-      `${poke.name} used *Struggle*!`,
-      `📉 *${poke.name}* is weakened...`,
-    ]
-
-    const { rarity } = getRarity(poke.baseXp)
-    const catchRate  = BALL_RATES[ballKey] || 0.5
-    const rarityMod  = rarity === 'legendary' ? 0.3 : rarity === 'epic' ? 0.6 : 1
-    const success    = ballKey === 'masterball' ? true : Math.random() < (catchRate * rarityMod)
 
     delete pendingPokemon[jid]
 
-    if (!success) {
-      battleLog.push(`💨 *${poke.name}* broke free!`)
-      await react('😢')
-      return reply(battleLog.join('\n') + `\n\n_Try a better ball next time._ 🖤`)
+    // Build caught pokemon data
+    const caughtPokemon = {
+      name:       wild.name,
+      pokemon_id: wild.pokemon_id,
+      level:      wild.level,
+      xp:         0,
+      hp:         wild.maxHp,
+      maxHp:      wild.maxHp,
+      atk:        wild.atk,
+      moves:      wild.moves,
+      evolvesAt:  wild.evolvesAt,
+      evolvesTo:  wild.evolvesTo,
+      stoneEvolve:wild.stoneEvolve || null,
+      friendEvolve:wild.friendEvolve || false,
+      caughtAt:   Date.now(),
     }
 
-    battleLog.push(`✅ *${poke.name}* was caught!`)
+    // Add to party
+    let party = []
+    try { party = JSON.parse(u.pokemon_party || '[]') } catch {}
+    party = party.filter(Boolean)
+    if (slot <= party.length) party[slot - 1] = caughtPokemon
+    else party.push(caughtPokemon)
+    if (party.length > 6) party = party.slice(0, 6)
 
-    const xpGained = poke.baseXp + randInt(10, 30)
-    const newXp    = (u.xp || 0) + xpGained
-    const oldLvl   = u.level || 1
-    const newLvl   = Math.floor(newXp / 500) + 1
-    const leveled  = newLvl > oldLvl
+    await db.updateUser(sender, {
+      pokemon_party: JSON.stringify(party),
+      pokemon_caught: (u.pokemon_caught || 0) + 1,
+    })
 
-    await db.updateUser(sender, { xp: newXp, level: newLvl })
+    const evolveLine = caughtPokemon.evolvesAt
+      ? `🔄 Evolves at Level *${caughtPokemon.evolvesAt}*`
+      : caughtPokemon.stoneEvolve
+        ? `💎 Evolves with *${caughtPokemon.stoneEvolve}*`
+        : `✅ Final form`
 
-    // Enforce party max of 6 — overflow goes to PC
-    const allPokemon  = await db.getUserPokemon(sender).catch(() => [])
-    const partyCount  = (allPokemon || []).filter(p => p.in_party).length
-    const goToParty   = partyCount < 6
-
-    try {
-      await db.addPokemon(sender, {
-        pokemon_id: poke.id, name: poke.name, types: poke.types,
-        level: 1, xp: 0, moves: poke.moves || [], abilities: poke.abilities || [],
-        ball: ballKey, slot: goToParty ? slot : null, in_party: goToParty, base_xp: poke.baseXp,
-        height: poke.height, weight: poke.weight, location: poke.location,
-      })
-    } catch {}
-
-    await react('🎉')
-
-    const caption =
-      battleLog.join('\n') + '\n\n' +
-      `🎉 *POKÉMON CAUGHT!*\n\n` +
-      `📛 *${poke.name}* (No. ${poke.id})\n` +
-      `⚡ *Type:* ${poke.types.join(' / ')}\n` +
-      `🎯 *Ball Used:* ${ballData.emoji} ${ballData.name}\n` +
-      `📍 *Location:* ${goToParty ? `Party Slot #${slot}` : '📦 PC Storage (party full)'}\n\n` +
-      `⭐ *+${xpGained} XP gained!*\n` +
-      (leveled ? `\n🆙 *LEVEL UP!* ${oldLvl} → ${newLvl} 🎊\n` : '') +
-      (!goToParty ? `\n⚠️ *Party is full!* ${poke.name} sent to PC.\n` : '') +
-      `\n_The shadow garden grows stronger._ 🖤`
-
-    if (poke.imageUrl) {
-      try {
-        await sock.sendMessage(jid, { image: { url: poke.imageUrl }, caption }, { quoted: msg })
-        if (leveled) await _sendLevelUpImage(sock, jid, msg, poke.name, newLvl)
-        return
-      } catch {}
-    }
-    await sock.sendMessage(jid, { text: caption }, { quoted: msg })
-    if (leveled) await _sendLevelUpImage(sock, jid, msg, poke.name, newLvl)
+    await reply(
+      `✅ *Gotcha! ${wild.name} was caught!*\n\n` +
+      `📊 Level: ${wild.level}  •  🔷 ${wild.type}\n` +
+      `${evolveLine}\n` +
+      `📍 Placed in slot *${slot}*\n\n` +
+      `_Use *.party* to view your Pokémon._ 🖤`
+    )
   },
 
-  // ── #team ─────────────────────────────────────────────────────
-  async team({ reply, sender, user }) {
-    const u       = user || await db.getOrCreateUser(sender)
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const party   = (pokemon || []).filter(p => p.in_party).slice(0, 6)
-    if (!party.length) return reply(`❌ *Your team is empty!*\n\nCatch some Pokémon with *#hunt*!`)
-    const lines = party.map((p, i) =>
-      `*#${i + 1}* ${p.name} | Lvl ${p.level || 1} | XP: ${p.xp || 0}\n     Type: ${Array.isArray(p.types) ? p.types.join('/') : p.types || 'N/A'}`
-    ).join('\n\n')
-    await reply(`⚗ *Team*\n\n👤 *${u.name || sender}*\n\n${lines}\n\n_Your squad awaits battle._ 🖤`)
-  },
+  // ── .party ───────────────────────────────────────────────────────
+  async party({ reply, sender, user, pushName }) {
+    const u = user || await db.getOrCreateUser(sender, pushName)
+    let party = []
+    try { party = JSON.parse(u.pokemon_party || '[]') } catch {}
+    party = party.filter(Boolean)
+    if (!party.length) return reply('📦 *Your party is empty!*\n\nUse *.hunt* to find Pokémon. 🖤')
 
-  // ── #party ────────────────────────────────────────────────────
-  async party({ sock, jid, msg, reply, sender, user, pushName, args }) {
-    const u       = user || await db.getOrCreateUser(sender, pushName)
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const party   = (pokemon || []).filter(p => p.in_party).slice(0, 6)
-
-    if (args[0]) {
-      const idx = parseInt(args[0]) - 1
-      if (isNaN(idx) || idx < 0) return reply(`⚠️ Usage: *#party <slot>*`)
-      const p = party[idx]
-      if (!p) return reply(`❌ No Pokémon in slot #${idx + 1}`)
-      const moves     = Array.isArray(p.moves) ? p.moves.join(', ') : p.moves || 'N/A'
-      const abilities = Array.isArray(p.abilities) ? p.abilities.join(', ') : p.abilities || 'N/A'
-      return reply(
-        `📊 *POKÉMON STATS — Slot #${idx + 1}*\n\n` +
-        `📛 *Name:* ${p.name}\n🆔 *No:* ${p.pokemon_id}\n🔮 *Level:* ${p.level || 1}\n🪄 *XP:* ${p.xp || 0}\n\n` +
-        `🔄 *Type:* ${Array.isArray(p.types) ? p.types.join(' / ') : p.types}\n` +
-        `📏 *Height:* ${p.height || '?'} m\n⚖️ *Weight:* ${p.weight || '?'} kg\n\n` +
-        `🎮 *Moves:* ${moves}\n🧬 *Abilities:* ${abilities}\n🎱 *Ball:* ${p.ball || 'Poké Ball'}`
-      )
-    }
-
-    const slots = Array.from({ length: 6 }, (_, i) => {
-      const p = party[i]
-      if (!p) return `#${i + 1}\n🎈 *Name:* (empty)\n🔮 *Level:* —\n🪄 *XP:* —`
-      return `#${i + 1}\n🎈 *Name:* ${p.name}\n🔮 *Level:* ${p.level || 1}\n🪄 *XP:* ${p.xp || 0}`
+    const lines = party.map((p, i) => {
+      const evolveLine = p.evolvesAt && p.level < p.evolvesAt
+        ? `└ Evolves at Lv ${p.evolvesAt}`
+        : p.stoneEvolve
+          ? `└ Evolves with ${p.stoneEvolve}`
+          : p.evolvesTo ? '└ Max evolution reached ✓' : ''
+      return `*Slot ${i+1}:* ${p.name}  Lv.${p.level||1}\n   ❤️ ${p.hp||p.maxHp}/${p.maxHp||100} HP  |  ⚔️ ${p.atk} ATK\n   ${evolveLine}`
     }).join('\n\n')
 
+    await reply(`🎴 *POKÉMON PARTY*\n\n👤 *${u.name||pushName||sender}*\n\n${lines}\n\n_Use *.pokedex <slot>* for details  |  *.hunt* to catch more_`)
+  },
+
+  // ── .pokedex ──────────────────────────────────────────────────────
+  async pokedex({ reply, sender, user, pushName, args }) {
+    const u = user || await db.getOrCreateUser(sender, pushName)
+    let party = []
+    try { party = JSON.parse(u.pokemon_party || '[]') } catch {}
+    party = party.filter(Boolean)
+    const slotIdx = Math.max(0, (parseInt(args[0]) || 1) - 1)
+    const p = party[slotIdx]
+    if (!p) return reply(`❌ No Pokémon in slot ${slotIdx + 1}. Use *.party* to see your team.`)
+
+    const evolveLine = p.evolvesAt && p.level < p.evolvesAt
+      ? `🔄 Evolves at Level *${p.evolvesAt}* (${p.evolvesAt - p.level} levels away)`
+      : p.stoneEvolve
+        ? `💎 Use a *${p.stoneEvolve}* to evolve`
+        : p.evolvesTo ? `✅ Already at highest level-based evolution` : `✅ Final form`
+
+    await reply(
+      `📖 *POKÉDEX — Slot ${slotIdx+1}*\n\n` +
+      `🏷 Name: *${p.name}*  (ID: #${p.pokemon_id})\n` +
+      `🔷 Type: ${p.type||'Normal'}\n` +
+      `📊 Level: ${p.level||1}  |  XP: ${p.xp||0}\n` +
+      `❤️ HP: ${p.hp||p.maxHp}/${p.maxHp}\n` +
+      `⚔️ ATK: ${p.atk}\n` +
+      `${evolveLine}\n\n` +
+      `🎮 *Moves:*\n${(p.moves||[]).map((m,i)=>`  ${i+1}. ${m}`).join('\n')}\n\n` +
+      `_Use *.evolve <slot>* if ready to evolve. *.release <slot>* to release._`
+    )
+  },
+
+  // ── .evolve ───────────────────────────────────────────────────────
+  async evolve({ reply, sender, user, pushName, args }) {
+    const u = user || await db.getOrCreateUser(sender, pushName)
+    let party = []
+    try { party = JSON.parse(u.pokemon_party || '[]') } catch {}
+    party = party.filter(Boolean)
+    const slotIdx = Math.max(0, (parseInt(args[0]) || 1) - 1)
+    const p = party[slotIdx]
+    if (!p) return reply(`❌ No Pokémon in slot ${slotIdx + 1}.`)
+
+    const evoTarget = checkLevelEvolution(p)
+    if (!evoTarget) {
+      const template = WILD_POKEMON_POOL.find(t => t.id === p.pokemon_id)
+      if (!template || !template.evolvesTo) return reply(`❌ *${p.name}* doesn't evolve or has no registered evolution.`)
+      if (template.stoneEvolve) return reply(`❌ *${p.name}* evolves with a *${template.stoneEvolve}*, not by level.\n\n_Use *.useitem <slot> <stone>* to evolve it._`)
+      if (template.friendEvolve) return reply(`❌ *${p.name}* evolves through high friendship.\n\n_Keep battling with it to raise friendship!_`)
+      if (template.evolvesAt && p.level < template.evolvesAt) return reply(`❌ *${p.name}* needs to reach Level *${template.evolvesAt}* to evolve!\n\n_Currently Level ${p.level} — ${template.evolvesAt - p.level} more levels to go._`)
+      return reply(`❌ *${p.name}* cannot evolve right now.`)
+    }
+
+    // Perform evolution
+    const oldName = p.name
+    party[slotIdx] = {
+      ...p,
+      name:       evoTarget.name,
+      pokemon_id: evoTarget.id,
+      maxHp:      Math.floor(evoTarget.hp + (p.level||1) * 3),
+      hp:         Math.floor(evoTarget.hp + (p.level||1) * 3),
+      atk:        evoTarget.atk + (p.level||1) * 2,
+      moves:      evoTarget.moves,
+      evolvesAt:  evoTarget.evolvesAt,
+      evolvesTo:  evoTarget.evolvesTo,
+      stoneEvolve:evoTarget.stoneEvolve || null,
+    }
+    await db.updateUser(sender, { pokemon_party: JSON.stringify(party) })
+
+    const nextEvo = evoTarget.evolvesAt ? `🔄 Next evolution at Level *${evoTarget.evolvesAt}*` : `✅ *${evoTarget.name}* is the final form!`
+    await reply(
+      `🌟 *EVOLUTION!*\n\n` +
+      `✨ *${oldName}* evolved into *${evoTarget.name}*!\n\n` +
+      `📊 New stats:\n` +
+      `❤️ HP: ${party[slotIdx].maxHp}\n` +
+      `⚔️ ATK: ${party[slotIdx].atk}\n` +
+      `🎮 Moves: ${evoTarget.moves.join(', ')}\n\n` +
+      `${nextEvo}\n\n` +
+      `_Congratulations!_ 🖤`
+    )
+  },
+
+  // ── .release ─────────────────────────────────────────────────────
+  async release({ reply, sender, user, pushName, args }) {
+    const u = user || await db.getOrCreateUser(sender, pushName)
+    let party = []
+    try { party = JSON.parse(u.pokemon_party || '[]') } catch {}
+    party = party.filter(Boolean)
+    const slotIdx = Math.max(0, (parseInt(args[0]) || 1) - 1)
+    const p = party[slotIdx]
+    if (!p) return reply(`❌ No Pokémon in slot ${slotIdx + 1}.`)
+    party.splice(slotIdx, 1)
+    await db.updateUser(sender, { pokemon_party: JSON.stringify(party) })
+    await reply(`👋 *${p.name}* was released back to the wild.\n\n_Goodbye, ${p.name}!_ 🖤`)
+  },
+
+  // ── #fight (wild battle using party slot) ─────────────────────────
+  async fight({ sock, jid, msg, reply, sender, user, pushName, args }) {
+    const u = user || await db.getOrCreateUser(sender, pushName)
+
+    if (activeBattles[sender]) return reply(`⚔️ You're already in a battle! Use *.move <1–4>* to attack or *.flee* to escape.`)
+
+    let party = []
+    try { party = JSON.parse(u.pokemon_party || '[]') } catch {}
+    party = party.filter(Boolean)
+
+    const slotArg = parseInt(args[0]) || 1
+    const myPokemon = party[Math.max(0, slotArg - 1)]
+    if (!myPokemon) return reply(`❌ No Pokémon in slot ${slotArg}. Use *.party* to see your team.`)
+
+    const wild = pendingPokemon[jid]
+    if (!wild) return reply(`❌ No wild Pokémon to fight! Use *.hunt* to find one first.`)
+    if (Date.now() - wild.spawnedAt > CATCH_WINDOW_MS)
+      return reply(`❌ That Pokémon fled! Use *.hunt* again.`)
+
+    const myMaxHp  = myPokemon.maxHp || 100
+    const wildMaxHp= wild.maxHp || wild.hp
+    activeBattles[sender] = {
+      jid, myPokemon, myHp: myMaxHp, myMaxHp, wild, wildHp: wildMaxHp, wildMaxHp,
+      moves: myPokemon.moves || ['Tackle','Growl'], turn: 1,
+    }
+
     const caption =
-      `⚗ *Party*\n\n🎴 *ID:* ${sender.slice(-6)}\n🏮 *Username:* ${u.name || pushName || sender}\n🧧 *Tag:* @${sender}\n\n` +
-      `${slots}\n\n[Use *#party <slot>* to see a Pokémon's stats]\n\n> Shadow Pokémon 👥`
+      `⚔️ *BATTLE STARTED!*\n\n` +
+      `🌿 *Wild ${wild.name}* (Lv ${wild.level})\n${hpBar(wildMaxHp, wildMaxHp)} ${wildMaxHp}/${wildMaxHp} HP\n\n` +
+      `⚡ *${myPokemon.name}* (Lv ${myPokemon.level||1})\n${hpBar(myMaxHp, myMaxHp)} ${myMaxHp}/${myMaxHp} HP\n\n` +
+      `📋 *Moves:*\n${(myPokemon.moves||['Tackle']).map((m,i)=>`  *${i+1}.* ${m}`).join('\n')}\n\n` +
+      `> *.move <1–${(myPokemon.moves||['Tackle']).length}>* to attack  |  *.flee* to escape`
 
-    const imgBuf = await _buildPartyImage(party).catch(() => null)
-    if (imgBuf) {
-      await sock.sendMessage(jid, { image: imgBuf, caption }, { quoted: msg })
-    } else {
-      await sock.sendMessage(jid, { text: caption }, { quoted: msg })
-    }
-  },
-
-  // ── #pc ───────────────────────────────────────────────────────
-  async pc({ reply, sender }) {
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const stored  = (pokemon || []).filter(p => !p.in_party)
-    if (!stored.length) return reply(`📦 *PC STORAGE EMPTY*\n\nAll Pokémon are in your party.`)
-    const lines = stored.map((p, i) =>
-      `${i + 1}. *${p.name}* — Lvl ${p.level || 1} (${Array.isArray(p.types) ? p.types.join('/') : p.types})`
-    ).join('\n')
-    await reply(`📦 *PC STORAGE*\n\n${lines}`)
-  },
-
-  // ── #swap ─────────────────────────────────────────────────────
-  async swap({ reply, sender, args }) {
-    const [a, b] = [parseInt(args[0]), parseInt(args[1])]
-    if (!a || !b || a === b || a < 1 || b < 1 || a > 6 || b > 6)
-      return reply(`⚠️ Usage: *#swap <slot1> <slot2>*`)
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const party   = (pokemon || []).filter(p => p.in_party)
-    const pa = party[a - 1], pb = party[b - 1]
-    if (!pa) return reply(`❌ No Pokémon in slot #${a}`)
-    if (!pb) return reply(`❌ No Pokémon in slot #${b}`)
-    try { await db.updatePokemon(pa.id, { slot: b }); await db.updatePokemon(pb.id, { slot: a }) } catch {}
-    await reply(`🔄 *SWAP COMPLETE!*\n\n#${a} ${pa.name} ↔️ #${b} ${pb.name}`)
-  },
-
-  // ── #dex ──────────────────────────────────────────────────────
-  async dex({ sock, jid, msg, reply, args }) {
-    const query = args[0]?.toLowerCase()
-    if (!query) return reply(`📘 *POKÉDEX*\n\nUsage: *#dex <name or id>*`)
-    await sock.sendMessage(jid, { text: `🔍 Searching Pokédex for *${query}*...` }, { quoted: msg })
-    const data = await fetchPokeData(query).catch(() => null)
-    if (!data) return reply(`❌ *${query}* not found in the Pokédex.`)
-    const caption = buildDexCaption(data)
-    if (data.imageUrl) {
-      try {
-        await sock.sendMessage(jid, { image: { url: data.imageUrl }, caption }, { quoted: msg })
+    try {
+      const battleImg = await fetchBattleImage(myPokemon, wild)
+      if (battleImg && battleImg.length > 500) {
+        await sock.sendMessage(jid, { image: battleImg, caption }, { quoted: msg })
         return
-      } catch {}
-    }
+      }
+    } catch {}
     await sock.sendMessage(jid, { text: caption }, { quoted: msg })
   },
 
-  // ── #heal / #pheal ────────────────────────────────────────────
-  async heal({ reply, sender }) {
-    const cd = await db.getCooldown(sender, 'pheal').catch(() => 0)
-    if (cd > 0) {
-      const mins = Math.floor(cd / 60000)
-      const secs = Math.floor((cd % 60000) / 1000)
-      return reply(`⏳ *Team already healing!*\n\n⏰ Ready in *${mins > 0 ? `${mins}m ` : ''}${secs}s*`)
-    }
-    await db.setCooldown(sender, 'pheal', 30 * 60)
-    await reply(`✨ *TEAM HEALED!*\n\n💚 All Pokémon fully restored!\n\n⏳ Next heal in *30 minutes*.\n\n_The healing light washes over your team._ 🖤`)
-  },
-  async pheal(ctx) { return module.exports.heal(ctx) },
-
-  // ── #boost ────────────────────────────────────────────────────
-  async boost({ reply, sender }) {
-    const cd = await db.getCooldown(sender, 'pboost').catch(() => 0)
-    if (cd > 0) {
-      const mins = Math.floor(cd / 60000)
-      return reply(`⏳ Boost still active! *${mins}m* remaining.`)
-    }
-    await db.setCooldown(sender, 'pboost', 30 * 60)
-    await reply(`⚡ *BATTLE BOOST ACTIVATED!*\n\n🔥 +25% ATK & SPD for 30 minutes!\n\n_Unleash the power within!_ 🖤`)
-  },
-
-  // ── #battle ───────────────────────────────────────────────────
-  async battle({ sock, jid, msg, reply, sender, user, args }) {
-    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply(`⚠️ Usage: *#battle @user*`)
-    const opponentPhone = mentioned[0].split('@')[0]
-    if (opponentPhone === sender) return reply(`❌ You can't battle yourself!`)
-    const u = user || await db.getOrCreateUser(sender)
-    const myPoke    = await db.getUserPokemon(sender).catch(() => [])
-    const myParty   = (myPoke || []).filter(p => p.in_party)
-    if (!myParty.length) return reply(`❌ You need Pokémon in your party! Use *#hunt*.`)
-    const theirPoke = await db.getUserPokemon(opponentPhone).catch(() => [])
-    const theirPart = (theirPoke || []).filter(p => p.in_party)
-    if (!theirPart.length) return reply(`❌ @${opponentPhone} has no Pokémon in their party!`)
-    const mine   = myParty[0]
-    const theirs = theirPart[0]
-    const win    = Math.random() > 0.5
-    const log = [
-      `⚔️ *TRAINER BATTLE!*\n`,
-      `*${u.name || sender}* vs *@${opponentPhone}*\n`,
-      `🔵 *${mine.name}* (Lvl ${mine.level || 1}) vs 🔴 *${theirs.name}* (Lvl ${theirs.level || 1})\n`,
-      `━━━━━━━━━━━━━━━━━━`,
-      `${mine.name} used *${Array.isArray(mine.moves) ? mine.moves[0] : 'Tackle'}*!`,
-      `${theirs.name} used *${Array.isArray(theirs.moves) ? theirs.moves[0] : 'Scratch'}*!`,
-      win ? `💥 ${mine.name} lands a *critical hit!*` : `💥 ${theirs.name} lands a *critical hit!*`,
-      win ? `\n🏆 *${u.name || sender} WINS!*` : `\n💥 *@${opponentPhone} WINS!*`,
-    ]
-    if (win) {
-      const xp = 50 + randInt(10, 30)
-      await db.updateUser(sender, { xp: (u.xp || 0) + xp, pokemon_wins: (u.pokemon_wins || 0) + 1 })
-      log.push(`\n⭐ *+${xp} XP* earned!`)
-    } else {
-      await db.updateUser(sender, { pokemon_losses: (u.pokemon_losses || 0) + 1 })
-    }
-    await sock.sendMessage(jid, { text: log.join('\n'), mentions: [mentioned[0]] }, { quoted: msg })
-  },
-
-  // ── #gym ──────────────────────────────────────────────────────
-  async gym({ reply, sender, user }) {
-    const leaders = ['Brock', 'Misty', 'Lt. Surge', 'Erika', 'Koga', 'Sabrina', 'Blaine', 'Giovanni']
-    const leader  = leaders[Math.floor(Math.random() * leaders.length)]
-    const win     = Math.random() > 0.4
-    const u       = user || await db.getOrCreateUser(sender)
-    if (win) {
-      await db.updateUser(sender, { pokemon_badges: (u.pokemon_badges || 0) + 1, xp: (u.xp || 0) + 100 })
-      await reply(`🏅 *GYM BATTLE — ${leader.toUpperCase()}!*\n\n🏆 *YOU WIN!*\n\n🥇 Badge earned! Total: ${(u.pokemon_badges || 0) + 1}\n⭐ +100 XP`)
-    } else {
-      await reply(`🏅 *GYM BATTLE — ${leader.toUpperCase()}!*\n\n💥 *DEFEAT!*\n\n_Train harder and return._ 🖤`)
-    }
-  },
-
-  // ── #raid ─────────────────────────────────────────────────────
-  async raid({ reply, sender, user }) {
-    const bosses = [
-      { name: 'Mega Mewtwo', xp: 500 }, { name: 'Shadow Kyogre', xp: 400 }, { name: 'Dark Rayquaza', xp: 450 },
-    ]
-    const boss = bosses[Math.floor(Math.random() * bosses.length)]
-    const win  = Math.random() > 0.5
-    const u    = user || await db.getOrCreateUser(sender)
-    if (win) {
-      await db.updateUser(sender, { xp: (u.xp || 0) + boss.xp, wallet: (u.wallet || 0) + 2000 })
-      await reply(`🔥 *RAID BOSS — ${boss.name.toUpperCase()}!*\n\n🏆 *RAID CLEARED!*\n\n⭐ +${boss.xp} XP\n💰 +2,000 coins`)
-    } else {
-      await reply(`🔥 *RAID BOSS — ${boss.name.toUpperCase()}!*\n\n💔 *RAID FAILED!*\n\n_Gather more trainers and try again._ 🖤`)
-    }
-  },
-
-  // ── #evolve ───────────────────────────────────────────────────
-  async evolve({ reply, sender, args }) {
-    const slot    = parseInt(args[0]) || 1
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const party   = (pokemon || []).filter(p => p.in_party)
-    const p       = party[slot - 1]
-    if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
-    await reply(
-      `🔄 *EVOLUTION!*\n\n✨ *${p.name}* is evolving...\n\n🌟 A bright light engulfs ${p.name}!\n\n🎊 *Evolution complete!*\n\n_The power within has awakened._ 🖤`
-    )
-  },
-
-  // ── #train ────────────────────────────────────────────────────
-  async train({ reply, sender, args }) {
-    const slot = parseInt(args[0]) || 1
-    const cd   = await db.getCooldown(sender, `ptrain${slot}`).catch(() => 0)
-    if (cd > 0) return reply(`⏳ Wait *${Math.floor(cd / 60000)}m* before training slot #${slot} again.`)
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const party   = (pokemon || []).filter(p => p.in_party)
-    const p       = party[slot - 1]
-    if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
-    const xpGain = randInt(20, 60)
-    const newXp  = (p.xp || 0) + xpGain
-    const newLvl = Math.floor(newXp / 200) + 1
-    const leveled = newLvl > (p.level || 1)
-    try { await db.updatePokemon(p.id, { xp: newXp, level: newLvl }) } catch {}
-    await db.setCooldown(sender, `ptrain${slot}`, 15 * 60)
-    await reply(
-      `💪 *TRAINING COMPLETE!*\n\n📛 *${p.name}* trained hard!\n\n⭐ *+${xpGain} XP*\n🔮 *XP:* ${newXp}` +
-      (leveled ? `\n\n🆙 *LEVEL UP!* → Level ${newLvl} 🎊` : '') +
-      `\n\n⏰ Train again in 15 minutes.`
-    )
-  },
-
-  // ── #moves ────────────────────────────────────────────────────
-  async moves({ reply, sender, args }) {
-    const slot    = parseInt(args[0]) || 1
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const party   = (pokemon || []).filter(p => p.in_party)
-    const p       = party[slot - 1]
-    if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
-    const moveList = Array.isArray(p.moves) ? p.moves : ['Tackle']
-    await reply(`🎮 *${p.name.toUpperCase()} — MOVES*\n\n${moveList.map((m, i) => `${i + 1}. *${m}*`).join('\n')}\n\n_Use *#learn ${slot}* to unlock new moves._ 🖤`)
-  },
-
-  // ── #learn ────────────────────────────────────────────────────
-  async learn({ reply, sender, args }) {
-    const slot    = parseInt(args[0]) || 1
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const party   = (pokemon || []).filter(p => p.in_party)
-    const p       = party[slot - 1]
-    if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
-    const data     = await fetchPokeData(p.pokemon_id).catch(() => null)
-    const allMoves = data?.moves || []
-    const newMove  = allMoves[Math.floor(Math.random() * allMoves.length)] || 'Hyper Beam'
-    const curMoves = Array.isArray(p.moves) ? [...p.moves] : ['Tackle']
-    if (!curMoves.includes(newMove)) { curMoves.push(newMove); try { await db.updatePokemon(p.id, { moves: curMoves.slice(0, 8) }) } catch {} }
-    await reply(`📚 *MOVE LEARNED!*\n\n📛 *${p.name}* learned *${newMove}*!`)
-  },
-
-  // ── #stats ────────────────────────────────────────────────────
-  async stats({ reply, sender, args }) {
-    const slot    = parseInt(args[0]) || 1
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const party   = (pokemon || []).filter(p => p.in_party)
-    const p       = party[slot - 1]
-    if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
-    const lvl = p.level || 1
-    await reply(
-      `📊 *DETAILED STATS — ${p.name.toUpperCase()}*\n\n` +
-      `🆔 *No:* ${p.pokemon_id}\n🔮 *Level:* ${lvl}\n🪄 *XP:* ${p.xp || 0}/${lvl * 200}\n\n` +
-      `❤️ *HP:* ${200 + lvl * 15}\n⚔️ *ATK:* ${50 + lvl * 5}\n🛡️ *DEF:* ${40 + lvl * 4}\n💨 *SPD:* ${45 + lvl * 3}\n\n` +
-      `🔄 *Type:* ${Array.isArray(p.types) ? p.types.join(' / ') : p.types}\n` +
-      `📏 *Height:* ${p.height || '?'} m\n⚖️ *Weight:* ${p.weight || '?'} kg`
-    )
-  },
-
-  // ── #mart ─────────────────────────────────────────────────────
-  async mart({ reply, sender, user }) {
-    const u = user || await db.getOrCreateUser(sender)
-    const coins    = Object.entries(SHOP_ITEMS).filter(([, v]) => !v.gem).map(([k, v]) => `${v.emoji} *${v.name}* — $${v.price}`).join('\n')
-    const gemItems = Object.entries(SHOP_ITEMS).filter(([, v]) => v.gem).map(([k, v]) => `${v.emoji} *${v.name}* — ${v.price} gems`).join('\n')
-    await reply(
-      `🛒 *POKÉMART*\n\n💰 *Coins:* $${(u.wallet || 0).toLocaleString()}\n💎 *Gems:* ${u.gems || 0}\n\n━━━━━━━━━━━━━━━━━\n\n🏪 *ITEMS (Coins)*\n${coins}\n\n💜 *PREMIUM (Gems)*\n${gemItems}\n\n━━━━━━━━━━━━━━━━━\n\n💡 Use *#mbuy <item>* to purchase`
-    )
-  },
-
-  // ── #mbuy ─────────────────────────────────────────────────────
-  async mbuy({ reply, sender, user, args }) {
-    const u   = user || await db.getOrCreateUser(sender)
-    const key = args[0]?.toLowerCase()
-    if (!key) return reply(`⚠️ Usage: *#mbuy <item>* — See *#mart* for items.`)
-    const entry = Object.entries(SHOP_ITEMS).find(([k, v]) => k === key || v.name.toLowerCase().includes(key))
-    if (!entry) return reply(`❌ Item "*${key}*" not found. Check *#mart*`)
-    const [itemKey, item] = entry
-    if (item.gem) {
-      if ((u.gems || 0) < item.price) return reply(`❌ Need *${item.price} gems*`)
-      await db.updateUser(sender, { gems: (u.gems || 0) - item.price })
-    } else {
-      if ((u.wallet || 0) < item.price) return reply(`❌ Need *$${item.price}*`)
-      await db.updateUser(sender, { wallet: (u.wallet || 0) - item.price })
-    }
-    try { await db.addItem(sender, itemKey, 1) } catch {}
-    await reply(`✅ *${item.emoji} ${item.name}* added to your bag!\n\n_Use *#use ${itemKey}* to activate it._ 🖤`)
-  },
-
-  // ── #use ──────────────────────────────────────────────────────
-  async use({ reply, args }) {
-    const key  = args[0]?.toLowerCase()
-    if (!key) return reply(`⚠️ Usage: *#use <item>*`)
-    const item = SHOP_ITEMS[key]
-    if (!item) return reply(`❌ Item not found. Check *#mart*`)
-    await reply(
-      `✨ *ITEM USED!*\n\n${item.emoji} *${item.name}* activated!\n\n` +
-      (item.type === 'heal' ? '💚 Team healed!' :
-       item.type === 'boost' ? '⚡ Battle stats boosted!' :
-       item.type === 'evolution' ? '🌟 Evolution stone ready! Use *#evolve <slot>*' : '✅ Effect applied!')
-    )
-  },
-
-  // ── #trade ────────────────────────────────────────────────────
-  async trade({ sock, jid, msg, reply, sender, args }) {
-    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply(`⚠️ Usage: *#trade @user*`)
-    await sock.sendMessage(jid, {
-      text: `🔄 *TRADE REQUEST*\n\n*@${sender}* wants to trade with *@${mentioned[0].split('@')[0]}*!\n\n_Use *#gift* to send Pokémon directly._ 🖤`,
-      mentions: [msg.key.participant || msg.key.remoteJid, mentioned[0]],
-    }, { quoted: msg })
-  },
-
-  // ── #gift ─────────────────────────────────────────────────────
-  async gift({ sock, jid, msg, reply, sender, args }) {
-    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    const slot = parseInt(args[0]) || 1
-    if (!mentioned.length) return reply(`⚠️ Usage: *#gift <slot> @user*`)
-    const targetPhone = mentioned[0].split('@')[0]
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const party   = (pokemon || []).filter(p => p.in_party)
-    const p       = party[slot - 1]
-    if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
-    try { await db.updatePokemon(p.id, { phone: targetPhone }) } catch {}
-    await sock.sendMessage(jid, {
-      text: `🎁 *POKÉMON GIFTED!*\n\n*@${sender}* sent *${p.name}* to *@${targetPhone}*!`,
-      mentions: [msg.key.participant || msg.key.remoteJid, mentioned[0]],
-    }, { quoted: msg })
-  },
-
-  // ── #event ────────────────────────────────────────────────────
-  async event({ reply }) {
-    await reply(`🎉 *SPECIAL EVENTS*\n\n🌑 *Shadow Festival* — Ongoing\n   Dark & Ghost type spawns boosted!\n\n⭐ *Legendary Weekend* — Every Fri–Sun\n   Legendary spawn rate x2\n\n_Check back often for new events!_ 🖤`)
-  },
-
-  // ── #legend ───────────────────────────────────────────────────
-  async legend({ reply, sender }) {
-    const pokemon     = await db.getUserPokemon(sender).catch(() => [])
-    const legendaries = (pokemon || []).filter(p => (p.base_xp || 0) > 300)
-    if (!legendaries.length) return reply(`🌟 *LEGENDARY TRACKER*\n\nNo Legendaries caught yet!\n\n_Keep hunting — they appear rarely._ 🖤`)
-    const lines = legendaries.map(p => `✨ *${p.name}* — Lvl ${p.level || 1}`).join('\n')
-    await reply(`🌟 *YOUR LEGENDARIES*\n\n${lines}\n\n_Rare power is yours._ 🖤`)
-  },
-
-  // ── #achieve ──────────────────────────────────────────────────
-  async achieve({ reply, sender, user }) {
-    const u       = user || await db.getOrCreateUser(sender)
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const caught  = (pokemon || []).length
-    const wins    = u.pokemon_wins || 0
-    const badges  = u.pokemon_badges || 0
-    const achievements = [
-      { name: 'First Catch',     done: caught >= 1,  emoji: '🔴' },
-      { name: 'Collector',       done: caught >= 10,  emoji: '🟠' },
-      { name: 'Pokémon Master',  done: caught >= 50,  emoji: '🟡' },
-      { name: 'First Battle',    done: wins >= 1,     emoji: '⚔️' },
-      { name: 'Champion',        done: wins >= 10,    emoji: '🏆' },
-      { name: 'Badge Collector', done: badges >= 4,   emoji: '🥇' },
-      { name: 'Gym Master',      done: badges >= 8,   emoji: '🎖️' },
-    ]
-    const lines = achievements.map(a => `${a.done ? '✅' : '⬜'} ${a.emoji} ${a.name}`).join('\n')
-    await reply(`🏅 *ACHIEVEMENTS*\n\n👤 *${u.name || sender}*\n\n${lines}\n\n📊 Progress: ${achievements.filter(a => a.done).length}/${achievements.length}`)
-  },
-
-  // ── #cooldown ─────────────────────────────────────────────────
-  async cooldown({ reply, sender }) {
-    const cmds = ['pdaily', 'hunt', 'pboost']
-    const results = await Promise.all(cmds.map(async c => {
-      const cd   = await db.getCooldown(sender, c).catch(() => 0)
-      const mins = Math.floor(cd / 60000)
-      const secs = Math.floor((cd % 60000) / 1000)
-      return `${cd > 0 ? '⏳' : '✅'} *${c}* — ${cd > 0 ? `${mins}m ${secs}s` : 'Ready!'}`
-    }))
-    await reply(`⏱️ *COMMAND COOLDOWNS*\n\n${results.join('\n')}`)
-  },
-
-  // ── .setms / #setms ───────────────────────────────────────────
-  async setms({ sock, jid, msg, reply, sender }) {
-    const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
-    if (!quoted || !quoted.stickerMessage) {
-      return reply(`⚠️ *HOW TO USE:*\n\nReply to a *sticker* with *.setms*\n\nThis sticker will be sent whenever someone tags you!\n\n_Make it iconic._ 🖤`)
-    }
-    const stanzaId    = msg.message.extendedTextMessage.contextInfo.stanzaId
-    const participant = msg.message.extendedTextMessage.contextInfo.participant || jid
-    const stickerMsg  = { key: { remoteJid: jid, id: stanzaId, participant }, message: quoted }
-    try {
-      const { downloadMediaMessage } = require('@whiskeysockets/baileys')
-      const buffer = await downloadMediaMessage(stickerMsg, 'buffer', {}, {
-        logger: { level: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-        reuploadRequest: sock.updateMediaMessage,
-      })
-      const ms  = loadMS()
-      ms[sender] = { data: buffer.toString('base64'), mime: 'image/webp', setAt: Date.now() }
-      saveMS(ms)
-      await reply(`✅ *MENTION STICKER SET!*\n\nWhen someone tags you, the bot will reply with your sticker!\n\nUse *.delms* to remove it. 🖤`)
-    } catch (err) {
-      await reply(`❌ Failed to save sticker: ${err.message}`)
-    }
-  },
-
-  // ── .delms / #delms ───────────────────────────────────────────
-  async delms({ reply, sender }) {
-    const ms = loadMS()
-    if (!ms[sender]) return reply(`⚠️ You don't have a mention sticker set.\n\nUse *.setms* by replying to a sticker.`)
-    delete ms[sender]
-    saveMS(ms)
-    await reply(`🗑️ *MENTION STICKER REMOVED.*\n\n_You will no longer auto-reply to tags._ 🖤`)
-  },
-
-  // Expose for index.js mention sticker trigger
-  getMentionStickers: loadMS,
-
-  // ── .pokemon on/off (staff) ───────────────────────────────────
-  async pokemon({ jid, reply, args, isOwner, isMod, isGuardian }) {
-    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
-    const toggle = args[0]?.toLowerCase()
-    if (toggle === 'on') {
-      await db.updateGroup(jid, { pokemon_enabled: true })
-      await reply(`✅ *Pokémon System ENABLED!*\n\nUse *#hunt* to start catching.`)
-    } else if (toggle === 'off') {
-      await db.updateGroup(jid, { pokemon_enabled: false })
-      await reply(`❌ *Pokémon System DISABLED.*`)
-    } else {
-      await reply(`⚠️ Usage: *.pokemon on/off*`)
-    }
-  },
-
-  // ── .fight — start wild Pokémon battle ───────────────────────
-  async fight({ sock, jid, msg, reply, sender, user }) {
-    const wild = pendingPokemon[jid]
-    if (!wild) return reply(`❌ *No wild Pokémon here!*\n\nUse *#hunt* to find one first.`)
-    if (Date.now() - wild.spawnedAt > POKE_CATCH_WINDOW) {
-      delete pendingPokemon[jid]
-      return reply(`❌ *The wild ${wild.name} fled!*\n\nUse *#hunt* to search again.`)
-    }
-    if (activeBattles[sender]) {
-      const b = activeBattles[sender]
-      return reply(
-        `⚔️ *Already in battle!*\n\n` +
-        `You're fighting *${b.wild.name}*!\n\n` +
-        `*📋 Moves:*\n${b.moves.map((m, i) => `  *${i + 1}.* ${m}`).join('\n')}\n\n` +
-        `> *.move <1-${b.moves.length}>* to attack  |  *.flee* to escape`
-      )
-    }
-
-    const u = user || await db.getOrCreateUser(sender)
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const party = (pokemon || []).filter(p => p.in_party)
-    if (!party.length) return reply(`❌ You need Pokémon in your party!\n\nCatch some first with *#hunt*.`)
-
-    const myPoke    = party[0]
-    const myLevel   = myPoke.level || 1
-    const wildLevel = randInt(5, 45)
-    const myMaxHp   = 80 + myLevel * 12
-    const wildMaxHp = 60 + wildLevel * 8
-
-    const moves = (Array.isArray(myPoke.moves) && myPoke.moves.length >= 2)
-      ? myPoke.moves.slice(0, 4)
-      : ['Tackle', 'Growl', 'Quick Attack', 'Scratch']
-
-    activeBattles[sender] = {
-      jid,
-      wild:      { ...wild, level: wildLevel },
-      myPokemon: myPoke,
-      myHp: myMaxHp, myMaxHp,
-      wildHp: wildMaxHp, wildMaxHp,
-      moves,
-      turn: 1,
-    }
-
-    const bar = (cur, max) => {
-      const f = Math.max(0, Math.round(cur / max * 10))
-      return '🟩'.repeat(f) + '⬜'.repeat(10 - f)
-    }
-
-    await sock.sendMessage(jid, {
-      text:
-        `⚔️ *WILD BATTLE!*\n\n` +
-        `🌿 *Wild ${wild.name}* (Lv ${wildLevel})\n` +
-        `❤️ ${bar(wildMaxHp, wildMaxHp)} ${wildMaxHp}/${wildMaxHp} HP\n\n` +
-        `⚡ *${myPoke.name}* (Lv ${myLevel})\n` +
-        `❤️ ${bar(myMaxHp, myMaxHp)} ${myMaxHp}/${myMaxHp} HP\n\n` +
-        `━━━━━━━━━━━━━━\n` +
-        `*📋 Your Moves:*\n` +
-        moves.map((m, i) => `  *${i + 1}.* ${m}`).join('\n') +
-        `\n\n> *.move <1-${moves.length}>* to attack  |  *.flee* to escape`,
-    }, { quoted: msg })
-  },
-
-  // ── .move — use a move during wild battle ─────────────────────
+  // ── .move (battle turn) ───────────────────────────────────────────
   async move({ sock, jid, msg, reply, sender, user, args }) {
     const battle = activeBattles[sender]
-    if (!battle) return reply(
-      `❌ *Not in a battle!*\n\nUse *#hunt* to find a wild Pokémon, then *.fight* to battle it.`
-    )
+    if (!battle) return reply(`❌ You're not in a battle. Use *.hunt* then *#fight <slot>* to start one.`)
     if (battle.jid !== jid) return reply(`❌ Your active battle is in a different group.`)
-
-    const bar = (cur, max) => {
-      const f = Math.max(0, Math.round(cur / max * 10))
-      return '🟩'.repeat(f) + '⬜'.repeat(10 - f)
-    }
 
     const moveIdx  = Math.max(0, (parseInt(args[0]) || 1) - 1)
     const moveName = battle.moves[Math.min(moveIdx, battle.moves.length - 1)] || 'Tackle'
 
-    // ── Player attacks ─────────────────────────────────────────
+    // Player attacks
     const myAtk     = 15 + (battle.myPokemon.level || 1) * 3
     const crit      = Math.random() < 0.15
     const playerDmg = randInt(myAtk, myAtk + 15) + (crit ? 12 : 0)
@@ -1011,28 +505,33 @@ module.exports = {
     log.push(`⚡ *${battle.myPokemon.name}* used *${moveName}*!`)
     log.push(crit ? `✨ *Critical hit!* (-${playerDmg} HP)` : `(-${playerDmg} HP)`)
 
-    // ── Wild fainted? ──────────────────────────────────────────
     if (battle.wildHp <= 0) {
       const xpGain = 25 + battle.wild.level * 5
       const u = user || await db.getOrCreateUser(sender)
-      await db.updateUser(sender, {
-        xp:           (u.xp || 0) + xpGain,
-        pokemon_wins: (u.pokemon_wins || 0) + 1,
-      }).catch(() => {})
+      let party = []
+      try { party = JSON.parse(u.pokemon_party || '[]') } catch {}
+      party = party.filter(Boolean)
+      const partyIdx = party.findIndex(p => p.name === battle.myPokemon.name)
+      let evolutionMsg = ''
+      if (partyIdx !== -1) {
+        party[partyIdx].xp   = (party[partyIdx].xp || 0) + xpGain
+        party[partyIdx].level = (party[partyIdx].level || 1) + Math.floor(xpGain / 100)
+        // Check level evolution
+        const evoTarget = checkLevelEvolution(party[partyIdx])
+        if (evoTarget) evolutionMsg = `\n\n🌟 *${party[partyIdx].name}* can now evolve! Use *.evolve ${partyIdx + 1}*`
+        await db.updateUser(sender, { pokemon_party: JSON.stringify(party), pokemon_wins: (u.pokemon_wins||0)+1 })
+      } else {
+        await db.updateUser(sender, { pokemon_wins: (u.pokemon_wins||0)+1 })
+      }
       delete activeBattles[sender]
-      // Keep wild alive (weakened) so player can still catch it
       pendingPokemon[jid] = { ...battle.wild, spawnedAt: Date.now(), weakened: true }
       log.push(`\n💫 *Wild ${battle.wild.name} fainted!*\n`)
-      log.push(`⭐ *+${xpGain} XP* earned!`)
-      log.push(`\n🎯 *${battle.wild.name}* is weakened — easier to catch now!`)
-      log.push(`Use *#catch <slot> | <ball>* to capture it! _(90 sec window)_`)
+      log.push(`⭐ *+${xpGain} XP* earned!${evolutionMsg}`)
+      log.push(`\n🎯 *${battle.wild.name}* is weakened — use *#catch <slot>* to capture! _(90s window)_`)
       return await sock.sendMessage(jid, { text: log.join('\n') }, { quoted: msg })
     }
 
-    // ── Wild attacks back ──────────────────────────────────────
-    const wildMoves = (Array.isArray(battle.wild.moves) && battle.wild.moves.length)
-      ? battle.wild.moves
-      : ['Tackle', 'Growl']
+    const wildMoves = (Array.isArray(battle.wild.moves) && battle.wild.moves.length) ? battle.wild.moves : ['Tackle','Growl']
     const wildMove  = wildMoves[Math.floor(Math.random() * Math.min(4, wildMoves.length))]
     const wildAtk   = 8 + battle.wild.level * 2
     const wildCrit  = Math.random() < 0.10
@@ -1043,126 +542,144 @@ module.exports = {
     log.push(`\n🌿 *Wild ${battle.wild.name}* used *${wildMove}*!`)
     log.push(wildCrit ? `💥 *Critical hit!* (-${wildDmg} HP)` : `(-${wildDmg} HP)`)
 
-    // ── Player fainted? ────────────────────────────────────────
     if (battle.myHp <= 0) {
       delete activeBattles[sender]
       delete pendingPokemon[jid]
       log.push(`\n💔 *${battle.myPokemon.name} fainted!*`)
-      log.push(`\n_The wild ${battle.wild.name} fled while you were down._ 🖤`)
+      log.push(`\n_The wild ${battle.wild.name} fled._ 🖤`)
       return await sock.sendMessage(jid, { text: log.join('\n') }, { quoted: msg })
     }
 
-    // ── Battle continues — show HP bars + move menu ────────────
     log.push(`\n━━━━━━━━━━━━━━`)
     log.push(`🌿 *${battle.wild.name}* (Lv ${battle.wild.level})`)
-    log.push(`❤️ ${bar(battle.wildHp, battle.wildMaxHp)} ${battle.wildHp}/${battle.wildMaxHp} HP`)
+    log.push(`❤️ ${hpBar(battle.wildHp, battle.wildMaxHp)} ${battle.wildHp}/${battle.wildMaxHp} HP`)
     log.push(``)
     log.push(`⚡ *${battle.myPokemon.name}* (Lv ${battle.myPokemon.level || 1})`)
-    log.push(`❤️ ${bar(battle.myHp, battle.myMaxHp)} ${battle.myHp}/${battle.myMaxHp} HP`)
+    log.push(`❤️ ${hpBar(battle.myHp, battle.myMaxHp)} ${battle.myHp}/${battle.myMaxHp} HP`)
     log.push(`\n*📋 Moves:*\n${battle.moves.map((m, i) => `  *${i + 1}.* ${m}`).join('\n')}`)
-    log.push(`\n> *.move <1-${battle.moves.length}>* to attack  |  *.flee* to escape`)
+    log.push(`\n> *.move <1–${battle.moves.length}>* to attack  |  *.flee* to escape`)
     await sock.sendMessage(jid, { text: log.join('\n') }, { quoted: msg })
   },
 
-  // ── .flee — escape from wild battle ───────────────────────────
+  // ── .flee ─────────────────────────────────────────────────────────
   async flee({ reply, sender, jid }) {
     const battle = activeBattles[sender]
     if (!battle) return reply(`❌ You're not in a battle.`)
     if (battle.jid !== jid) return reply(`❌ Your active battle is in a different group.`)
-
-    // 30% chance the wild blocks escape
     if (Math.random() < 0.30) {
-      return reply(
-        `😤 *Can't escape!*\n\n` +
-        `Wild *${battle.wild.name}* blocked your path!\n\n` +
-        `❤️ Your HP: ${battle.myHp}/${battle.myMaxHp}\n\n` +
-        `*📋 Moves:*\n${battle.moves.map((m, i) => `  *${i + 1}.* ${m}`).join('\n')}\n\n` +
-        `> *.move <1-${battle.moves.length}>* to keep fighting`
-      )
+      return reply(`😤 *Can't escape!*\n\nWild *${battle.wild.name}* blocked your path!\n\n❤️ Your HP: ${battle.myHp}/${battle.myMaxHp}\n\n*📋 Moves:*\n${battle.moves.map((m,i)=>`  *${i+1}.* ${m}`).join('\n')}\n\n> *.move <1–${battle.moves.length}>* to keep fighting`)
     }
-
     delete activeBattles[sender]
-    await reply(
-      `🏃 *Got away safely!*\n\n` +
-      `You escaped from wild *${battle.wild.name}*.\n\n` +
-      `_It's still out there — use *#catch* if you want to capture it!_ 🖤`
-    )
+    await reply(`🏃 *Got away safely!*\n\nYou escaped from wild *${battle.wild.name}*.\n\n_It's still out there — use *#catch* if you want it!_ 🖤`)
   },
 
-  // Legacy alias
-  async wb(ctx) { return module.exports.hunt(ctx) },
-}
+  // ── #battle @user — PvP challenge ────────────────────────────────
+  async battle({ sock, jid, msg, reply, sender, user, pushName, mentionedJid, args }) {
+    const u = user || await db.getOrCreateUser(sender, pushName)
 
-// ── Level-up image via Pollinations (URL-based, no download) ─────
-async function _sendLevelUpImage(sock, jid, msg, pokeName, newLvl) {
-  try {
-    const prompt = encodeURIComponent(`pokemon ${pokeName} level up glow effect, level ${newLvl}, golden light burst, dark background, anime art`)
-    const url    = `https://image.pollinations.ai/prompt/${prompt}?width=512&height=512&nologo=true&model=turbo&seed=${Date.now() % 9999}`
+    // #battle accept / #battle decline
+    if (args[0]?.toLowerCase() === 'accept') {
+      // Find a challenge targeting this user
+      const challengerSender = Object.keys(pvpChallenges).find(
+        cs => pvpChallenges[cs]?.targetSender === sender && pvpChallenges[cs]?.jid === jid
+      )
+      if (!challengerSender) return reply('❌ No pending battle challenge for you right now.')
+      const challenge = pvpChallenges[challengerSender]
+      if (Date.now() > challenge.expiresAt) {
+        delete pvpChallenges[challengerSender]
+        return reply('❌ That challenge has expired.')
+      }
+
+      delete pvpChallenges[challengerSender]
+
+      // Load both users
+      const challenger = await db.getOrCreateUser(challengerSender)
+      let myParty = []; let theirParty = []
+      try { myParty = JSON.parse(u.pokemon_party || '[]').filter(Boolean) } catch {}
+      try { theirParty = JSON.parse(challenger.pokemon_party || '[]').filter(Boolean) } catch {}
+
+      if (!myParty.length) return reply('❌ You have no Pokémon to battle with! Use *.hunt* to catch one.')
+      if (!theirParty.length) return reply(`❌ ${challenger.name || challengerSender} has no Pokémon to battle with!`)
+
+      const myPoke    = myParty[0]
+      const theirPoke = theirParty[0]
+
+      // Simple stat-based PvP battle resolution
+      const myScore    = (myPoke.atk || 50) + (myPoke.level || 1) * 5 + Math.random() * 50
+      const theirScore = (theirPoke.atk || 50) + (theirPoke.level || 1) * 5 + Math.random() * 50
+      const winner     = myScore >= theirScore ? u : challenger
+      const loser      = myScore >= theirScore ? challenger : u
+      const winnerPoke = myScore >= theirScore ? myPoke : theirPoke
+      const loserPoke  = myScore >= theirScore ? theirPoke : myPoke
+
+      const prizeCoins = 200 + Math.floor(Math.random() * 300)
+      await db.updateUser(myScore >= theirScore ? sender : challengerSender, { wallet: ((winner.wallet||0) + prizeCoins) })
+
+      const battleCaption =
+        `⚔️ *PVP BATTLE!*\n\n` +
+        `🆚 *${u.name||'Player 1'}* vs *${challenger.name||'Player 2'}*\n\n` +
+        `━━━━━━━━━━━━━━━━\n\n` +
+        `🏆 *${winner.name||'Winner'}* wins!\n` +
+        `💥 *${winnerPoke.name}* defeated *${loserPoke.name}*!\n\n` +
+        `💰 *+${prizeCoins} coins* earned!\n\n` +
+        `_${loserPoke.name} fought bravely..._ 🖤`
+
+      try {
+        const battleImg = await fetchPvpBattleImage(winnerPoke.name, loserPoke.name)
+        if (battleImg && battleImg.length > 500) {
+          await sock.sendMessage(jid, { image: battleImg, caption: battleCaption }, { quoted: msg })
+          return
+        }
+      } catch {}
+      await sock.sendMessage(jid, { text: battleCaption }, { quoted: msg })
+      return
+    }
+
+    if (args[0]?.toLowerCase() === 'decline') {
+      const challengerSender = Object.keys(pvpChallenges).find(
+        cs => pvpChallenges[cs]?.targetSender === sender && pvpChallenges[cs]?.jid === jid
+      )
+      if (challengerSender) delete pvpChallenges[challengerSender]
+      return reply('❌ Battle challenge declined.')
+    }
+
+    // Send a battle challenge
+    const targetJid = mentionedJid?.[0]
+    if (!targetJid) return reply('📌 *Usage:* `#battle @user` to challenge someone.\n\nOr reply to their message with `#battle`.')
+
+    let party = []
+    try { party = JSON.parse(u.pokemon_party || '[]').filter(Boolean) } catch {}
+    if (!party.length) return reply('❌ You need at least 1 Pokémon in your party! Use *.hunt* to catch one.')
+
+    const targetSender = targetJid.split('@')[0] + '@s.whatsapp.net'
+    pvpChallenges[sender] = { targetSender, jid, expiresAt: Date.now() + 60000 }
+
+    const myPoke = party[0]
     await sock.sendMessage(jid, {
-      image: { url },
-      caption: `🆙 *LEVEL UP!*\n\n✨ *${pokeName}* grew to Level *${newLvl}*!\n\n_Power evolves within the shadows._ 🖤`,
+      text:
+        `⚔️ *BATTLE CHALLENGE!*\n\n` +
+        `*${u.name || pushName || 'Someone'}* challenges @${targetJid.split('@')[0]} to a Pokémon battle!\n\n` +
+        `🎴 Their lead: *${myPoke.name}* (Lv ${myPoke.level || 1})\n\n` +
+        `━━━━━━━━━━━━━━━━\n\n` +
+        `✅ Reply *#battle accept* to fight!\n` +
+        `❌ Reply *#battle decline* to refuse.\n\n` +
+        `_Challenge expires in 60 seconds._ 🖤`,
+      mentions: [targetJid],
     }, { quoted: msg })
-  } catch {}
-}
+  },
 
-// ── Party composite image (3×2 sprite grid using sharp) ──────────
-async function _buildPartyImage(party) {
-  let sharp
-  try { sharp = require('sharp') } catch { return null }
+  // ── #pheal — heal party ───────────────────────────────────────────
+  async pheal({ reply, sender, user, pushName }) {
+    const u = user || await db.getOrCreateUser(sender, pushName)
+    const healCost = 300
+    if ((u.wallet || 0) < healCost) return reply(`❌ Healing costs $${healCost}. You have $${u.wallet || 0}.`)
+    let party = []; try { party = JSON.parse(u.pokemon_party || '[]').filter(Boolean) } catch {}
+    if (!party.length) return reply('❌ No Pokémon to heal.')
+    party = party.map(p => ({ ...p, hp: p.maxHp || 100 }))
+    await db.updateUser(sender, { pokemon_party: JSON.stringify(party), wallet: (u.wallet || 0) - healCost })
+    await reply(`💊 *Party Healed!*\n\nAll Pokémon restored to full HP!\n💰 -$${healCost}\n\n_${party.map(p=>p.name).join(', ')} are ready for battle!_ 🖤`)
+  },
 
-  const COLS = 3, cellW = 160, cellH = 160
-  const W = cellW * COLS, H = cellH * 2
-
-  // SVG background with grid lines and slot labels
-  const labels = Array.from({ length: 6 }, (_, i) => {
-    const col = i % COLS, row = Math.floor(i / COLS)
-    const cx  = col * cellW + cellW / 2
-    const ty  = row * cellH + cellH - 12
-    const p   = party[i]
-    const txt = p ? `${p.name}  Lv${p.level || 1}` : '— empty —'
-    const col2 = p ? '#b0b8e8' : '#3a3a5a'
-    return `<text x="${cx}" y="${ty}" fill="${col2}" font-size="11" font-weight="bold" text-anchor="middle" font-family="Arial,sans-serif">${txt}</text>`
-  }).join('\n')
-
-  const bgSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#12122a"/>
-        <stop offset="100%" stop-color="#1e1e42"/>
-      </linearGradient>
-    </defs>
-    <rect width="${W}" height="${H}" fill="url(#bg)"/>
-    <line x1="${cellW}"     y1="0" x2="${cellW}"     y2="${H}" stroke="#2a2a5a" stroke-width="1.5"/>
-    <line x1="${cellW * 2}" y1="0" x2="${cellW * 2}" y2="${H}" stroke="#2a2a5a" stroke-width="1.5"/>
-    <line x1="0" y1="${cellH}" x2="${W}" y2="${cellH}" stroke="#2a2a5a" stroke-width="1.5"/>
-    ${labels}
-  </svg>`
-
-  let base
-  try { base = await sharp(Buffer.from(bgSvg)).png().toBuffer() } catch { return null }
-
-  const composites = []
-  for (let i = 0; i < Math.min(party.length, 6); i++) {
-    const p = party[i]
-    if (!p || !p.pokemon_id) continue
-    const sprUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.pokemon_id}.png`
-    try {
-      const buf = await downloadBuffer(sprUrl, 8000)
-      if (!buf) continue
-      const col  = i % COLS, row = Math.floor(i / COLS)
-      const left = col * cellW + 16
-      const top  = row * cellH + 4
-      const spr  = await sharp(buf)
-        .resize(cellW - 32, cellH - 30, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-        .png()
-        .toBuffer()
-      composites.push({ input: spr, left, top })
-    } catch {}
-  }
-
-  try {
-    return composites.length > 0
-      ? await sharp(base).composite(composites).png().toBuffer()
-      : base
-  } catch { return null }
+  // ── Legacy aliases ────────────────────────────────────────────────
+  async wb(ctx) { return module.exports.hunt(ctx) },
 }
