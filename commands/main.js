@@ -242,25 +242,45 @@ module.exports = {
       `┃\n` +
       `╰━━━━━━━━━━━━━━━━\n\n` +
 
-      `*⚔️ RPG ⚔️*\n` +
-      `┃\n` +
-      `┃ ⤷ .rpg\n` +
-      `┃ ⤷ .stats\n` +
-      `┃ ⤷ .hunt\n` +
-      `┃ ⤷ .boss\n` +
-      `┃ ⤷ .raid\n` +
-      `┃ ⤷ .dungeon\n` +
-      `┃ ⤷ .quest\n` +
-      `┃ ⤷ .equip <item>\n` +
-      `┃ ⤷ .unequip <item>\n` +
-      `┃ ⤷ .skills\n` +
-      `┃ ⤷ .craft <item>\n` +
-      `┃ ⤷ .forge\n` +
-      `┃ ⤷ .shop\n` +
-      `┃ ⤷ .prestige\n` +
-      `┃ ⤷ .rparty\n` +
-      `┃\n` +
-      `╰━━━━━━━━━━━━━━━━\n\n` +
+      `*⚔️ RPG ⚔️*
+` +
+      `┃
+` +
+      `┃ ⤷ .rpg
+` +
+      `┃ ⤷ .dungeon
+` +
+      `┃ ⤷ .quest
+` +
+      `┃ ⤷ .explore
+` +
+      `┃ ⤷ .travel <n/s/e/w>
+` +
+      `┃ ⤷ .encounter
+` +
+      `┃ ⤷ .attack
+` +
+      `┃ ⤷ .selectclass
+` +
+      `┃ ⤷ .skillinfo
+` +
+      `┃ ⤷ .rparty form
+` +
+      `┃ ⤷ .rparty join
+` +
+      `┃ ⤷ .rparty quest
+` +
+      `┃ ⤷ .rparty status
+` +
+      `┃ ⤷ .adventure
+` +
+      `┃ ⤷ .escape
+` +
+      `┃
+` +
+      `╰━━━━━━━━━━━━━━━━
+
+` +
 
       `*🏰 GUILD 🏰*\n` +
       `┃\n` +
