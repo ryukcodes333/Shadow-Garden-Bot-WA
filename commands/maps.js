@@ -665,4 +665,29 @@ function renderMap(mapKey, playerRow, playerCol) {
   return rows.join('\n')
 }
 
-module.exports = { MAPS, QUESTS, getQuestsForLevel, getMap, getAllMaps, getQuestById, renderMap }
+
+// Alias MAPS as WORLD_MAPS for rpg.js compatibility
+const WORLD_MAPS = MAPS
+
+// Move player on a map grid — returns { ok, row, col, msg }
+function movePlayer(mapKey, row, col, direction) {
+  const map = MAPS[mapKey]
+  if (!map) return { ok: false, msg: `Map not found: ${mapKey}` }
+  const grid = map.grid
+  const rows = grid.length
+  const cols = grid[0].length
+  let nr = row, nc = col
+  if (direction === 'north') nr = row - 1
+  else if (direction === 'south') nr = row + 1
+  else if (direction === 'east') nc = col + 1
+  else if (direction === 'west') nc = col - 1
+  else return { ok: false, msg: `Unknown direction: ${direction}` }
+  if (nr < 0 || nr >= rows || nc < 0 || nc >= cols)
+    return { ok: false, msg: `You've hit the edge of the map! (Row ${row+1}, Col ${col+1})` }
+  const tile = grid[nr][nc]
+  if (tile === '#') return { ok: false, msg: `A wall blocks your path! Try a different direction.` }
+  return { ok: true, row: nr, col: nc }
+}
+
+module.exports = { MAPS, WORLD_MAPS, QUESTS, getQuestsForLevel, getMap, getAllMaps, getQuestById, renderMap, movePlayer }
+
