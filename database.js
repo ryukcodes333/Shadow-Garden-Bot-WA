@@ -818,10 +818,11 @@ async function setGroupDisabledCmds(groupJid, cmds) {
   )
 }
 
-// ── Get all staff members (role !== 'member') ──────────────────────────────
+// ── Get all staff members ──────────────────────────────────────────────────
 async function getAllStaff() {
   return User.find({ role: { $nin: ['member', null, ''] } }).lean()
 }
+
 
 module.exports = {
   supabase,
