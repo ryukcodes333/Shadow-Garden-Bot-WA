@@ -76,19 +76,39 @@ function cardBlock(name, tier, series, ownerCount, cardId, ownersList) {
   )
 }
 
-// ─── GIF → MP4 (same as interactions.js) ─────────────────────────────────────
-async function fetchBuf(url) {
+// ─── HTTP fetch with browser headers + redirect follow ───────────────────────
+async function fetchBuf(url, _redirects = 0) {
+  if (_redirects > 3) return null
   return new Promise((resolve) => {
-    const client = url.startsWith('https') ? https : http
-    const req = client.get(url, { timeout: 15000 }, (res) => {
-      if (res.statusCode !== 200) { res.resume(); return resolve(null) }
-      const chunks = []
-      res.on('data', c => chunks.push(c))
-      res.on('end',  () => resolve(Buffer.concat(chunks)))
-      res.on('error', () => resolve(null))
-    })
-    req.on('error',   () => resolve(null))
-    req.on('timeout', () => { req.destroy(); resolve(null) })
+    try {
+      const parsed  = new URL(url)
+      const client  = parsed.protocol === 'https:' ? https : http
+      const options = {
+        hostname: parsed.hostname,
+        port:     parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+        path:     parsed.pathname + parsed.search,
+        timeout:  15000,
+        headers:  {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Referer':    `https://${parsed.hostname}/`,
+          'Accept':     'image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.8',
+        },
+      }
+      const req = client.get(options, (res) => {
+        if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
+          const loc = res.headers.location
+          res.resume()
+          return loc ? fetchBuf(loc, _redirects + 1).then(resolve) : resolve(null)
+        }
+        if (res.statusCode !== 200) { res.resume(); return resolve(null) }
+        const chunks = []
+        res.on('data', c => chunks.push(c))
+        res.on('end',  () => resolve(Buffer.concat(chunks)))
+        res.on('error', () => resolve(null))
+      })
+      req.on('error',   () => resolve(null))
+      req.on('timeout', () => { req.destroy(); resolve(null) })
+    } catch { resolve(null) }
   })
 }
 
@@ -115,7 +135,7 @@ async function gifBufToMp4(gifBuf) {
   })
 }
 
-// Send a card image — handles GIFs by converting to MP4 for gifPlayback
+// Send a card image — always fetches buffer (needed for CDNs like mazoku.cc)
 async function sendCardMedia(sock, jid, msg, url, caption) {
   if (!url) return false
   try {
@@ -127,12 +147,17 @@ async function sendCardMedia(sock, jid, msg, url, caption) {
           await sock.sendMessage(jid, { video: mp4Buf, gifPlayback: true, caption }, { quoted: msg })
           return true
         }
-        // fallback: send gif url directly with gifPlayback
         await sock.sendMessage(jid, { video: { url }, gifPlayback: true, caption }, { quoted: msg })
         return true
       }
     }
-    await sock.sendMessage(jid, { image: { url }, caption }, { quoted: msg })
+    // Fetch buffer first so CDNs like mazoku.cc that block direct URL access still work
+    const buf = await fetchBuf(url)
+    if (buf) {
+      await sock.sendMessage(jid, { image: buf, caption }, { quoted: msg })
+    } else {
+      await sock.sendMessage(jid, { image: { url }, caption }, { quoted: msg })
+    }
     return true
   } catch { return false }
 }
@@ -196,24 +221,17 @@ function findMazoku(nameQuery, tierFilter) {
     }))
 }
 
-// ─── DEDUP: keep series-bearing entry per name+tier ─────────────────────────
+// ─── DEDUP: only remove literal "-" series; keep all old-gen + new-gen ───────
 function deduplicateResults(results) {
-  const seen   = new Map()
-  const output = []
-  for (const r of results) {
-    const key           = `${norm(r.name)}|||${r.tier}`
-    const hasSeries     = r.series && r.series !== '-' && r.series !== ''
-    if (!seen.has(key)) {
-      seen.set(key, { entry: r, hasSeries, idx: output.length })
+  // Step 1: Drop entries whose series is literally the placeholder "-"
+  const filtered = results.filter(r => r.series !== '-')
+  // Step 2: Deduplicate by exact URL only (same image = same card)
+  const seenUrls = new Set()
+  const output   = []
+  for (const r of filtered) {
+    if (!seenUrls.has(r.url)) {
+      seenUrls.add(r.url)
       output.push(r)
-    } else {
-      const stored = seen.get(key)
-      // Replace a no-series entry with a series-bearing one
-      if (!stored.hasSeries && hasSeries) {
-        output[stored.idx] = r
-        seen.set(key, { entry: r, hasSeries: true, idx: stored.idx })
-      }
-      // If both have series, keep first (avoid duplicates)
     }
   }
   return output
@@ -228,8 +246,7 @@ function findAll(nameQuery, tierFilter) {
   const fromNew    = (!tierFilter || isShoobTier)  ? findNew(nameQuery, tierFilter)    : []
   const fromMazoku = (!tierFilter || isMazokuTier) ? findMazoku(nameQuery, tierFilter) : []
 
-  // Merge: new shoob first (has series), then mazoku, then old shoob (no series)
-  // dedup removes old-shoob duplicates when new-shoob has the same name+tier with series
+  // Keep both old-gen (empty series) and new-gen (real series) — only remove series="-" duds
   const all = deduplicateResults([...fromNew, ...fromMazoku, ...fromOld])
   return all.sort((a, b) => a.tier.localeCompare(b.tier))
 }
@@ -281,35 +298,38 @@ function getCardStats() {
   return { total: cardIndex.length + cardIndex2.length + cardIndexMazoku.length, byTier }
 }
 
-// ─── DECK IMAGE ───────────────────────────────────────────────────────────────
+// ─── DECK IMAGE (sharp-based, no @napi-rs/canvas dependency) ─────────────────
 async function _buildDeckImage(cards) {
-  let createCanvas, loadImage
-  try { ({ createCanvas, loadImage } = require('@napi-rs/canvas')) } catch { return null }
-  const COLS=3, CW=160, CH=220, PAD=8, HEADER=40
-  const ROWS=Math.ceil(Math.min(cards.length,9)/3)
-  const W=COLS*(CW+PAD)+PAD, H=ROWS*(CH+PAD)+PAD+HEADER
-  const canvas=createCanvas(W,H), ctx=canvas.getContext('2d')
-  ctx.fillStyle='#1a1a2e'; ctx.fillRect(0,0,W,H)
-  ctx.fillStyle='#e2b96a'; ctx.font='bold 18px sans-serif'; ctx.textAlign='center'
-  ctx.fillText('🎴 Your Deck',W/2,28)
-  const TC={T1:'#a0a0a0',T2:'#3b9ddd',T3:'#2ecc71',T4:'#e74c3c',T5:'#9b59b6',T6:'#f1c40f',TS:'#f39c12',TZ:'#8e44ad',C:'#aaa',R:'#3b9ddd',SR:'#9b59b6',SSR:'#f1c40f',UR:'#e74c3c'}
-  for (let i=0;i<Math.min(cards.length,9);i++){
-    const uc=cards[i], c=uc.card_id||uc
-    const col=i%COLS, row=Math.floor(i/COLS)
-    const x=PAD+col*(CW+PAD), y=HEADER+PAD+row*(CH+PAD)
-    const tier=c?.tier||'?'
-    ctx.fillStyle='#16213e'; ctx.strokeStyle=TC[tier]||'#555'; ctx.lineWidth=3
-    ctx.beginPath(); ctx.roundRect(x,y,CW,CH,8); ctx.fill(); ctx.stroke()
-    const imgUrl=c?.image_url||null
-    if(imgUrl){try{const buf=await fetchBuf(imgUrl);if(buf){const img=await loadImage(buf);ctx.save();ctx.beginPath();ctx.roundRect(x+4,y+4,CW-8,CH-52,6);ctx.clip();ctx.drawImage(img,x+4,y+4,CW-8,CH-52);ctx.restore()}}catch{}}
-    ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fillRect(x+2,y+CH-50,CW-4,48)
-    ctx.fillStyle='#fff'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center'
-    const name=(c?.name||'Unknown').length>14?(c?.name||'Unknown').slice(0,12)+'…':(c?.name||'Unknown')
-    ctx.fillText(name,x+CW/2,y+CH-34)
-    ctx.fillStyle=TC[tier]||'#aaa'; ctx.font='10px sans-serif'; ctx.fillText(tier,x+CW/2,y+CH-20)
-    ctx.fillStyle='#aaa'; ctx.font='9px sans-serif'; ctx.fillText(`#${i+1}`,x+CW/2,y+CH-6)
+  let sharp
+  try { sharp = require('sharp') } catch { return null }
+  const COLS = 3, CW = 160, CH = 220, PAD = 8, HEADER_H = 0
+  const slice = cards.slice(0, 9)
+  const ROWS  = Math.ceil(slice.length / COLS)
+  const W     = COLS * (CW + PAD) + PAD
+  const H     = ROWS * (CH + PAD) + PAD + HEADER_H
+
+  const composites = []
+  for (let i = 0; i < slice.length; i++) {
+    const uc     = slice[i], c = uc.card_id || uc
+    const imgUrl = c?.image_url || null
+    if (!imgUrl) continue
+    const buf = await fetchBuf(imgUrl)
+    if (!buf) continue
+    try {
+      const tile = await sharp(buf)
+        .resize(CW, CH, { fit: 'cover', position: 'centre' })
+        .toBuffer()
+      const col  = i % COLS, row = Math.floor(i / COLS)
+      composites.push({ input: tile, left: PAD + col * (CW + PAD), top: HEADER_H + PAD + row * (CH + PAD) })
+    } catch {}
   }
-  return canvas.toBuffer('image/jpeg',{quality:85})
+  if (!composites.length) return null
+  try {
+    const base = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 26, g: 26, b: 46 } } })
+      .png()
+      .toBuffer()
+    return await sharp(base).composite(composites).jpeg({ quality: 85 }).toBuffer()
+  } catch { return null }
 }
 
 // ─── COMMANDS ─────────────────────────────────────────────────────────────────
@@ -323,7 +343,7 @@ module.exports = {
       let card = getRandomCardByTier(tier)
       if (!card) card = getRandomCardByTier(null)
       if (!card) return reply('❌ No cards found.')
-      const owners  = await db.getCardOwners(card.id).catch(() => [])
+      const owners  = await db.getCardOwners(card._rawUrl || card.imageUrl).catch(() => [])
       const caption =
         `✨ *A card has spawned!*\n\n` +
         cardBlock(card.name, card.tier, card.series, owners.length, card.id, owners) +
@@ -348,7 +368,7 @@ module.exports = {
     const localCard = await db.getOrCreateShoobCard(rawUrl, card.name, card.tier, card.series, card.imageUrl || null, TIER_PRICES[card.tier] || 0).catch(() => null)
     if (!localCard) return reply('❌ Failed to save card.')
     await db.addUserCard(sender, localCard._id)
-    const owners = await db.getCardOwners(card.id).catch(() => [])
+    const owners = await db.getCardOwners(card._rawUrl || card.imageUrl).catch(() => [])
     await reply(cardBlock(card.name, card.tier, card.series, owners.length, card.id, owners) + '\n\n✅ *CLAIMED!* Added to your collection.')
   },
 
@@ -380,7 +400,7 @@ module.exports = {
 
       await Promise.all(toSend.map(async (m) => {
         const cardId = extractCardId(m.url)
-        const owners = await db.getCardOwners(cardId).catch(() => [])
+        const owners = await db.getCardOwners(m.url).catch(() => [])
         const caption = cardBlock(m.name, m.tier, m.series, owners.length, cardId, owners)
         const sent = await sendCardMedia(sock, jid, msg, m.url, caption)
         if (!sent) await reply(caption)
@@ -490,7 +510,7 @@ module.exports = {
     const series   = cardData?.series || ''
     const imageUrl = cardData?.image_url || null
     const cardId   = extractCardId(imageUrl || name)
-    const owners   = await db.getCardOwners(cardId).catch(() => [])
+    const owners   = await db.getCardOwners(imageUrl).catch(() => [])
     const caption  = cardBlock(name, tier, series, owners.length, cardId, owners)
     const sent = await sendCardMedia(sock, jid, msg, imageUrl, caption)
     if (!sent) await reply(caption)
@@ -580,6 +600,29 @@ module.exports = {
       `🗑️ *CARD DISCARDED*\n\n` +
       `${TIERS[c?.tier] || '🎴'} *${c?.name || 'Unknown'}* (${c?.tier || '?'})\n\n` +
       `_Returned to the void._ 🖤`
+    )
+  },
+
+  // ─── .sc — sell a card from collection at 1.5× tier price ───────────────
+  async sc({ reply, sender, args }) {
+    const index = parseInt(args[0])
+    if (!index || index < 1) return reply('⚠️ Usage: *.sc <card_number>*\nSells the card at 1.5× its tier price.')
+    const cards = await db.getUserCards(sender)
+    if (!cards.length) return reply('📭 Your collection is empty.')
+    if (index > cards.length) return reply(`❌ You only have *${cards.length}* card(s).`)
+    const uc = cards[index - 1]
+    const c  = uc.card_id || uc
+    const tier  = c?.tier || 'T1'
+    const base  = TIER_PRICES[tier] || 17500
+    const price = Math.floor(base * 1.5)
+    await db.deleteUserCardById(uc._id || uc.id)
+    const u = await db.getOrCreateUser(sender)
+    await db.updateUser(sender, { wallet: (u.wallet || 0) + price })
+    await reply(
+      `💸 *CARD SOLD!*\n\n` +
+      `${TIERS[tier] || '🎴'} *${c?.name || 'Unknown'}* (${tier})\n\n` +
+      `💰 *+$${price.toLocaleString()}* added to your wallet.\n` +
+      `_(Sold at 1.5× base price of $${base.toLocaleString()})_`
     )
   },
 

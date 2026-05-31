@@ -296,7 +296,7 @@ async function handleMessage(sock, msg) {
     'poll','pollresult','dbstatus','checkdb',
     'addmod','removemod','addguardian','removeguardian','mods','modlist','modslist',
     'phelp','law','pbenefits','report','trivia','math','fact','joke','flip','8ball','roll','choose',
-    'roulette','horse','casino','dice',
+    
     'removebg','nobg','enhance','remini','upscale','night','sunset','rain','city','gun','jail','toanime','cartoon','carbon',
     'suspend','unsuspend','suspendlist',
     'market','wallet','bank','weekly','monthly','crime','rob','heist','topmoney','topbank','howgay','lockgroup','unlockgroup','join','exit','listgc',

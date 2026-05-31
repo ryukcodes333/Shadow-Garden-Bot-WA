@@ -31,6 +31,7 @@ const SHOP_ITEMS  = {
   ring:       { name: 'Power Ring',      price: 950,   type: 'accessory', emoji: '💍' },
   amulet:     { name: 'Mana Amulet',     price: 850,   type: 'accessory', emoji: '📿' },
   cloak:      { name: 'Shadow Cloak',    price: 1200,  type: 'accessory', emoji: '🧣' },
+  bank_note:  { name: 'Bank Note',       price: 10000, type: 'banking',   emoji: '💵' },
 }
 
 const CD_DAILY = 24 * 3600
@@ -57,12 +58,14 @@ async function checkCooldown(sender, cmd, seconds, reply) {
 module.exports = {
   async bal({ sock, msg, jid, reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
-    const total = (u.wallet || 0) + (u.bank || 0)
+    const total     = (u.wallet || 0) + (u.bank || 0)
+    const bankLimit = u.bank_limit || 50000
     const caption =
       `*💰 ACCOUNT BALANCE 💰*\n\n` +
-      `*🏦 Bank:* \`\`\`${(u.bank || 0).toLocaleString()}\`\`\`\n` +
+      `*🏦 Bank:* \`\`\`${(u.bank || 0).toLocaleString()} / ${bankLimit.toLocaleString()}\`\`\`\n` +
       `*👛 Wallet:* \`\`\`${(u.wallet || 0).toLocaleString()}\`\`\`\n\n` +
-      `*💫 Total:* \`\`\`${total.toLocaleString()}\`\`\``
+      `*💫 Total:* \`\`\`${total.toLocaleString()}\`\`\`\n` +
+      `_Buy a 💵 Bank Note to increase your bank limit_`
     if (fs.existsSync(BANK_CARD_IMG)) {
       const buf = fs.readFileSync(BANK_CARD_IMG)
       await sock.sendMessage(jid, { image: buf, caption, mentions: [`${sender}@s.whatsapp.net`] }, { quoted: msg })
@@ -126,6 +129,16 @@ module.exports = {
     const amount = args[0]?.toLowerCase() === 'all' ? u.wallet : parseInt(args[0])
     if (!amount || amount <= 0) return reply('❌ Usage: `.deposit <amount>` or `.deposit all`')
     if (amount > (u.wallet || 0)) return reply(`❌ Not enough in wallet! Wallet: $${(u.wallet || 0).toLocaleString()}`)
+    const bankLimit = u.bank_limit || 50000
+    if ((u.bank || 0) + amount > bankLimit) {
+      const space = Math.max(0, bankLimit - (u.bank || 0))
+      return reply(
+        `❌ *Bank limit reached!*\n\n` +
+        `🏦 Bank: $${(u.bank||0).toLocaleString()} / $${bankLimit.toLocaleString()}\n` +
+        `📥 Space remaining: $${space.toLocaleString()}\n\n` +
+        `💵 Buy a *Bank Note* from *.shop* ($10,000) to increase your limit by $50,000!`
+      )
+    }
     await db.updateUser(sender, { wallet: (u.wallet || 0) - amount, bank: (u.bank || 0) + amount })
     await reply(`🎉 You have successfully deposited ${amount.toLocaleString()} to your bank.`)
   },
@@ -326,8 +339,8 @@ module.exports = {
       if (!byType[v.type]) byType[v.type] = []
       byType[v.type].push([k, v])
     }
-    const typeEmojis = { weapon:'⚔️', armor:'🥋', consumable:'🧪', tool:'🔧', accessory:'💍' }
-    const typeLabels = { weapon:'Weapons', armor:'Armor', consumable:'Consumables', tool:'Tools', accessory:'Accessories' }
+    const typeEmojis = { weapon:'⚔️', armor:'🥋', consumable:'🧪', tool:'🔧', accessory:'💍', banking:'🏦' }
+    const typeLabels = { weapon:'Weapons', armor:'Armor', consumable:'Consumables', tool:'Tools', accessory:'Accessories', banking:'Banking' }
     let sections = ''
     for (const [type, entries] of Object.entries(byType)) {
       const lines = entries.map(([k, v]) => `  ${v.emoji} *${v.name}* - $${v.price.toLocaleString()}  \`.buy ${k}\``).join('\n')
@@ -392,6 +405,19 @@ module.exports = {
     const items    = await db.getInventory(sender)
     const found    = items.find(i => i.item.toLowerCase() === itemName.toLowerCase())
     if (!found) return reply('❌ Item not in inventory.')
+    // Bank Note: increases bank_limit by $50,000
+    if (found.item.toLowerCase() === 'bank note') {
+      const u = await db.getOrCreateUser(sender)
+      const current  = u.bank_limit || 50000
+      const increase = 50000
+      await db.updateUser(sender, { bank_limit: current + increase })
+      await db.removeItem(sender, found.item)
+      return reply(
+        `✅ *Bank Note Used!*\n\n` +
+        `🏦 Bank limit increased by *$${increase.toLocaleString()}*\n` +
+        `💳 New limit: *$${(current + increase).toLocaleString()}*`
+      )
+    }
     await db.removeItem(sender, found.item)
     await reply(`✨ Used *${found.item}* - effect applied!`)
   },
