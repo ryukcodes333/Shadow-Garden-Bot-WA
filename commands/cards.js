@@ -1,7 +1,7 @@
 const db = require("../database");
 const http = require("http");
 const https = require("https");
-const cardIndex = require("./card.json");
+const cardIndex = require("./cards.json");
 
 function fetchPollinationsImage(prompt) {
   const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true&model=flux`;
