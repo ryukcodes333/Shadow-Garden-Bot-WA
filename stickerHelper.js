@@ -37,8 +37,11 @@ async function injectExif(webpBuf) {
     const img = new ImageClass()
     await img.load(webpBuf)
     img.exif = buildExif(PACK_NAME, PACK_AUTHOR)
-    const result = await img.save(null)
-    if (Buffer.isBuffer(result) && result.slice(0, 4).toString() === 'RIFF') return result
+    const raw = await img.save(null)
+    if (!raw) return webpBuf
+    // node-webpmux may return Uint8Array instead of Buffer — convert
+    const result = Buffer.isBuffer(raw) ? raw : Buffer.from(raw)
+    if (result.length > 4 && result.slice(0, 4).toString('binary') === 'RIFF') return result
   } catch {}
   return webpBuf
 }

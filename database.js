@@ -456,8 +456,12 @@ async function deleteUserCardById(rowId) {
   await UserCard.deleteOne({ _id: rowId })
 }
 
-async function getCardOwners(cardId) {
-  return UserCard.find({ card_id: cardId }).lean()
+async function getCardOwners(externalId) {
+  if (!externalId) return []
+  // external_id on Card stores the full image URL; find Card first, then find its UserCards
+  const card = await Card.findOne({ external_id: externalId }).lean()
+  if (!card) return []
+  return UserCard.find({ card_id: card._id }).lean()
 }
 
 const RARITY_BY_TIER = {
