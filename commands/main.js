@@ -1,7 +1,7 @@
 const db = require('../database')
 const fs = require('fs')
 const path = require('path')
-const { makeSticker } = require('../stickerHelper')
+const { makeSticker, makeStickerFromVideo } = require('../stickerHelper')
 const { downloadMediaMessage } = require('@whiskeysockets/baileys')
 
 const MENU_IMAGE = path.join(__dirname, '../assets/menu.jpg')
@@ -593,9 +593,10 @@ module.exports = {
     const quotedVid  = quoted?.videoMessage
 
     if (!isImageMsg && !isVideoMsg && !quotedImg && !quotedVid) {
-      return reply(`🖼️ Send or reply to an *image* with *.s* to make a sticker`)
+      return reply(`🖼️ Send or reply to an *image/video/gif* with *.s* to make a sticker`)
     }
 
+    const isVideo   = isVideoMsg || !!quotedVid
     const targetMsg = (quotedImg || quotedVid)
       ? { message: quoted, key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant } }
       : msg
@@ -605,7 +606,9 @@ module.exports = {
         logger: { level: () => {}, info: () => {}, warn: () => {}, error: () => {} },
         reuploadRequest: sock.updateMediaMessage,
       })
-      const stickerBuf = await makeSticker(buffer)
+      const stickerBuf = isVideo
+        ? await makeStickerFromVideo(buffer)
+        : await makeSticker(buffer)
       await sock.sendMessage(jid, { sticker: stickerBuf }, { quoted: msg })
     } catch (err) {
       await reply(`❌ Sticker failed: ${err.message}`)

@@ -144,7 +144,7 @@ function findOld(nameQuery, tierFilter) {
   if (!q) return []
   return cardIndex
     .filter(c => {
-      if (!norm(c.title).includes(q)) return false
+      if (norm(c.title) !== q) return false   // exact match only
       if (lt && String(c.tier) !== lt) return false
       return true
     })
@@ -155,12 +155,6 @@ function findOld(nameQuery, tierFilter) {
       series: '',
       source: 'shoob',
     }))
-    .sort((a, b) => {
-      const aq = norm(a.name), bq = norm(b.name)
-      if (aq === q && bq !== q) return -1
-      if (bq === q && aq !== q) return 1
-      return aq.localeCompare(bq)
-    })
 }
 
 // ─── SEARCH: NEW SHOOB ───────────────────────────────────────────────────────
@@ -170,7 +164,7 @@ function findNew(nameQuery, tierFilter) {
   if (!q) return []
   return cardIndex2
     .filter(c => {
-      if (!norm(c.name).includes(q)) return false
+      if (norm(c.name) !== q) return false   // exact match only
       if (lt && String(c.tier) !== lt) return false
       return true
     })
@@ -181,12 +175,6 @@ function findNew(nameQuery, tierFilter) {
       series: c.series || '',
       source: 'shoob2',
     }))
-    .sort((a, b) => {
-      const aq = norm(a.name), bq = norm(b.name)
-      if (aq === q && bq !== q) return -1
-      if (bq === q && aq !== q) return 1
-      return aq.localeCompare(bq)
-    })
 }
 
 // ─── SEARCH: MAZOKU ──────────────────────────────────────────────────────────
@@ -195,28 +183,44 @@ function findMazoku(nameQuery, tierFilter) {
   if (!q) return []
   return cardIndexMazoku
     .filter(c => {
-      if (!norm(c.name).includes(q)) return false
+      if (norm(c.name) !== q) return false   // exact match only
       if (tierFilter && c.tier !== tierFilter) return false
       return true
     })
     .map(c => ({
       name:   c.name,
-      tier:   c.tier,         // C / R / SR / SSR / UR — kept as-is
+      tier:   c.tier,
       url:    c.url,
       series: c.series || '',
       source: 'mazoku',
     }))
-    .sort((a, b) => {
-      const aq = norm(a.name), bq = norm(b.name)
-      if (aq === q && bq !== q) return -1
-      if (bq === q && aq !== q) return 1
-      return aq.localeCompare(bq)
-    })
 }
 
-// ─── MERGE ALL SOURCES — NO DEDUP ────────────────────────────────────────────
+// ─── DEDUP: keep series-bearing entry per name+tier ─────────────────────────
+function deduplicateResults(results) {
+  const seen   = new Map()
+  const output = []
+  for (const r of results) {
+    const key           = `${norm(r.name)}|||${r.tier}`
+    const hasSeries     = r.series && r.series !== '-' && r.series !== ''
+    if (!seen.has(key)) {
+      seen.set(key, { entry: r, hasSeries, idx: output.length })
+      output.push(r)
+    } else {
+      const stored = seen.get(key)
+      // Replace a no-series entry with a series-bearing one
+      if (!stored.hasSeries && hasSeries) {
+        output[stored.idx] = r
+        seen.set(key, { entry: r, hasSeries: true, idx: stored.idx })
+      }
+      // If both have series, keep first (avoid duplicates)
+    }
+  }
+  return output
+}
+
+// ─── MERGE ALL SOURCES WITH DEDUP ────────────────────────────────────────────
 function findAll(nameQuery, tierFilter) {
-  // Tier filter: shoob tiers go to old/new shoob; mazoku tiers go to mazoku
   const isMazokuTier = tierFilter && VALID_MAZOKU.includes(tierFilter)
   const isShoobTier  = tierFilter && VALID_SHOOB.includes(tierFilter)
 
@@ -224,18 +228,10 @@ function findAll(nameQuery, tierFilter) {
   const fromNew    = (!tierFilter || isShoobTier)  ? findNew(nameQuery, tierFilter)    : []
   const fromMazoku = (!tierFilter || isMazokuTier) ? findMazoku(nameQuery, tierFilter) : []
 
-  const all = [...fromOld, ...fromNew, ...fromMazoku]
-  const q   = norm(nameQuery)
-  return all.sort((a, b) => {
-    const aq = norm(a.name), bq = norm(b.name)
-    const aExact = aq === q, bExact = bq === q
-    if (aExact && !bExact) return -1
-    if (bExact && !aExact) return 1
-    const aStart = aq.startsWith(q), bStart = bq.startsWith(q)
-    if (aStart && !bStart) return -1
-    if (bStart && !aStart) return 1
-    return aq.localeCompare(bq)
-  })
+  // Merge: new shoob first (has series), then mazoku, then old shoob (no series)
+  // dedup removes old-shoob duplicates when new-shoob has the same name+tier with series
+  const all = deduplicateResults([...fromNew, ...fromMazoku, ...fromOld])
+  return all.sort((a, b) => a.tier.localeCompare(b.tier))
 }
 
 // ─── SERIES SEARCH ───────────────────────────────────────────────────────────
@@ -298,7 +294,7 @@ async function _buildDeckImage(cards) {
   ctx.fillText('🎴 Your Deck',W/2,28)
   const TC={T1:'#a0a0a0',T2:'#3b9ddd',T3:'#2ecc71',T4:'#e74c3c',T5:'#9b59b6',T6:'#f1c40f',TS:'#f39c12',TZ:'#8e44ad',C:'#aaa',R:'#3b9ddd',SR:'#9b59b6',SSR:'#f1c40f',UR:'#e74c3c'}
   for (let i=0;i<Math.min(cards.length,9);i++){
-    const uc=cards[i], c=uc.cards||uc
+    const uc=cards[i], c=uc.card_id||uc
     const col=i%COLS, row=Math.floor(i/COLS)
     const x=PAD+col*(CW+PAD), y=HEADER+PAD+row*(CH+PAD)
     const tier=c?.tier||'?'
@@ -351,7 +347,7 @@ module.exports = {
     const rawUrl    = card._rawUrl || card.imageUrl || card.id
     const localCard = await db.getOrCreateShoobCard(rawUrl, card.name, card.tier, card.series, card.imageUrl || null, TIER_PRICES[card.tier] || 0).catch(() => null)
     if (!localCard) return reply('❌ Failed to save card.')
-    await db.addUserCard(sender, localCard.id)
+    await db.addUserCard(sender, localCard._id)
     const owners = await db.getCardOwners(card.id).catch(() => [])
     await reply(cardBlock(card.name, card.tier, card.series, owners.length, card.id, owners) + '\n\n✅ *CLAIMED!* Added to your collection.')
   },
@@ -376,7 +372,7 @@ module.exports = {
 
     try {
       const matches = findAll(nameQuery, tierFilter)
-      if (!matches.length) return reply(`❌ No card found: *${nameQuery}*${tierFilter ? ` (${tierFilter})` : ''}`)
+      if (!matches.length) return reply(`ℹ️ There's no card matching your search, please use a different search query.`)
 
       // Send ALL matching cards simultaneously — no list, just images
       const MAX_SEND = 6  // cap to avoid spam
@@ -488,7 +484,7 @@ module.exports = {
     if (!cards.length) return reply('📭 Your collection is empty.')
     if (index > cards.length) return reply(`❌ You only have *${cards.length}* card(s).`)
     const uc      = cards[index - 1]
-    const cardData = uc.cards || uc
+    const cardData = uc.card_id || uc
     const tier     = cardData?.tier || '?'
     const name     = cardData?.name || 'Unknown'
     const series   = cardData?.series || ''
@@ -588,4 +584,60 @@ module.exports = {
   },
 
   async stardust({ reply }) { await reply(`✨ *STARDUST*\n\n_Coming soon…_ 🖤`) },
+
+  // ─── .upload — staff adds a card to the database ─────────────────────────
+  async upload({ reply, sender, args, isOwner, isMod, isGuardian }) {
+    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Only staff can upload cards.')
+    if (!args.length) return reply(
+      '⚠️ Usage: *.upload Name. Series Tier*\n' +
+      'Example: *.upload Denji. Chainsaw Man T4*\n' +
+      'Optional URL at end: *.upload Denji. Chainsaw Man T4 https://…*'
+    )
+
+    const rawText = args.join(' ')
+    const dotIdx  = rawText.indexOf('. ')
+    if (dotIdx === -1) return reply(
+      '⚠️ Missing separator — format: *.upload Name. Series Tier*\n' +
+      'Example: *.upload Denji. Chainsaw Man T4*'
+    )
+
+    const cardName   = rawText.slice(0, dotIdx).trim()
+    const rest       = rawText.slice(dotIdx + 2).trim()
+    const restParts  = rest.split(/\s+/)
+    if (restParts.length < 2) return reply('⚠️ Usage: *.upload Name. Series Tier*\nExample: *.upload Denji. Chainsaw Man T4*')
+
+    // Optional image URL as last arg
+    let imageUrl   = null
+    let tierIdx    = restParts.length - 1
+    if (/^https?:\/\//i.test(restParts[restParts.length - 1])) {
+      imageUrl = restParts[restParts.length - 1]
+      tierIdx  = restParts.length - 2
+      if (tierIdx < 1) return reply('⚠️ Usage: *.upload Name. Series Tier [url]*')
+    }
+
+    const tier = restParts[tierIdx].toUpperCase()
+    if (!ALL_VALID_TIERS.includes(tier)) return reply(
+      `⚠️ Invalid tier: *${tier}*\nValid tiers: ${ALL_VALID_TIERS.join(', ')}`
+    )
+    const series = restParts.slice(0, tierIdx).join(' ')
+    if (!series) return reply('⚠️ Series name is required. Example: *.upload Denji. Chainsaw Man T4*')
+
+    try {
+      const price  = TIER_PRICES[tier] || 0
+      const rarity = { T1:'Common',T2:'Uncommon',T3:'Rare',T4:'Epic',T5:'Legendary',T6:'Mythic',TS:'Special',TZ:'Zero' }[tier] || 'Common'
+      const card   = await db.addCard(cardName, tier, series, price, imageUrl, rarity, sender)
+      await reply(
+        `✅ *CARD UPLOADED*\n\n` +
+        `🎴 *Name:* ${cardName}\n` +
+        `${TIERS[tier] || '🎴'} *Tier:* ${tier}\n` +
+        `📚 *Series:* ${series}\n` +
+        `💰 *Price:* ${price.toLocaleString()}\n` +
+        (imageUrl ? `🖼️ *Image:* set\n` : `🖼️ *Image:* none\n`) +
+        `🆔 *ID:* ${card._id}\n\n` +
+        `_Card added to the database and available to spawn._`
+      )
+    } catch (err) {
+      await reply(`❌ Failed to upload card: ${err.message}`)
+    }
+  },
 }
