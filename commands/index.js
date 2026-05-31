@@ -17,7 +17,6 @@ const summerCmds      = require('./summer')
 const guildCmds       = require('./guilds')
 const converterCmds   = require('./converter')
 const staffCmds       = require('./staff')
-const { loadGroupDisabled } = require('./staff')
 const pollCmds        = require('./poll')
 const lotteryCmds     = require('./lottery')
 const profileCmds     = require('./profile')
@@ -194,6 +193,18 @@ async function handleMessage(sock, msg) {
 
   if (!textRaw) return
 
+  // ── Yes/No pay confirmation handler ─────────────────────────
+  const textLower = textRaw.trim().toLowerCase()
+  if (textLower === 'yes' || textLower === 'no') {
+    try {
+      const handled = await economyCmds.handlePayConfirm(
+        sender, textLower === 'yes',
+        { sock, msg, jid }
+      )
+      if (handled) return
+    } catch {}
+  }
+
   // ── Alpha chat detection (before prefix check) ───────────────
   if (!isSticker && !isReaction && !isBold) {
     const botPhone = (sock.user?.id || '').split(':')[0].split('@')[0]
@@ -318,18 +329,7 @@ async function handleMessage(sock, msg) {
     react: (emoji) => sock.sendMessage(jid, { react: { text: emoji, key: msg.key } }),
   }
 
-  // ── Per-group disabled commands check ──────────────────────────
-  if (isGroup && textRaw && !isOwner && !isMod && !isGuardian) {
-    try {
-      const disabledSet = await loadGroupDisabled(jid)
-      if (disabledSet.size > 0) {
-        const cmdRaw = textRaw.trim().replace(/^[.#]/, '').split(/\s+/)[0]?.toLowerCase()
-        if (cmdRaw && disabledSet.has(cmdRaw)) return
-      }
-    } catch {}
-  }
-
-    try {
+  try {
     // ── # prefix → Pokémon commands ─────────────────────────────
     if (isPokemon) {
       const pk = pokemonCmds
@@ -380,9 +380,7 @@ async function handleMessage(sock, msg) {
     // Image filter commands
     if (imagesCmds[cmd])        return await imagesCmds[cmd](ctx)
 
-    // Main commands (menu, ping, sticker, active/inactive, etc.)
-    if (cmd === 'active')       return await mainCmds.active(ctx)
-    if (cmd === 'inactive')     return await mainCmds.inactive(ctx)
+    // Main commands (menu, ping, sticker, etc.)
     if (mainCmds[cmd])          return await mainCmds[cmd](ctx)
 
     // Admin / group management
@@ -417,23 +415,7 @@ async function handleMessage(sock, msg) {
     // Fun commands
     if (funCmds[cmd])           return await funCmds[cmd](ctx)
 
-    // RPG commands (pheal redirects to pokemon heal)
-    if (cmd === 'pheal')        return await pokemonCmds.pheal(ctx)
-    // New RPG map/quest commands
-    if (cmd === 'travel')       return await rpgCmds.travel ? rpgCmds.travel(ctx) : rpgCmds['travel']?.(ctx)
-    if (cmd === 'explore')      return await rpgCmds.explore ? rpgCmds.explore(ctx) : rpgCmds['explore']?.(ctx)
-    if (cmd === 'worldmap')     return await rpgCmds.worldmap ? rpgCmds.worldmap(ctx) : rpgCmds['worldmap']?.(ctx)
-    if (cmd === 'myquest')      return await rpgCmds.myquest ? rpgCmds.myquest(ctx) : rpgCmds['myquest']?.(ctx)
-    if (cmd === 'abandquest')   return await rpgCmds.abandquest ? rpgCmds.abandquest(ctx) : rpgCmds['abandquest']?.(ctx)
-    if (cmd === 'questclaim')   return await rpgCmds.questclaim ? rpgCmds.questclaim(ctx) : rpgCmds['questclaim']?.(ctx)
-    if (cmd === 'questaccept')  return await rpgCmds.questaccept ? rpgCmds.questaccept(ctx) : rpgCmds['questaccept']?.(ctx)
-    if (cmd === 'loot')         return await rpgCmds.loot ? rpgCmds.loot(ctx) : rpgCmds['loot']?.(ctx)
-    // Per-group disable
-    if (cmd === 'gdisable')     return await staffCmds.gdisable ? staffCmds.gdisable(ctx) : ctx.reply('⚠️ Not available.')
-    if (cmd === 'genable')      return await staffCmds.genable ? staffCmds.genable(ctx) : ctx.reply('⚠️ Not available.')
-    if (cmd === 'gdisabledlist') return await staffCmds.gdisabledlist ? staffCmds.gdisabledlist(ctx) : ctx.reply('⚠️ Not available.')
-    if (cmd === 'gambleoff')    return await staffCmds.gambleoff ? staffCmds.gambleoff(ctx) : ctx.reply('⚠️ Not available.')
-    if (cmd === 'gambleon')     return await staffCmds.gambleon ? staffCmds.gambleon(ctx) : ctx.reply('⚠️ Not available.')
+    // RPG commands
     if (rpgCmds[cmd])           return await rpgCmds[cmd](ctx)
 
     // UNO commands
@@ -482,9 +464,6 @@ async function handleMessage(sock, msg) {
     if (cmd === 'withdrawall')   return await economyCmds['withdrawall']?economyCmds['withdrawall'](ctx):(()=>{ctx.args=['all'];return economyCmds['withdraw'](ctx)})()
     if (cmd === 'goodbye')       return await adminCmds['leave']   ? adminCmds['leave'](ctx)   : ctx.reply('❌ Usage: .goodbye on/off')
     if (cmd === 'invitelink')    return await adminCmds['invitelink']?adminCmds['invitelink'](ctx):ctx.reply('⏳ Coming soon.')
-    // .quest <number> → accept quest; .quest alone → show list
-    if (cmd === 'quest' && ctx.args?.length > 0 && !isNaN(parseInt(ctx.args[0])))
-      return await rpgCmds.questaccept ? rpgCmds.questaccept(ctx) : rpgCmds['quest']?.(ctx)
     if (cmd === 'stafflist')     return await staffCmds['mods']    ? staffCmds['mods'](ctx)    : ctx.reply('No staff found.')
     if (cmd === 'myrole')        return await staffCmds['myrole']  ? staffCmds['myrole'](ctx)  : ctx.reply('⏳ Coming soon.')
 

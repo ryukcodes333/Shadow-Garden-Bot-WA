@@ -601,16 +601,12 @@ module.exports = {
       : msg
 
     try {
-      const buffer  = await downloadMediaMessage(targetMsg, 'buffer', {}, {
+      const buffer = await downloadMediaMessage(targetMsg, 'buffer', {}, {
         logger: { level: () => {}, info: () => {}, warn: () => {}, error: () => {} },
         reuploadRequest: sock.updateMediaMessage,
       })
-      let imgBuf = buffer
-      try {
-        const sharp = require('sharp')
-        imgBuf = await sharp(buffer).jpeg({ quality: 90 }).toBuffer()
-      } catch {}
-      await sock.sendMessage(jid, { image: imgBuf }, { quoted: msg })
+      const stickerBuf = await makeSticker(buffer)
+      await sock.sendMessage(jid, { sticker: stickerBuf }, { quoted: msg })
     } catch (err) {
       await reply(`❌ Sticker failed: ${err.message}`)
     }

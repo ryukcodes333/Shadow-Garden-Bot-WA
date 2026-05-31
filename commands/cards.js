@@ -1,24 +1,29 @@
 const db        = require("../database");
 const http      = require("http");
 const https     = require("https");
-// Primary card index (old shoob.gg format: {title, tier, url})
+
+// ─── THREE CARD SOURCES ──────────────────────────────────────────────────────
+// 1. Old shoob.gg format: [{title, tier (numeric), url}]
 const cardIndex = require("./card.json");
-// Secondary card index (newer shoob.gg format: {name, tier, url, series})
+// 2. New shoob.gg format: [{name, tier, url, series}]
 let cardIndex2 = [];
 try { cardIndex2 = require("./cards_shoob2.json"); } catch {}
+// 3. Mazoku.cc format: [{id, name, tier (T1-T6), series, url}]
+let cardIndexMazoku = [];
+try { cardIndexMazoku = require("./cards_mazoku.json"); } catch {}
 
-// ─── TIERS ─────────────────────────────────────────────────────────────
+// ─── TIERS ───────────────────────────────────────────────────────────────────
 const TIER_PRICES = { T1: 17500, T2: 27500, T3: 37500, T4: 50000, T5: 62500, T6: 72500, TS: 90000, TZ: 0 };
 const TIER_NAMES  = { T1: "Common", T2: "Uncommon", T3: "Rare", T4: "Epic", T5: "Legendary", T6: "Mythic", TS: "Shadow", TZ: "Void" };
 const TIERS       = { T1: "🥉", T2: "🔵", T3: "🟢", T4: "🔴", T5: "🟣", T6: "🟡", TS: "✨", TZ: "🌌" };
 const SPAWN_TIERS = ["T1","T1","T1","T1","T2","T2","T2","T3","T3","T4","T4","T5","T6","TS"];
 const pendingCards = {};
 
-// Tier mapping for old format (tier is numeric string)
-const LOCAL_TIER_TO_LABEL = { "1": "T1", "2": "T2", "3": "T3", "4": "T4", "5": "T5", "6": "T6", S: "TS" };
-const FILTER_TIER_TO_LOCAL = { T1: "1", T2: "2", T3: "3", T4: "4", T5: "5", T6: "6", TS: "S", TZ: "Z" };
+// Tier mapping for old shoob format (tier is numeric string)
+const LOCAL_TIER_TO_LABEL    = { "1": "T1", "2": "T2", "3": "T3", "4": "T4", "5": "T5", "6": "T6", S: "TS" };
+const FILTER_TIER_TO_LOCAL   = { T1: "1", T2: "2", T3: "3", T4: "4", T5: "5", T6: "6", TS: "S", TZ: "Z" };
 
-// ─── UTILITIES ──────────────────────────────────────────────────────────
+// ─── UTILITIES ────────────────────────────────────────────────────────────────
 function normalizeText(v) { return String(v || "").trim().toLowerCase(); }
 
 function toShortId(input) {
@@ -31,60 +36,71 @@ function toShortId(input) {
 }
 function extractCardId(url) { return toShortId(String(url || "").trim()); }
 
-// ─── NEW CARD LAYOUT ────────────────────────────────────────────────────
-function cardBlock(name, tier, series, price, cardId) {
-  const tierLabel = TIER_NAMES[tier] || tier;
-  const tierEmoji = TIERS[tier] || "🎴";
-  const seriesLine = series && series !== "-" ? `┃ 📚 *Series:* ${series}\n` : "";
+// ─── CARD INFO LAYOUT (exact as specified) ────────────────────────────────────
+function cardBlock(name, tier, series, owners, cardId, ownersList) {
+  const seriesLine = series && series !== "-" ? series : "—";
+  const tierLabel  = `${tier} — ${TIER_NAMES[tier] || tier}`;
+
+  let holdersSection;
+  if (!ownersList || ownersList.length === 0) {
+    holdersSection = `\n> No owners found for this card yet.`;
+  } else {
+    const romanNumerals = ["Ⅰ","Ⅱ","Ⅲ","Ⅳ","Ⅴ","Ⅵ","Ⅶ","Ⅷ","Ⅸ","Ⅹ"];
+    const lines = ownersList.slice(0, 10).map((o, i) =>
+      `⟡ 𝗖𝗼𝗽𝘆 ${romanNumerals[i] || (i+1)} | \`${cardId}\`\n   👤 @${o.phone || o}`
+    ).join("\n");
+    holdersSection = `\n${lines}`;
+  }
+
   return (
-    `╭━━━━━━━━━━━━━━━━━╮\n` +
-    `┃ ${tierEmoji} *${name}*\n` +
-    seriesLine +
-    `┃ ⭐ *Tier:* ${tier} — ${tierLabel}\n` +
-    `┃ 💰 *Price:* $${(price || 0).toLocaleString()}\n` +
-    `┃ 🆔 *ID:* \`${cardId}\`\n` +
-    `╰━━━━━━━━━━━━━━━━━╯`
+    `╭━━━ ✦ 👑 ✦ ━━━╮\n` +
+    `     🎴 𝗖𝗔𝗥𝗗 𝗜𝗡𝗙𝗢\n` +
+    `╰━━━ ✦ 👑 ✦ ━━━╯\n\n` +
+    `👑 𝗡𝗮𝗺𝗲: ${name}\n` +
+    `📜 𝗦𝗲𝗿𝗶𝗲𝘀: ${seriesLine}\n` +
+    `⭐ 𝗧𝗶𝗲𝗿: ${tierLabel}\n` +
+    `👥 𝗢𝘄𝗻𝗲𝗿𝘀: ${owners}\n\n` +
+    `╔═════ ✦ ═════╗\n` +
+    `       👥 𝗛𝗢𝗟𝗗𝗘𝗥𝗦\n` +
+    `╚═════ ✦ ═════╝` +
+    holdersSection
   );
 }
 
-// ─── SEARCH: OLD INDEX ──────────────────────────────────────────────────
+// ─── SEARCH: OLD SHOOB INDEX ──────────────────────────────────────────────────
 function findCardsOld(nameQuery, tierFilter) {
-  const q = normalizeText(nameQuery);
+  const q  = normalizeText(nameQuery);
   const lt = tierFilter ? FILTER_TIER_TO_LOCAL[tierFilter] : null;
   if (!q) return [];
   return cardIndex
     .filter(c => {
-      const t = normalizeText(c.title);
-      if (!t.includes(q)) return false;
+      if (!normalizeText(c.title).includes(q)) return false;
       if (lt && String(c.tier) !== lt) return false;
       return true;
     })
     .map(c => ({
-      name: c.title,
-      tier: LOCAL_TIER_TO_LABEL[String(c.tier)] || String(c.tier),
-      url:  c.url,
+      name:   c.title,
+      tier:   LOCAL_TIER_TO_LABEL[String(c.tier)] || String(c.tier),
+      url:    c.url,
       series: "-",
-      source: "old",
+      source: "shoob",
     }))
     .sort((a, b) => {
       const aq = normalizeText(a.name), bq = normalizeText(b.name);
       if (aq === q && bq !== q) return -1;
       if (bq === q && aq !== q) return 1;
-      if (aq.startsWith(q) && !bq.startsWith(q)) return -1;
-      if (bq.startsWith(q) && !aq.startsWith(q)) return 1;
       return aq.localeCompare(bq);
     });
 }
 
-// ─── SEARCH: NEW INDEX ─────────────────────────────────────────────────
+// ─── SEARCH: NEW SHOOB INDEX ─────────────────────────────────────────────────
 function findCardsNew(nameQuery, tierFilter) {
-  const q = normalizeText(nameQuery);
+  const q  = normalizeText(nameQuery);
   const lt = tierFilter ? FILTER_TIER_TO_LOCAL[tierFilter] : null;
   if (!q) return [];
   return cardIndex2
     .filter(c => {
-      const t = normalizeText(c.name);
-      if (!t.includes(q)) return false;
+      if (!normalizeText(c.name).includes(q)) return false;
       if (lt && String(c.tier) !== lt) return false;
       return true;
     })
@@ -93,43 +109,70 @@ function findCardsNew(nameQuery, tierFilter) {
       tier:   LOCAL_TIER_TO_LABEL[String(c.tier)] || String(c.tier),
       url:    c.url,
       series: c.series || "-",
-      source: "new",
+      source: "shoob2",
     }))
     .sort((a, b) => {
       const aq = normalizeText(a.name), bq = normalizeText(b.name);
       if (aq === q && bq !== q) return -1;
       if (bq === q && aq !== q) return 1;
-      if (aq.startsWith(q) && !bq.startsWith(q)) return -1;
-      if (bq.startsWith(q) && !aq.startsWith(q)) return 1;
       return aq.localeCompare(bq);
     });
 }
 
-// ─── MERGE + DEDUPLICATE ───────────────────────────────────────────────
-function mergeResults(oldRes, newRes, limit = 300) {
-  const seen = new Set();
-  const merged = [];
-  for (const c of [...oldRes, ...newRes]) {
-    const key = normalizeText(c.name) + "|" + c.tier;
-    if (!seen.has(key)) { seen.add(key); merged.push(c); }
-    if (merged.length >= limit) break;
-  }
-  return merged;
-}
-
-function findCardsBoth(nameQuery, tierFilter) {
-  return mergeResults(findCardsOld(nameQuery, tierFilter), findCardsNew(nameQuery, tierFilter));
-}
-
-// ─── SERIES SEARCH (new index only, has series info) ──────────────────
-function findCardsBySeries(seriesQuery, tierFilter) {
-  const q  = normalizeText(seriesQuery);
-  const lt = tierFilter ? FILTER_TIER_TO_LOCAL[tierFilter] : null;
+// ─── SEARCH: MAZOKU INDEX ────────────────────────────────────────────────────
+function findCardsMazoku(nameQuery, tierFilter) {
+  const q = normalizeText(nameQuery);
   if (!q) return [];
-  return cardIndex2
+  return cardIndexMazoku
+    .filter(c => {
+      if (!normalizeText(c.name).includes(q)) return false;
+      if (tierFilter && c.tier !== tierFilter) return false;
+      return true;
+    })
+    .map(c => ({
+      name:   c.name,
+      tier:   c.tier,
+      url:    c.url,
+      series: c.series || "-",
+      source: "mazoku",
+    }))
+    .sort((a, b) => {
+      const aq = normalizeText(a.name), bq = normalizeText(b.name);
+      if (aq === q && bq !== q) return -1;
+      if (bq === q && aq !== q) return 1;
+      return aq.localeCompare(bq);
+    });
+}
+
+// ─── MERGE ALL SOURCES — NO DEDUP (same name can exist in multiple sources) ──
+function findCardsAll(nameQuery, tierFilter) {
+  const old    = findCardsOld(nameQuery, tierFilter);
+  const newer  = findCardsNew(nameQuery, tierFilter);
+  const mazoku = findCardsMazoku(nameQuery, tierFilter);
+  // interleave by relevance: exact matches first across all sources
+  const all = [...old, ...newer, ...mazoku];
+  const q   = normalizeText(nameQuery);
+  return all.sort((a, b) => {
+    const aq = normalizeText(a.name), bq = normalizeText(b.name);
+    const aExact = aq === q, bExact = bq === q;
+    if (aExact && !bExact) return -1;
+    if (bExact && !aExact) return 1;
+    const aStart = aq.startsWith(q), bStart = bq.startsWith(q);
+    if (aStart && !bStart) return -1;
+    if (bStart && !aStart) return 1;
+    return aq.localeCompare(bq);
+  });
+}
+
+// ─── SERIES SEARCH (all sources with series info) ────────────────────────────
+function findCardsBySeries(seriesQuery, tierFilter) {
+  const q = normalizeText(seriesQuery);
+  if (!q) return [];
+
+  const fromNew = cardIndex2
     .filter(c => {
       if (!normalizeText(c.series).includes(q)) return false;
-      if (lt && String(c.tier) !== lt) return false;
+      if (tierFilter && LOCAL_TIER_TO_LABEL[String(c.tier)] !== tierFilter) return false;
       return true;
     })
     .map(c => ({
@@ -137,18 +180,36 @@ function findCardsBySeries(seriesQuery, tierFilter) {
       tier:   LOCAL_TIER_TO_LABEL[String(c.tier)] || String(c.tier),
       url:    c.url,
       series: c.series || "-",
-    }))
+    }));
+
+  const fromMazoku = cardIndexMazoku
+    .filter(c => {
+      if (!normalizeText(c.series).includes(q)) return false;
+      if (tierFilter && c.tier !== tierFilter) return false;
+      return true;
+    })
+    .map(c => ({
+      name:   c.name,
+      tier:   c.tier,
+      url:    c.url,
+      series: c.series || "-",
+    }));
+
+  return [...fromNew, ...fromMazoku]
     .sort((a, b) => normalizeText(a.name).localeCompare(normalizeText(b.name)));
 }
 
-// ─── RANDOM CARD ────────────────────────────────────────────────────────
+// ─── RANDOM CARD ─────────────────────────────────────────────────────────────
 function getRandomCardByTier(tier) {
-  const lt   = FILTER_TIER_TO_LOCAL[tier];
-  // Combine both pools
+  const lt   = tier ? FILTER_TIER_TO_LOCAL[tier] : null;
   const pool1 = lt ? cardIndex.filter(c => String(c.tier) === lt) : cardIndex;
   const pool2 = lt ? cardIndex2.filter(c => String(c.tier) === lt) : cardIndex2;
-  const pool  = [...pool1.map(c => ({ name: c.title, tier: LOCAL_TIER_TO_LABEL[String(c.tier)] || String(c.tier), url: c.url, series: "-" })),
-                 ...pool2.map(c => ({ name: c.name,  tier: LOCAL_TIER_TO_LABEL[String(c.tier)] || String(c.tier), url: c.url, series: c.series || "-" }))];
+  const pool3 = tier ? cardIndexMazoku.filter(c => c.tier === tier) : cardIndexMazoku;
+  const pool  = [
+    ...pool1.map(c => ({ name: c.title, tier: LOCAL_TIER_TO_LABEL[String(c.tier)] || String(c.tier), url: c.url, series: "-" })),
+    ...pool2.map(c => ({ name: c.name,  tier: LOCAL_TIER_TO_LABEL[String(c.tier)] || String(c.tier), url: c.url, series: c.series || "-" })),
+    ...pool3.map(c => ({ name: c.name,  tier: c.tier, url: c.url, series: c.series || "-" })),
+  ];
   if (!pool.length) return null;
   const raw = pool[Math.floor(Math.random() * pool.length)];
   return {
@@ -164,13 +225,15 @@ function getRandomCardByTier(tier) {
 
 function getCardStats() {
   const byTier = {};
-  const count  = (tier) => { byTier[tier] = (byTier[tier] || 0) + 1; };
-  for (const c of cardIndex)  count(LOCAL_TIER_TO_LABEL[String(c.tier)] || String(c.tier));
-  for (const c of cardIndex2) count(LOCAL_TIER_TO_LABEL[String(c.tier)] || String(c.tier));
-  return { total: cardIndex.length + cardIndex2.length, indexedCount: cardIndex.length + cardIndex2.length, byTier };
+  const count  = (t) => { byTier[t] = (byTier[t] || 0) + 1; };
+  for (const c of cardIndex)        count(LOCAL_TIER_TO_LABEL[String(c.tier)] || String(c.tier));
+  for (const c of cardIndex2)       count(LOCAL_TIER_TO_LABEL[String(c.tier)] || String(c.tier));
+  for (const c of cardIndexMazoku)  count(c.tier);
+  const total = cardIndex.length + cardIndex2.length + cardIndexMazoku.length;
+  return { total, indexedCount: total, byTier };
 }
 
-// ─── IMAGE FETCH ────────────────────────────────────────────────────────
+// ─── IMAGE FETCH ─────────────────────────────────────────────────────────────
 async function fetchImageBuffer(url) {
   return new Promise((resolve) => {
     const client = url.startsWith("https") ? https : http;
@@ -222,7 +285,7 @@ async function _buildDeckImage(cards) {
   return canvas.toBuffer("image/jpeg", { quality: 85 });
 }
 
-// ─── COMMANDS ───────────────────────────────────────────────────────────
+// ─── COMMANDS ─────────────────────────────────────────────────────────────────
 module.exports = {
   async spawnc({ sock, jid, msg, reply, react, isOwner, isMod, isGuardian }) {
     if (!isOwner && !isMod && !isGuardian) return reply("⚠️ Only staff can spawn cards.");
@@ -232,11 +295,10 @@ module.exports = {
       let card = getRandomCardByTier(tier);
       if (!card) card = getRandomCardByTier(null);
       if (!card) return reply("❌ No cards found in card indexes.");
-      const price  = TIER_PRICES[card.tier] || 0;
       const owners = await db.getCardOwners(card.id).catch(() => []);
       const caption =
         `✨ *A card has spawned!*\n\n` +
-        cardBlock(card.name, card.tier, card.series, price, card.id) +
+        cardBlock(card.name, card.tier, card.series, owners.length, card.id, owners) +
         `\n\n> Use *.get* \`${card.id}\` to *claim* this card!`;
       pendingCards[jid] = { card, expiresAt: Date.now() + 120000 };
       setTimeout(() => { if (pendingCards[jid]?.card?.id === card.id) delete pendingCards[jid]; }, 120000);
@@ -260,89 +322,70 @@ module.exports = {
     const localCard = await db.getOrCreateShoobCard(rawUrl, card.name, card.tier, card.series, card.imageUrl || null, TIER_PRICES[card.tier] || 0).catch(() => null);
     if (!localCard) return reply("❌ Failed to save card. Check your database setup.");
     await db.addUserCard(sender, localCard.id);
-    await reply(cardBlock(card.name, card.tier, card.series, TIER_PRICES[card.tier] || 0, card.id) + `\n\n✅ *CLAIMED!* Added to your collection.\n_Use *.coll* to view it._`);
+    const owners = await db.getCardOwners(card.id).catch(() => []);
+    await reply(cardBlock(card.name, card.tier, card.series, owners.length, card.id, owners) + `\n\n✅ *CLAIMED!* Added to your collection.\n_Use *.coll* to view it._`);
   },
 
-  // ─── .ci — card info, shows ALL matches at once ───────────────────
+  // ─── .ci — card info ─────────────────────────────────────────────────────
   async ci({ sock, jid, msg, reply, react, args }) {
-    if (!args.length) return reply(`🃏 *CARD INFO*\n\nUsage: *.ci <name> [tier]*\nTiers: T1 T2 T3 T4 T5 T6 TS`);
+    if (!args.length) return reply(`Usage: *.ci <name> [tier]*`);
     await react("⏳");
     const validTiers = ["T1","T2","T3","T4","T5","T6","TS","TZ"];
     let rawArgs = [...args];
 
-    // Parse |N selector
-    let matchIndex = 0;
-    const lastRaw  = rawArgs[rawArgs.length - 1];
-    const pipeMatch = lastRaw.match(/^(.*)\|(\d+)$/);
-    if (pipeMatch) {
-      const cleaned = pipeMatch[1].trim();
-      matchIndex = Math.max(0, parseInt(pipeMatch[2]) - 1);
-      rawArgs[rawArgs.length - 1] = cleaned || (rawArgs.pop(), "");
-    }
-
-    // Parse optional tier
     const lastArg = rawArgs[rawArgs.length - 1]?.toUpperCase();
     let nameQuery, tierFilter;
     if (validTiers.includes(lastArg)) { nameQuery = rawArgs.slice(0, -1).join(" ").trim(); tierFilter = lastArg; }
     else { nameQuery = rawArgs.join(" ").trim(); tierFilter = null; }
-    if (!nameQuery) return reply("⚠️ Please provide a card name.\n\nExample: *.ci Kakashi T4*");
+    if (!nameQuery) return reply("⚠️ Please provide a card name.");
 
     try {
-      const matches = findCardsBoth(nameQuery, tierFilter);
-      if (!matches.length) return reply(`❌ *No card found*\n\nName: *${nameQuery}*${tierFilter ? `\nTier: *${tierFilter}*` : ""}\n\n_Try a different spelling or tier._`);
+      const matches = findCardsAll(nameQuery, tierFilter);
+      if (!matches.length) return reply(`❌ No card found: *${nameQuery}*${tierFilter ? ` (${tierFilter})` : ""}`);
 
-      // Show first match image + full list
-      const safeIndex = Math.min(matchIndex, matches.length - 1);
-      const first = matches[safeIndex];
-      const price = TIER_PRICES[first.tier] || 0;
-      const cardId = extractCardId(first.url);
-
-      let allMatchesText = "";
-      if (matches.length > 1) {
-        const lines = matches.map((m, i) => {
-          const t = TIERS[m.tier] || "🎴";
-          const s = m.series && m.series !== "-" ? ` — _${m.series}_` : "";
-          return `${i + 1}. ${t} *${m.name}* (${m.tier})${s}`;
-        }).join("\n");
-        allMatchesText = `\n\n📋 *All ${matches.length} matches:*\n${lines}`;
-      }
-
-      const caption = cardBlock(first.name, first.tier, first.series, price, cardId) + allMatchesText;
+      // Show each match — send image of first, then list all
+      const first   = matches[0];
+      const cardId  = extractCardId(first.url);
+      const owners  = await db.getCardOwners(cardId).catch(() => []);
+      const caption = cardBlock(first.name, first.tier, first.series, owners.length, cardId, owners) +
+        (matches.length > 1
+          ? `\n\n📋 *${matches.length} results:*\n` +
+            matches.map((m, i) => {
+              const src = m.source === "mazoku" ? " _(mazoku)_" : "";
+              return `${i + 1}. ${TIERS[m.tier] || "🎴"} *${m.name}* (${m.tier})${src}`;
+            }).join("\n")
+          : "");
 
       try {
         if (first.url) { await sock.sendMessage(jid, { image: { url: first.url }, caption }, { quoted: msg }); }
-        else           { await reply(caption); }
+        else { await reply(caption); }
       } catch { await reply(caption); }
     } catch (err) { await reply(`❌ Error: ${err.message}`); }
   },
 
-  // ─── .ss — search cards by name ──────────────────────────────────
+  // ─── .ss — search cards by name ──────────────────────────────────────────
   async ss({ reply, react, args }) {
-    if (!args.length) return reply("⚠️ Usage: *.ss <card name>*\n\nExample: *.ss Naruto*");
+    if (!args.length) return reply("⚠️ Usage: *.ss <card name>*");
     await react("⏳");
     const nameQuery = args.join(" ").trim();
     try {
-      const matches = findCardsBoth(nameQuery, null);
-      if (!matches.length) return reply(`❌ No cards found matching: *${nameQuery}*`);
-
-      const externalIds = matches.map(c => extractCardId(c.url));
-      let ownerCounts = {};
-      try { ownerCounts = await db.getOwnerCountsBatch(externalIds); } catch {}
+      const matches = findCardsAll(nameQuery, null);
+      if (!matches.length) return reply(`❌ No cards found: *${nameQuery}*`);
 
       const cardLines = matches.map((c, i) => {
-        const owners = ownerCounts[externalIds[i]] || 0;
-        const s = c.series && c.series !== "-" ? ` — _${c.series}_` : "";
-        return `\n*${i + 1}.* ${TIERS[c.tier] || "🎴"} *${c.name}* (${c.tier})${s}\n     👥 Owners: ${owners}`;
+        const s   = c.series && c.series !== "-" ? ` — _${c.series}_` : "";
+        const src = c.source === "mazoku" ? " _(mazoku)_" : "";
+        return `${i + 1}. ${TIERS[c.tier] || "🎴"} *${c.name}* (${c.tier})${s}${src}`;
       }).join("\n");
 
-      const header = `*🎴 Cards Matching "${nameQuery}" — ${matches.length} result(s)*`;
-      const MAX_LEN = 4000;
-      const full = header + cardLines;
-      if (full.length <= MAX_LEN) { await reply(full); return; }
+      const header = `*🎴 "${nameQuery}" — ${matches.length} result(s)*\n\n`;
+      const full   = header + cardLines;
+      const MAX    = 4000;
+      if (full.length <= MAX) { await reply(full); return; }
       const chunks = [];
-      let cur = header;
+      let cur = header.trimEnd();
       for (const line of cardLines.split("\n")) {
-        if ((cur + "\n" + line).length > MAX_LEN) { chunks.push(cur); cur = "_(continued...)_"; }
+        if ((cur + "\n" + line).length > MAX) { chunks.push(cur); cur = "_(continued...)_"; }
         cur += "\n" + line;
       }
       chunks.push(cur);
@@ -350,9 +393,9 @@ module.exports = {
     } catch (err) { await reply(`❌ Error: ${err.message}`); }
   },
 
-  // ─── .fs — find cards by series ──────────────────────────────────
+  // ─── .fs — series search (exact layout as specified) ─────────────────────
   async fs({ sock, jid, msg, reply, react, args }) {
-    if (!args.length) return reply(`📚 *SERIES SEARCH*\n\nUsage: *.fs <series name> [tier]*\n\nExamples:\n• *.fs Naruto*\n• *.fs Attack on Titan T4*\n\nTiers: T1 T2 T3 T4 T5 T6 TS`);
+    if (!args.length) return reply(`Usage: *.fs <series name> [tier]*`);
     await react("⏳");
     const validTiers = ["T1","T2","T3","T4","T5","T6","TS","TZ"];
     let rawArgs = [...args];
@@ -360,52 +403,63 @@ module.exports = {
     let seriesQuery, tierFilter;
     if (validTiers.includes(lastArg)) { seriesQuery = rawArgs.slice(0, -1).join(" ").trim(); tierFilter = lastArg; }
     else { seriesQuery = rawArgs.join(" ").trim(); tierFilter = null; }
-    if (!seriesQuery) return reply("⚠️ Please provide a series name.");
+    if (!seriesQuery) return reply("⚠️ Provide a series name.");
     try {
       const matches = findCardsBySeries(seriesQuery, tierFilter);
-      if (!matches.length) return reply(`❌ No cards found in series: *${seriesQuery}*${tierFilter ? ` (${tierFilter})` : ""}\n\n_Try a different spelling._`);
+      if (!matches.length) return reply(`❌ No cards found in series: *${seriesQuery}*`);
 
-      // Build response — show image of first card + all card names
-      const first  = matches[0];
-      const cardLines = matches.map((c, i) => {
-        const t = TIERS[c.tier] || "🎴";
-        return `${i + 1}. ${t} *${c.name}* (${c.tier})`;
-      }).join("\n");
+      // Count by tier
+      const tierCounts = {};
+      for (const c of matches) { tierCounts[c.tier] = (tierCounts[c.tier] || 0) + 1; }
+      const tierLines = Object.entries(tierCounts)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([t, cnt]) => `${t} = ${cnt}`)
+        .join("\n");
 
-      const header = `📚 *Series: "${seriesQuery}"* — ${matches.length} card(s)${tierFilter ? ` (${tierFilter})` : ""}\n\n`;
-      const MAX_LEN = 4000;
-      const full = header + cardLines;
+      const cardLines = matches.map(c => `[${c.tier}] ${c.name}`).join("\n");
 
-      const sendList = async () => {
-        if (full.length <= MAX_LEN) { await reply(full); return; }
-        const chunks = [];
-        let cur = header.trimEnd();
-        for (const line of cardLines.split("\n")) {
-          if ((cur + "\n" + line).length > MAX_LEN) { chunks.push(cur); cur = "_(continued...)_"; }
-          cur += "\n" + line;
-        }
-        chunks.push(cur);
-        for (const chunk of chunks) await reply(chunk);
-      };
+      const seriesName = matches[0]?.series || seriesQuery;
+      const text =
+        `∘₊✧──────✧₊∘\n` +
+        `🔎 𝗦𝗘𝗥𝗜𝗘𝗦 𝗦𝗘𝗔𝗥𝗖𝗛\n` +
+        `∘₊✧──────✧₊∘\n\n` +
+        `📚 𝗡𝗮𝗺𝗲: ${seriesName}\n` +
+        `🎴 𝗧𝗼𝘁𝗮𝗹 𝗖𝗮𝗿𝗱𝘀: ${matches.length}\n\n` +
+        `✨ 𝗧𝗶𝗲𝗿𝘀:\n${tierLines}\n\n` +
+        `∘₊✧──────✧₊∘\n` +
+        `📜 𝗖𝗔𝗥𝗗𝗦\n` +
+        `∘₊✧──────✧₊∘\n\n` +
+        cardLines +
+        `\n\n∘₊✧──────✧₊∘\n` +
+        `💡 Use .ci {card name} {tier} to view a card from this series\n` +
+        `∘₊✧──────✧₊∘`;
 
-      // Send first card image
+      // Send image of first card then the text list
+      const first = matches[0];
       if (first.url) {
-        try {
-          const caption = cardBlock(first.name, first.tier, first.series, TIER_PRICES[first.tier] || 0, extractCardId(first.url));
-          await sock.sendMessage(jid, { image: { url: first.url }, caption }, { quoted: msg });
-        } catch {}
+        try { await sock.sendMessage(jid, { image: { url: first.url }, caption: `📚 ${seriesName}` }, { quoted: msg }); } catch {}
       }
-      await sendList();
+
+      const MAX = 4000;
+      if (text.length <= MAX) { await reply(text); return; }
+      const chunks = [];
+      let cur = "";
+      for (const line of text.split("\n")) {
+        if ((cur + "\n" + line).length > MAX) { chunks.push(cur); cur = ""; }
+        cur += (cur ? "\n" : "") + line;
+      }
+      if (cur) chunks.push(cur);
+      for (const chunk of chunks) await reply(chunk);
     } catch (err) { await reply(`❌ Error: ${err.message}`); }
   },
 
-  // ─── .card — view a card in your collection ───────────────────────
+  // ─── .card — view a card in your collection ──────────────────────────────
   async card({ sock, jid, msg, reply, react, sender, args }) {
     await react("⏳");
     const index = parseInt(args[0]);
-    if (!index || index < 1) return reply("⚠️ Usage: *.card <number>*\n\nView your collection with *.coll*");
+    if (!index || index < 1) return reply("⚠️ Usage: *.card <number>*");
     const cards = await db.getUserCards(sender);
-    if (!cards.length) return reply("📭 Your collection is empty. Claim cards when they spawn!");
+    if (!cards.length) return reply("📭 Your collection is empty.");
     if (index > cards.length) return reply(`❌ You only have *${cards.length}* card(s).`);
     const uc      = cards[index - 1];
     const cardData = uc.cards || uc;
@@ -413,47 +467,47 @@ module.exports = {
     const name     = cardData?.name || "Unknown";
     const series   = cardData?.series || "-";
     const imageUrl = cardData?.image_url || null;
-    const price    = cardData?.price || TIER_PRICES[tier] || 0;
     const cardId   = extractCardId(imageUrl || name);
-    const caption  = cardBlock(name, tier, series, price, cardId) + `\n\n_Collection entry #${index}._`;
+    const owners   = await db.getCardOwners(cardId).catch(() => []);
+    const caption  = cardBlock(name, tier, series, owners.length, cardId, owners);
     try {
       if (imageUrl) { await sock.sendMessage(jid, { image: { url: imageUrl }, caption }, { quoted: msg }); }
       else { await reply(caption); }
     } catch { await reply(caption); }
   },
 
-  // ─── .coll — view collection list ────────────────────────────────
+  // ─── .coll ────────────────────────────────────────────────────────────────
   async coll({ reply, sender, msg }) {
-    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+    const mentioned   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
     const targetPhone = mentioned.length ? mentioned[0].split("@")[0].split(":")[0] : sender;
     const cards = await db.getUserCards(targetPhone);
-    if (!cards.length) return reply(`*🃏 Card Collection*\n\n_No cards yet. Claim some when they spawn!_`);
+    if (!cards.length) return reply(`*🃏 Card Collection*\n\n_No cards yet._`);
     const lines = cards.map((uc, i) => {
       const cardData = uc.card_id || uc;
       const tier = cardData?.tier || "?";
       const name = cardData?.name || "Unknown";
       return `${i + 1}. ${TIERS[tier] || "🎴"} *${name}* _(${tier})_`;
     }).join("\n");
-    await reply(`*🃏 Card Collection* - ${cards.length} card(s)\n\n${lines}\n\n_Use *.deck* to view your deck._`);
+    await reply(`*🃏 Card Collection* — ${cards.length} card(s)\n\n${lines}`);
   },
   async collection(ctx) { return module.exports.coll(ctx); },
 
-  // ─── .deck ────────────────────────────────────────────────────────
+  // ─── .deck ────────────────────────────────────────────────────────────────
   async deck({ sock, jid, msg, reply, sender }) {
     const cards = await db.getUserCards(sender);
-    if (!cards.length) return reply("📭 Your deck is empty.\n\nClaim cards when they spawn! 🎴");
+    if (!cards.length) return reply("📭 Your deck is empty. Claim cards when they spawn!");
     const deckSlice  = cards.slice(0, 9);
     const deckExtIds = deckSlice.map(uc => { const c = uc.card_id || uc; return c?.external_id || c?.id || "?"; });
     let ownerCounts = {};
     try { ownerCounts = await db.getOwnerCountsBatch(deckExtIds); } catch {}
     const cardLines = deckSlice.map((uc, i) => {
-      const c = uc.card_id || uc;
-      const tier = c?.tier || "?";
-      const name = c?.name || "Unknown";
+      const c      = uc.card_id || uc;
+      const tier   = c?.tier || "?";
+      const name   = c?.name || "Unknown";
       const owners = ownerCounts[deckExtIds[i]] || 0;
-      return `\n🎴 *Name:* ${name}\n⭐ *Tier:* ${tier}\n🔷 *Index:* #${i + 1}\n#️⃣ *Owners:* (${owners})`;
+      return `\n🎴 *Name:* ${name}\n⭐ *Tier:* ${tier}\n🔷 *Index:* #${i + 1}\n#️⃣ *Owners:* ${owners}`;
     }).join("\n\n");
-    const ZWLTR = '\u200e'.repeat(800);
+    const ZWLTR  = '\u200e'.repeat(800);
     const caption =
       `*🎴 Your Deck 🎴*${ZWLTR}` +
       cardLines +
@@ -467,20 +521,16 @@ module.exports = {
   },
   async cd(ctx) { return module.exports.deck(ctx); },
 
-  // ─── .cards — database stats ──────────────────────────────────────
+  // ─── .cards — stats ───────────────────────────────────────────────────────
   async cards({ reply }) {
     try {
-      const stats = getCardStats();
+      const stats  = getCardStats();
       const byTier = stats.byTier || {};
       await reply(
         `🎴 *CARD DATABASE*\n\n` +
         `📦 *Total:* ${stats.total.toLocaleString()}\n` +
-        `📊 *Indexed:* ${stats.indexedCount.toLocaleString()}\n` +
-        `   _(Shoob Classic + Shoob Extended)_\n\n` +
-        `━━━━━━━━━━━━━━━\n\n` +
-        Object.entries(byTier).sort().map(([t, c]) => `${TIERS[t] || "🎴"} ${t}: ${Number(c).toLocaleString()} cards`).join("\n") +
-        `\n\n━━━━━━━━━━━━━━━\n\n` +
-        `_Search: *.ci <name>* | Series: *.fs <series>* | Name: *.ss <name>*_`
+        `   _(Shoob Classic + Shoob Extended + Mazoku)_\n\n` +
+        Object.entries(byTier).sort().map(([t, c]) => `${TIERS[t] || "🎴"} ${t}: ${Number(c).toLocaleString()}`).join("\n")
       );
     } catch (err) { await reply(`❌ Error: ${err.message}`); }
   },
@@ -502,12 +552,12 @@ module.exports = {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
     if (!mentioned.length) return reply("⚠️ Usage: *.tc @user <card_number>*");
     const target = mentioned[0].split("@")[0];
-    await reply(`📤 *TRADE*\n\nTrade requests coming soon!\n\nCoordinate trades manually with @${target}. 🖤`);
+    await reply(`📤 *TRADE*\n\nTrade requests coming soon! Coordinate manually with @${target}. 🖤`);
   },
 
   async dc({ reply, sender, args }) {
     const index = parseInt(args[0]);
-    if (!index || index < 1) return reply("⚠️ Usage: *.dc <card_number>*\n\nFind numbers with *.coll*");
+    if (!index || index < 1) return reply("⚠️ Usage: *.dc <card_number>*");
     const cards = await db.getUserCards(sender);
     if (index > cards.length) return reply(`❌ You only have ${cards.length} card(s).`);
     const uc = cards[index - 1];
@@ -515,11 +565,10 @@ module.exports = {
     await db.deleteUserCardById(uc.id);
     await reply(
       `🗑️ *CARD DISCARDED*\n\n` +
-      `${TIERS[cardData?.tier] || "🎴"} *${cardData?.name || "Unknown"}*\n` +
-      `⭐ Tier: ${cardData?.tier || "?"}\n\n` +
+      `${TIERS[cardData?.tier] || "🎴"} *${cardData?.name || "Unknown"}* (${cardData?.tier || "?"})\n\n` +
       `_Returned to the void._ 🖤`
     );
   },
 
-  async stardust({ reply }) { await reply(`✨ *STARDUST*\n\n💫 Earn stardust by participating in events.\n\n_Coming soon…_ 🖤`); },
+  async stardust({ reply }) { await reply(`✨ *STARDUST*\n\n_Coming soon…_ 🖤`); },
 };

@@ -1,4 +1,8 @@
-const axios = require('axios')
+const axios     = require('axios')
+const { execFile } = require('child_process')
+const os        = require('os')
+const path      = require('path')
+const fs        = require('fs')
 
 const GIF_ACTIONS = {
   hug:   'https://nekos.life/api/v2/img/hug',
@@ -10,26 +14,50 @@ const GIF_ACTIONS = {
   lick:  'https://nekos.life/api/v2/img/lick',
 }
 
-async function getGif(action) {
+async function getGifUrl(action) {
   try {
     const res = await axios.get(GIF_ACTIONS[action] || GIF_ACTIONS.hug, { timeout: 8000 })
     return res.data.url
   } catch { return null }
 }
 
-// Resolve target from quoted message or @mention; returns { phone, jid }
+// Download a GIF URL and convert to MP4 buffer using ffmpeg
+// gifPlayback:true in Baileys requires a real MP4, not a raw GIF URL
+async function gifUrlToMp4(gifUrl) {
+  const res = await axios.get(gifUrl, { responseType: 'arraybuffer', timeout: 15000 })
+  const tmpIn  = path.join(os.tmpdir(), `gif_in_${Date.now()}.gif`)
+  const tmpOut = path.join(os.tmpdir(), `gif_out_${Date.now()}.mp4`)
+  fs.writeFileSync(tmpIn, Buffer.from(res.data))
+  await new Promise((resolve, reject) => {
+    execFile('ffmpeg', [
+      '-y', '-i', tmpIn,
+      '-movflags', 'faststart',
+      '-pix_fmt', 'yuv420p',
+      '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+      '-an',
+      tmpOut,
+    ], { timeout: 30000 }, (err, _o, stderr) => {
+      if (err) reject(new Error((stderr || err.message).slice(0, 200)))
+      else resolve()
+    })
+  })
+  const buf = fs.readFileSync(tmpOut)
+  try { fs.unlinkSync(tmpIn) } catch {}
+  try { fs.unlinkSync(tmpOut) } catch {}
+  return buf
+}
+
+// Resolve target from quoted message or @mention
 function resolveTarget(ctx) {
   const { msg } = ctx
   const ctxInfo = msg.message?.extendedTextMessage?.contextInfo
 
-  // 1. Quoted message participant (reply to someone's message)
   const quotedParticipant = ctxInfo?.participant
   if (quotedParticipant) {
     const phone = quotedParticipant.split('@')[0].split(':')[0]
     return { phone, jid: quotedParticipant }
   }
 
-  // 2. @mention
   const mentioned = ctxInfo?.mentionedJid || []
   if (mentioned.length) {
     const jid   = mentioned[0]
@@ -44,20 +72,24 @@ async function sendInteraction(ctx, action, template) {
   const { sock, msg, jid, sender } = ctx
   const senderJid = msg.key.participant || msg.key.remoteJid || `${sender}@s.whatsapp.net`
 
-  const target = resolveTarget(ctx)
-  const text   = template(sender, target?.phone || null)
+  const target   = resolveTarget(ctx)
+  const text     = template(sender, target?.phone || null)
+  const mentions = target ? [senderJid, target.jid] : [senderJid]
 
-  const mentions = target
-    ? [senderJid, target.jid]
-    : [senderJid]
-
-  const gifUrl = await getGif(action)
+  const gifUrl = await getGifUrl(action)
   if (gifUrl) {
+    // Try MP4 conversion first (required for gifPlayback to animate)
+    try {
+      const mp4Buf = await gifUrlToMp4(gifUrl)
+      await sock.sendMessage(jid, { video: mp4Buf, gifPlayback: true, caption: text, mentions }, { quoted: msg })
+      return
+    } catch {}
+    // Fallback: send raw GIF URL as video
     try {
       await sock.sendMessage(jid, { video: { url: gifUrl }, gifPlayback: true, caption: text, mentions }, { quoted: msg })
       return
     } catch {}
-    // fallback to image if video fails
+    // Final fallback: static image
     try {
       await sock.sendMessage(jid, { image: { url: gifUrl }, caption: text, mentions }, { quoted: msg })
       return
@@ -70,12 +102,9 @@ async function sendTextInteraction(ctx, template) {
   const { sock, msg, jid, sender } = ctx
   const senderJid = msg.key.participant || msg.key.remoteJid || `${sender}@s.whatsapp.net`
 
-  const target = resolveTarget(ctx)
-  const text   = template(sender, target?.phone || null)
-
-  const mentions = target
-    ? [senderJid, target.jid]
-    : [senderJid]
+  const target   = resolveTarget(ctx)
+  const text     = template(sender, target?.phone || null)
+  const mentions = target ? [senderJid, target.jid] : [senderJid]
 
   await sock.sendMessage(jid, { text, mentions }, { quoted: msg })
 }

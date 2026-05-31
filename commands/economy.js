@@ -164,25 +164,35 @@ module.exports = {
 
     const senderJid = msg.key.participant || msg.key.remoteJid || `${sender}@s.whatsapp.net`
     await sock.sendMessage(jid, {
-      text: `💸 *PAYMENT CONFIRMATION*\n\n*From:* @${sender}\n*To:* @${targetPhone}\n*Amount:* $${amount.toLocaleString()}\n\n⚠️ Type *.confirmpy* within 60 seconds to confirm this transfer.\n_Type anything else to cancel._`,
+      text: `⚠️ You are about to transfer $${amount.toLocaleString()} to @${targetPhone}. Kindly reply with *Yes* to continue transaction, or *No* to cancel this transaction`,
       mentions: [senderJid, targetJid],
     }, { quoted: msg })
   },
   async donate(ctx) { return module.exports.pay(ctx) },
 
-  // ─── .confirmpy — confirm pending payment ────────────────────────
-  async confirmpy({ sock, msg, jid, reply, sender }) {
+  // ─── handlePayConfirm — called from index.js when user types Yes/No ───────
+  async handlePayConfirm(sender, confirmed, { sock, msg, jid }) {
     const pending = pendingPay[sender]
-    if (!pending || Date.now() > pending.expiresAt) {
+    if (!pending) return false  // no pending payment — don't consume this message
+    if (Date.now() > pending.expiresAt) {
       delete pendingPay[sender]
-      return reply('❌ No pending payment to confirm (or it expired).\n\nUse *.pay @user <amount>* to start a transfer.')
+      await sock.sendMessage(jid, { text: '❌ Payment expired.' }, { quoted: msg })
+      return true
+    }
+    if (!confirmed) {
+      delete pendingPay[sender]
+      await sock.sendMessage(jid, { text: '❌ Payment cancelled.' }, { quoted: msg })
+      return true
     }
 
     const { toPhone, toJid, amount } = pending
     delete pendingPay[sender]
 
-    const u  = await db.getOrCreateUser(sender)
-    if (amount > (u.wallet || 0)) return reply(`❌ Insufficient funds! You now have $${(u.wallet || 0).toLocaleString()}`)
+    const u = await db.getOrCreateUser(sender)
+    if (amount > (u.wallet || 0)) {
+      await sock.sendMessage(jid, { text: `❌ Insufficient funds! You have $${(u.wallet || 0).toLocaleString()}` }, { quoted: msg })
+      return true
+    }
 
     const tu = await db.getOrCreateUser(toPhone)
     await db.updateUser(sender, { wallet: (u.wallet || 0) - amount })
@@ -204,6 +214,7 @@ module.exports = {
     } else {
       await sock.sendMessage(jid, { text: caption, mentions }, { quoted: msg })
     }
+    return true
   },
 
   async work({ reply, sender, user, pushName }) {
