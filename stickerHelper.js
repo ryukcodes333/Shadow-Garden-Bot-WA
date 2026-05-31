@@ -1,7 +1,7 @@
 const sharp = require('sharp')
 
 const PACK_NAME   = 'Atomic'
-const PACK_AUTHOR = 'Shadow Garden'
+const PACK_AUTHOR = 'Konosuba'
 
 // ─── PUBLIC ENTRY POINT ──────────────────────────────────────────────────────
 async function makeSticker(inputBuffer) {

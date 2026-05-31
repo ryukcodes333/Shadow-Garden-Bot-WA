@@ -13,7 +13,7 @@ app.get('/', (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Shadow Garden — Bot Panel</title>
+<title>Konosuba — Bot Panel</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -506,7 +506,7 @@ app.get('/', (req, res) => {
       <div class="brand-icon-ring"></div>
       <span class="brand-icon-inner">🌑</span>
     </div>
-    <div class="brand-name">Shadow Garden</div>
+    <div class="brand-name">Konosuba</div>
     <div class="brand-sub">Bot Control Panel</div>
   </div>
 
@@ -522,7 +522,7 @@ app.get('/', (req, res) => {
   <div id="pairedPanel">
     <span class="paired-icon">✅</span>
     <div class="paired-title">Bot is Online</div>
-    <div class="paired-sub">Shadow Garden is active and listening to messages.</div>
+    <div class="paired-sub">Konosuba is active and listening to messages.</div>
   </div>
 
   <!-- Pairing code display -->
@@ -557,7 +557,7 @@ app.get('/', (req, res) => {
   <hr class="divider">
 
   <div class="footer">
-    <span>Shadow Garden Bot</span>
+    <span>Konosuba Bot</span>
     <span><span class="version-dot"></span>Alpha v2.0<span class="version-dot"></span></span>
   </div>
 
@@ -718,7 +718,7 @@ app.get('/ping',     (req, res) => res.json({ status: 'alive', ts: Date.now() })
 app.get('/bot.ping', (req, res) => res.json({ status: 'alive', ts: Date.now() }))
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\\n🌐 Shadow Garden Web Panel → http://localhost:\${PORT}\\n`)
+  console.log(`\\n🌐 Konosuba Web Panel → http://localhost:\${PORT}\\n`)
 })
 
 // Keep-alive ping for Render free tier (every 2 min)
