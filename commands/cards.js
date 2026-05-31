@@ -8,7 +8,7 @@ const os    = require('os')
 const fs    = require('fs')
 
 // ─── THREE CARD SOURCES ───────────────────────────────────────────────────────
-// 1. Old shoob: [{title, tier (numeric "1"-"6"/"S"), url}]
+// 1. Old shoob: [{title, tier (numeric "1"-"6"/"S"), url}] — no series, excluded from spawn/ci/card
 const cardIndex = require('./card.json')
 // 2. New shoob: [{name, tier (numeric), url, series}]
 let cardIndex2 = []
@@ -32,8 +32,17 @@ const VALID_SHOOB   = ['T1','T2','T3','T4','T5','T6','TS','TZ']
 const VALID_MAZOKU  = ['C','R','SR','SSR','UR']
 const ALL_VALID_TIERS = [...VALID_SHOOB, ...VALID_MAZOKU]
 
+// Deck background image path
+const DECK_BG_PATH = path.join(__dirname, '..', 'assets', 'deck-bg.jpg')
+
 // ─── UTILITIES ────────────────────────────────────────────────────────────────
 function norm(v) { return String(v || '').trim().toLowerCase() }
+
+function hasRealSeries(series) {
+  if (!series) return false
+  const s = String(series).trim()
+  return s !== '' && s !== '-'
+}
 
 function toShortId(input) {
   const chars = '0123456789abcdefghijklmnopqrstuvwxyz'
@@ -163,6 +172,7 @@ async function sendCardMedia(sock, jid, msg, url, caption) {
 }
 
 // ─── SEARCH: OLD SHOOB ────────────────────────────────────────────────────────
+// Old shoob cards have no series — excluded from series-required contexts
 function findOld(nameQuery, tierFilter) {
   const q  = norm(nameQuery)
   const lt = tierFilter ? LABEL_TO_LOCAL[tierFilter] : null
@@ -221,10 +231,10 @@ function findMazoku(nameQuery, tierFilter) {
     }))
 }
 
-// ─── DEDUP: only remove literal "-" series; keep all old-gen + new-gen ───────
+// ─── DEDUP: only keep cards with a real series; remove "-" and empty ──────────
 function deduplicateResults(results) {
-  // Step 1: Drop entries whose series is literally the placeholder "-"
-  const filtered = results.filter(r => r.series !== '-')
+  // Step 1: Only keep entries with a real series (not "-", not empty)
+  const filtered = results.filter(r => hasRealSeries(r.series))
   // Step 2: Deduplicate by exact URL only (same image = same card)
   const seenUrls = new Set()
   const output   = []
@@ -242,11 +252,14 @@ function findAll(nameQuery, tierFilter) {
   const isMazokuTier = tierFilter && VALID_MAZOKU.includes(tierFilter)
   const isShoobTier  = tierFilter && VALID_SHOOB.includes(tierFilter)
 
+  // Old shoob cards have no series — still search them so .ci can find by name,
+  // but deduplicateResults will drop them since series is empty.
+  // Only new shoob (shoob2) and mazoku cards with real series survive.
   const fromOld    = (!tierFilter || isShoobTier)  ? findOld(nameQuery, tierFilter)    : []
   const fromNew    = (!tierFilter || isShoobTier)  ? findNew(nameQuery, tierFilter)    : []
   const fromMazoku = (!tierFilter || isMazokuTier) ? findMazoku(nameQuery, tierFilter) : []
 
-  // Keep both old-gen (empty series) and new-gen (real series) — only remove series="-" duds
+  // deduplicateResults filters out empty/"-" series — only real-series cards remain
   const all = deduplicateResults([...fromNew, ...fromMazoku, ...fromOld])
   return all.sort((a, b) => a.tier.localeCompare(b.tier))
 }
@@ -270,20 +283,25 @@ function findBySeries(seriesQuery, tierFilter) {
     : []
 
   return [...fromNew, ...fromMazoku]
+    .filter(c => hasRealSeries(c.series))
     .sort((a, b) => norm(a.name).localeCompare(norm(b.name)))
 }
 
-// ─── RANDOM CARD ─────────────────────────────────────────────────────────────
+// ─── RANDOM CARD — only series-having cards (shoob2 + mazoku with real series) ─
 function getRandomCardByTier(tier) {
-  const lt    = tier ? LABEL_TO_LOCAL[tier] : null
-  const pool1 = lt   ? cardIndex.filter(c => String(c.tier) === lt)  : cardIndex
-  const pool2 = lt   ? cardIndex2.filter(c => String(c.tier) === lt) : cardIndex2
-  const pool3 = tier ? cardIndexMazoku.filter(c => c.tier === tier)  : cardIndexMazoku
-  const pool  = [
-    ...pool1.map(c => ({ name: c.title, tier: LOCAL_TO_LABEL[String(c.tier)] || String(c.tier), url: c.url, series: '' })),
-    ...pool2.map(c => ({ name: c.name,  tier: LOCAL_TO_LABEL[String(c.tier)] || String(c.tier), url: c.url, series: c.series || '' })),
-    ...pool3.map(c => ({ name: c.name,  tier: c.tier, url: c.url, series: c.series || '' })),
-  ]
+  const lt = tier ? LABEL_TO_LOCAL[tier] : null
+
+  // Only pool2 (new shoob) with real series
+  const pool2 = (lt ? cardIndex2.filter(c => String(c.tier) === lt) : cardIndex2)
+    .filter(c => hasRealSeries(c.series))
+    .map(c => ({ name: c.name, tier: LOCAL_TO_LABEL[String(c.tier)] || String(c.tier), url: c.url, series: c.series }))
+
+  // Only pool3 (mazoku) with real series
+  const pool3 = (tier ? cardIndexMazoku.filter(c => c.tier === tier) : cardIndexMazoku)
+    .filter(c => hasRealSeries(c.series))
+    .map(c => ({ name: c.name, tier: c.tier, url: c.url, series: c.series }))
+
+  const pool = [...pool2, ...pool3]
   if (!pool.length) return null
   const raw = pool[Math.floor(Math.random() * pool.length)]
   return { id: extractCardId(raw.url), name: raw.name, title: raw.name, series: raw.series, tier: raw.tier, imageUrl: raw.url, _rawUrl: raw.url }
@@ -298,15 +316,35 @@ function getCardStats() {
   return { total: cardIndex.length + cardIndex2.length + cardIndexMazoku.length, byTier }
 }
 
-// ─── DECK IMAGE (sharp-based, no @napi-rs/canvas dependency) ─────────────────
+// ─── DECK IMAGE — background image + upscaled cards ──────────────────────────
 async function _buildDeckImage(cards) {
   let sharp
   try { sharp = require('sharp') } catch { return null }
-  const COLS = 3, CW = 160, CH = 220, PAD = 8, HEADER_H = 0
+
+  // Upscaled to MAX — large card tiles
+  const COLS = 3, CW = 280, CH = 390, PAD = 12, HEADER_H = 0
   const slice = cards.slice(0, 9)
   const ROWS  = Math.ceil(slice.length / COLS)
   const W     = COLS * (CW + PAD) + PAD
   const H     = ROWS * (CH + PAD) + PAD + HEADER_H
+
+  // Load deck background image
+  let base
+  try {
+    if (fs.existsSync(DECK_BG_PATH)) {
+      base = await sharp(DECK_BG_PATH)
+        .resize(W, H, { fit: 'cover', position: 'centre' })
+        .jpeg({ quality: 95 })
+        .toBuffer()
+    }
+  } catch {}
+
+  if (!base) {
+    // Fallback: dark background
+    base = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 26, g: 26, b: 46 } } })
+      .png()
+      .toBuffer()
+  }
 
   const composites = []
   for (let i = 0; i < slice.length; i++) {
@@ -325,10 +363,7 @@ async function _buildDeckImage(cards) {
   }
   if (!composites.length) return null
   try {
-    const base = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 26, g: 26, b: 46 } } })
-      .png()
-      .toBuffer()
-    return await sharp(base).composite(composites).jpeg({ quality: 85 }).toBuffer()
+    return await sharp(base).composite(composites).jpeg({ quality: 95 }).toBuffer()
   } catch { return null }
 }
 
@@ -344,10 +379,16 @@ module.exports = {
       if (!card) card = getRandomCardByTier(null)
       if (!card) return reply('❌ No cards found.')
       const owners  = await db.getCardOwners(card._rawUrl || card.imageUrl).catch(() => [])
+      const price   = TIER_PRICES[card.tier] || 0
       const caption =
-        `✨ *A card has spawned!*\n\n` +
-        cardBlock(card.name, card.tier, card.series, owners.length, card.id, owners) +
-        `\n\n> Use *.get* \`${card.id}\` to *claim* this card!`
+        `✨ A collectable card has Spawned! \n\n` +
+        `*🎴 Name:* ${card.name}\n` +
+        `*⭐ Tier:* ${card.tier}\n` +
+        `*📚 Series:* ${card.series}\n` +
+        `*🏷️ Price:* ${price.toLocaleString()}\n` +
+        `*🆔 Card ID:* ${card.id}\n` +
+        `*#️⃣ Issues:* #${owners.length}\n\n` +
+        `> Use .get \`${card.id}\` to claim this card! `
       pendingCards[jid] = { card, expiresAt: Date.now() + 120000 }
       setTimeout(() => { if (pendingCards[jid]?.card?.id === card.id) delete pendingCards[jid] }, 120000)
       const sent = await sendCardMedia(sock, jid, msg, card.imageUrl, caption)
@@ -368,8 +409,11 @@ module.exports = {
     const localCard = await db.getOrCreateShoobCard(rawUrl, card.name, card.tier, card.series, card.imageUrl || null, TIER_PRICES[card.tier] || 0).catch(() => null)
     if (!localCard) return reply('❌ Failed to save card.')
     await db.addUserCard(sender, localCard._id)
-    const owners = await db.getCardOwners(card._rawUrl || card.imageUrl).catch(() => [])
-    await reply(cardBlock(card.name, card.tier, card.series, owners.length, card.id, owners) + '\n\n✅ *CLAIMED!* Added to your collection.')
+    await reply(
+      `🎊 Congratulations! You have successfully claimed this card\n\n` +
+      `*🎴 Name:* ${card.name}\n` +
+      `*⭐ Tier:* ${card.tier}`
+    )
   },
 
   // ─── .ci — send ALL matching cards at once ────────────────────────────────
