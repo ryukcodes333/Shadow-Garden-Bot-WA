@@ -100,11 +100,29 @@ function downloadBuffer(url, timeoutMs = 15000) {
   })
 }
 
-
-// ── Pollinations image (for battle cards) ───────────────────────
-function fetchPollinationsBuffer(prompt) {
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true&model=flux&seed=${Date.now() % 9999}`
-  return downloadBuffer(url, 20000)
+// ── PokeAPI evolution chain helper ────────────────────────────────
+async function getPokeEvolutionTarget(pokemonId, pokemonName) {
+  try {
+    const species = await fetchJSON(`https://pokeapi.co/api/v2/pokemon-species/${pokemonId}`)
+    if (!species?.evolution_chain?.url) return null
+    const evoChain = await fetchJSON(species.evolution_chain.url)
+    if (!evoChain?.chain) return null
+    // Walk the chain to find our pokemon and return what it evolves into
+    function findEvolvesTo(node) {
+      const nodeName = (node.species?.name || '').toLowerCase()
+      const nameMatch = nodeName === pokemonName.toLowerCase()
+      const idMatch   = (node.species?.url || '').includes(`/${pokemonId}/`)
+      if (nameMatch || idMatch) {
+        if (node.evolves_to?.length > 0) return node.evolves_to[0].species.name
+        return null
+      }
+      for (const child of (node.evolves_to || [])) {
+        const found = findEvolvesTo(child)
+        if (found !== undefined) return found
+      }
+    }
+    return findEvolvesTo(evoChain.chain) || null
+  } catch { return null }
 }
 
 // ── PokeAPI ───────────────────────────────────────────────────────
@@ -455,24 +473,20 @@ module.exports = {
 
     battleLog.push(`✅ *${poke.name}* was caught!`)
 
-    const xpGained = poke.baseXp + randInt(10, 30)
+    const xpGained = Math.floor(poke.baseXp * 0.05) + randInt(5, 15)
     const newXp    = (u.xp || 0) + xpGained
     const oldLvl   = u.level || 1
-    const newLvl   = Math.floor(newXp / 500) + 1
-    const leveled  = newLvl > oldLvl
+    const xpNeeded = oldLvl * 5000   // very hard — 5000 XP per user level
+    const levelUp  = newXp >= xpNeeded
+    const newLvl   = levelUp ? oldLvl + 1 : oldLvl
 
-    await db.updateUser(sender, { xp: newXp, level: newLvl })
-
-    // Enforce party max of 6 — overflow goes to PC
-    const allPokemon  = await db.getUserPokemon(sender).catch(() => [])
-    const partyCount  = (allPokemon || []).filter(p => p.in_party).length
-    const goToParty   = partyCount < 6
+    await db.updateUser(sender, { xp: levelUp ? newXp - xpNeeded : newXp, level: newLvl })
 
     try {
       await db.addPokemon(sender, {
         pokemon_id: poke.id, name: poke.name, types: poke.types,
         level: 1, xp: 0, moves: poke.moves || [], abilities: poke.abilities || [],
-        ball: ballKey, slot: goToParty ? slot : null, in_party: goToParty, base_xp: poke.baseXp,
+        ball: ballKey, slot, in_party: true, base_xp: poke.baseXp,
         height: poke.height, weight: poke.weight, location: poke.location,
       })
     } catch {}
@@ -485,21 +499,20 @@ module.exports = {
       `📛 *${poke.name}* (No. ${poke.id})\n` +
       `⚡ *Type:* ${poke.types.join(' / ')}\n` +
       `🎯 *Ball Used:* ${ballData.emoji} ${ballData.name}\n` +
-      `📍 *Location:* ${goToParty ? `Party Slot #${slot}` : '📦 PC Storage (party full)'}\n\n` +
+      `📍 *Party Slot:* #${slot}\n\n` +
       `⭐ *+${xpGained} XP gained!*\n` +
-      (leveled ? `\n🆙 *LEVEL UP!* ${oldLvl} → ${newLvl} 🎊\n` : '') +
-      (!goToParty ? `\n⚠️ *Party is full!* ${poke.name} sent to PC.\n` : '') +
-      `\n_The shadow garden grows stronger._ 🖤`
+      (levelUp ? `\n🆙 *LEVEL UP!* ${oldLvl} → ${newLvl} 🎊\n` : '') +
+      `\n_Konosuba grows stronger._ 🖤`
 
     if (poke.imageUrl) {
       try {
         await sock.sendMessage(jid, { image: { url: poke.imageUrl }, caption }, { quoted: msg })
-        if (leveled) await _sendLevelUpImage(sock, jid, msg, poke.name, newLvl)
+        if (levelUp) await _sendLevelUpImage(sock, jid, msg, poke.name, newLvl)
         return
       } catch {}
     }
     await sock.sendMessage(jid, { text: caption }, { quoted: msg })
-    if (leveled) await _sendLevelUpImage(sock, jid, msg, poke.name, newLvl)
+    if (levelUp) await _sendLevelUpImage(sock, jid, msg, poke.name, newLvl)
   },
 
   // ── #team ─────────────────────────────────────────────────────
@@ -596,18 +609,10 @@ module.exports = {
     await sock.sendMessage(jid, { text: caption }, { quoted: msg })
   },
 
-  // ── #heal / #pheal ────────────────────────────────────────────
-  async heal({ reply, sender }) {
-    const cd = await db.getCooldown(sender, 'pheal').catch(() => 0)
-    if (cd > 0) {
-      const mins = Math.floor(cd / 60000)
-      const secs = Math.floor((cd % 60000) / 1000)
-      return reply(`⏳ *Team already healing!*\n\n⏰ Ready in *${mins > 0 ? `${mins}m ` : ''}${secs}s*`)
-    }
-    await db.setCooldown(sender, 'pheal', 30 * 60)
-    await reply(`✨ *TEAM HEALED!*\n\n💚 All Pokémon fully restored!\n\n⏳ Next heal in *30 minutes*.\n\n_The healing light washes over your team._ 🖤`)
+  // ── #heal ─────────────────────────────────────────────────────
+  async heal({ reply }) {
+    await reply(`✨ *TEAM HEALED!*\n\n💚 All Pokémon fully restored!\n\n_The healing light washes over your team._ 🖤`)
   },
-  async pheal(ctx) { return module.exports.heal(ctx) },
 
   // ── #boost ────────────────────────────────────────────────────
   async boost({ reply, sender }) {
@@ -687,19 +692,43 @@ module.exports = {
   },
 
   // ── #evolve ───────────────────────────────────────────────────
-  async evolve({ reply, sender, args }) {
+  async evolve({ sock, jid, msg, reply, sender, args }) {
     const slot    = parseInt(args[0]) || 1
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party)
     const p       = party[slot - 1]
     if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
-    await reply(
-      `🔄 *EVOLUTION!*\n\n✨ *${p.name}* is evolving...\n\n🌟 A bright light engulfs ${p.name}!\n\n🎊 *Evolution complete!*\n\n_The power within has awakened._ 🖤`
-    )
+    const lvl = p.level || 1
+    if (lvl < 16) return reply(`❌ *${p.name}* is only level ${lvl}!\n\n_Pokémon evolve at levels 16 and 36._\n_Keep training with *#train ${slot}*!_ 🖤`)
+    await reply(`✨ *${p.name}* is evolving…`)
+    const evoName = await getPokeEvolutionTarget(p.pokemon_id, p.name.toLowerCase()).catch(() => null)
+    if (!evoName) return reply(`❌ *${p.name}* has no further evolution — it's already at its final form! 🌟`)
+    const newData = await fetchPokeData(evoName).catch(() => null)
+    if (!newData) return reply(`❌ Could not fetch evolution data. Try again later.`)
+    try {
+      await db.updatePokemon(p.id, {
+        name:        newData.name,
+        pokemon_id:  newData.id,
+        types:       newData.types,
+        moves:       newData.moves,
+        abilities:   newData.abilities,
+      })
+    } catch {}
+    const caption =
+      `🌟 *EVOLUTION COMPLETE!*\n\n` +
+      `✨ *${p.name}* evolved into *${newData.name}*!\n\n` +
+      `🔮 *Level:* ${lvl}\n` +
+      `⚡ *Type:* ${newData.types.join(' / ')}\n` +
+      `🧬 *Abilities:* ${newData.abilities.join(', ')}\n\n` +
+      `_The power within has awakened._ 🖤`
+    if (newData.imageUrl) {
+      try { await sock.sendMessage(jid, { image: { url: newData.imageUrl }, caption }, { quoted: msg }); return } catch {}
+    }
+    await reply(caption)
   },
 
   // ── #train ────────────────────────────────────────────────────
-  async train({ reply, sender, args }) {
+  async train({ sock, jid, msg, reply, sender, args }) {
     const slot = parseInt(args[0]) || 1
     const cd   = await db.getCooldown(sender, `ptrain${slot}`).catch(() => 0)
     if (cd > 0) return reply(`⏳ Wait *${Math.floor(cd / 60000)}m* before training slot #${slot} again.`)
@@ -707,16 +736,49 @@ module.exports = {
     const party   = (pokemon || []).filter(p => p.in_party)
     const p       = party[slot - 1]
     if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
-    const xpGain = randInt(20, 60)
+
+    // Very hard XP — 1000 XP per pokemon level
+    const xpGain = randInt(30, 80)
     const newXp  = (p.xp || 0) + xpGain
-    const newLvl = Math.floor(newXp / 200) + 1
-    const leveled = newLvl > (p.level || 1)
-    try { await db.updatePokemon(p.id, { xp: newXp, level: newLvl }) } catch {}
+    const oldLvl = p.level || 1
+    const newLvl = Math.floor(newXp / 1000) + 1
+    const leveled = newLvl > oldLvl
+
     await db.setCooldown(sender, `ptrain${slot}`, 15 * 60)
+
+    // Check for evolution at levels 16 and 36
+    if (leveled && (newLvl === 16 || newLvl === 36)) {
+      try {
+        await db.updatePokemon(p.id, { xp: newXp, level: newLvl })
+        const evoName = await getPokeEvolutionTarget(p.pokemon_id, p.name.toLowerCase())
+        if (evoName) {
+          const newData = await fetchPokeData(evoName).catch(() => null)
+          if (newData) {
+            await db.updatePokemon(p.id, {
+              name:       newData.name,
+              pokemon_id: newData.id,
+              types:      newData.types,
+              moves:      newData.moves,
+              abilities:  newData.abilities,
+            })
+            const caption =
+              `💪 *TRAINING COMPLETE!*\n\n📛 *${p.name}* trained hard!\n\n⭐ *+${xpGain} XP*\n🔮 *Level:* ${newLvl} 🆙\n\n` +
+              `🌟 *EVOLUTION!*\n\n✨ *${p.name}* evolved into *${newData.name}*!\n⚡ *Type:* ${newData.types.join(' / ')}\n\n_The power within has awakened._ 🖤`
+            if (newData.imageUrl) {
+              try { await sock.sendMessage(jid, { image: { url: newData.imageUrl }, caption }, { quoted: msg }); return } catch {}
+            }
+            await reply(caption)
+            return
+          }
+        }
+      } catch {}
+    }
+
+    try { await db.updatePokemon(p.id, { xp: newXp, level: newLvl }) } catch {}
     await reply(
-      `💪 *TRAINING COMPLETE!*\n\n📛 *${p.name}* trained hard!\n\n⭐ *+${xpGain} XP*\n🔮 *XP:* ${newXp}` +
-      (leveled ? `\n\n🆙 *LEVEL UP!* → Level ${newLvl} 🎊` : '') +
-      `\n\n⏰ Train again in 15 minutes.`
+      `💪 *TRAINING COMPLETE!*\n\n📛 *${p.name}* trained hard!\n\n⭐ *+${xpGain} XP*\n🔮 *XP:* ${newXp}/${newLvl * 1000}` +
+      (leveled ? `\n\n🆙 *LEVEL UP!* → Level ${newLvl} 🎊${newLvl >= 16 ? '\n\n_Pokémon can now evolve! Use *#evolve ' + slot + '*_' : ''}` : '') +
+      `\n\n⏰ Train again in 15 minutes.\n_Very hard path to mastery…_ 🖤`
     )
   },
 
@@ -978,29 +1040,18 @@ module.exports = {
       return '🟩'.repeat(f) + '⬜'.repeat(10 - f)
     }
 
-    const battleCaption =
-      `⚔️ *WILD BATTLE!*\n\n` +
-      `🌿 *Wild ${wild.name}* (Lv ${wildLevel})\n` +
-      `❤️ ${bar(wildMaxHp, wildMaxHp)} ${wildMaxHp}/${wildMaxHp} HP\n\n` +
-      `⚡ *${myPoke.name}* (Lv ${myLevel})\n` +
-      `❤️ ${bar(myMaxHp, myMaxHp)} ${myMaxHp}/${myMaxHp} HP\n\n` +
-      `━━━━━━━━━━━━━━\n` +
-      `*📋 Your Moves:*\n` +
-      moves.map((m, i) => `  *${i + 1}.* ${m}`).join('\n') +
-      `\n\n> *.move <1-${moves.length}>* to attack  |  *.flee* to escape`
-
-    try {
-      const battleImg = await fetchPollinationsBuffer(
-        `wild pokemon battle ${wild.name.toLowerCase()} vs ${myPoke.name.toLowerCase()} nature forest background anime dramatic lighting vivid`
-      )
-      if (battleImg && battleImg.length > 500) {
-        await sock.sendMessage(jid, { image: battleImg, caption: battleCaption }, { quoted: msg })
-      } else {
-        await sock.sendMessage(jid, { text: battleCaption }, { quoted: msg })
-      }
-    } catch {
-      await sock.sendMessage(jid, { text: battleCaption }, { quoted: msg })
-    }
+    await sock.sendMessage(jid, {
+      text:
+        `⚔️ *WILD BATTLE!*\n\n` +
+        `🌿 *Wild ${wild.name}* (Lv ${wildLevel})\n` +
+        `❤️ ${bar(wildMaxHp, wildMaxHp)} ${wildMaxHp}/${wildMaxHp} HP\n\n` +
+        `⚡ *${myPoke.name}* (Lv ${myLevel})\n` +
+        `❤️ ${bar(myMaxHp, myMaxHp)} ${myMaxHp}/${myMaxHp} HP\n\n` +
+        `━━━━━━━━━━━━━━\n` +
+        `*📋 Your Moves:*\n` +
+        moves.map((m, i) => `  *${i + 1}.* ${m}`).join('\n') +
+        `\n\n> *.move <1-${moves.length}>* to attack  |  *.flee* to escape`,
+    }, { quoted: msg })
   },
 
   // ── .move — use a move during wild battle ─────────────────────

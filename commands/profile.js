@@ -570,7 +570,7 @@ module.exports = {
       `🌑 *REGISTRATION COMPLETE*\n\n` +
       `*👤 Name:* ${name}\n` +
       `*🔐 Password:* ${'*'.repeat(password.length)}\n\n` +
-      `Welcome to the Shadow Garden, *${name}*! 🖤\n\n` +
+      `Welcome to Konosuba, *${name}*! 🖤\n\n` +
       `You can now use:\n` +
       `• *.profile* — view your profile\n` +
       `• *.bal* — check your balance\n` +

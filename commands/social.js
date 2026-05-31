@@ -305,7 +305,7 @@ module.exports = {
     if (!m) return reply('💔 You are not married.')
     const partner = m.proposer_phone === sender ? m.target_name : m.proposer_name
     await db.deleteMarriage(sender).catch(() => {})
-    await reply(`💔 *DIVORCE FINALIZED*\n\nYour marriage with *${partner}* has been dissolved.\n\n_The shadow garden records all separations._ 🖤`)
+    await reply(`💔 *DIVORCE FINALIZED*\n\nYour marriage with *${partner}* has been dissolved.\n\n_Konosuba records all separations._ 🖤`)
   },
 
   // ─── .join <link> ─────────────────────────────────────────────────────────────
@@ -744,7 +744,7 @@ module.exports = {
   // ─── .rules ───────────────────────────────────────────────────────────────────
   async rules({ reply }) {
     await reply(
-      `📜 *SHADOW GARDEN — RULES*\n` +
+      `📜 *KONOSUBA — RULES*\n` +
       `━━━━━━━━━━━━━━━━━━━━\n\n` +
       `*1.* 🚫 No spamming commands or flooding the chat.\n` +
       `*2.* 🤝 Respect all members — no toxic behaviour.\n` +

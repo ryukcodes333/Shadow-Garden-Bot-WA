@@ -1,14 +1,8 @@
 const db = require('../database')
 const http = require('http')
 const https = require('https')
-const maps = require('./maps')
 
 const dungeonSessions = {}
-
-// ── Quest & map sessions ──────────────────────────────────────────
-const questSessions = {}   // sender → { questId, map, row, col, progress, total }
-
-
 
 function fetchPollinationsImage(prompt) {
   const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true&model=flux`
@@ -29,7 +23,7 @@ function fetchPollinationsImage(prompt) {
 function fetchDungeonImage(enemy, floor) {
   const zone = floor <= 3 ? 'mist corridor' : floor <= 6 ? 'dark hall torchlit' : floor <= 10 ? 'burning depths lava' : floor <= 15 ? 'frost vault ice cave' : floor <= 20 ? 'storm chamber lightning' : 'void core fracturing reality'
   const enemyName = (enemy.name || 'shadow monster').toLowerCase()
-  return fetchPollinationsImage(`anime dark fantasy dungeon ${zone} ${enemyName} battle scene dramatic lighting shadow garden epic atmospheric`)
+  return fetchPollinationsImage(`anime dark fantasy dungeon ${zone} ${enemyName} battle scene dramatic lighting konosuba epic atmospheric`)
 }
 
 function fetchMonsterImage(enemyName) {
@@ -308,7 +302,7 @@ function getPlayerStats(user) {
   const hpBonus = cls ? cls.hpBonus : 0
   const atkBonus = cls ? cls.atkBonus : 0
   return {
-    maxHp: 200 + hpBonus,
+    maxHp: 100 + level * 12 + hpBonus,
     atk: 20 + level * 3 + atkBonus,
     cls,
   }
@@ -820,19 +814,9 @@ module.exports = {
     await sendImgOrReply(sock, jid, img, battleText, reply)
   },
 
-  async heal({ sock, jid, reply, sender, user }) {
+  async heal({ sock, jid, reply, sender }) {
     const s = dungeonSessions[sender]
-    if (!s) {
-      // Outside dungeon — show restored status
-      const u = user || await db.getOrCreateUser(sender).catch(() => null)
-      const stats = u ? getPlayerStats(u) : { maxHp: 200, atk: 20 }
-      return reply(
-        `💊 *HP FULLY RESTORED*\n\n` +
-        `❤️  HP: ${stats.maxHp}/${stats.maxHp}  💪 Ready for battle!\n\n` +
-        `_Use *.dungeon* to enter the dungeon._\n` +
-        `_Use *.pheal* to heal your Pokémon party._ 🖤`
-      )
-    }
+    if (!s) return reply(`💊 Use *.dungeon* first.`)
     if (s.playerHp >= s.playerMaxHp) return reply(
       `❤️ *ALREADY FULL*\n\nYour HP is at maximum — save the potion!\n\n` +
       `⚔️  YOU  ${hpBar(s.playerHp, s.playerMaxHp)}  ${s.playerHp}/${s.playerMaxHp}`
@@ -911,209 +895,38 @@ module.exports = {
     await reply(`⚔️ *ADVENTURE COMPLETE*\n\n👤 ${u.name || sender}\n${cls ? `${cls.emoji} Class: ${cls.name}\n` : ''}\n🗺️ You ${adv.text}!\n\n💰 +$${coins}\n⭐ +${xp} XP\n\n_Every adventure forges the shadow warrior._ 🖤`)
   },
 
-  async rpg({ sock, jid, msg, reply, sender, user, pushName }) {
-    const u = user || await db.getOrCreateUser(sender, pushName)
+  async rpg({ sock, jid, msg, reply, sender, user }) {
+    const u = user || await db.getOrCreateUser(sender)
     const cls = getClassForUser(u)
-    const level = u.level || 1
-    const xp = u.xp || 0
-    const xpNeeded = level * 1000
-    const xpBar = (() => {
-      const pct = Math.min(xp / xpNeeded, 1)
-      const filled = Math.round(pct * 12)
-      return `[${'█'.repeat(filled)}${'░'.repeat(12 - filled)}] ${xp}/${xpNeeded}`
-    })()
-    const qs = questSessions[sender]
-    const questLine = qs
-      ? `🗺 *Quest:* ${qs.questId}  (${qs.progress}/${qs.total})`
-      : `🗺 *Quest:* None — use *.quest* to pick one`
-
-    const card =
-      `╔══════════════════════╗\n` +
-      `║  ⚔️ ADVENTURER CARD   ║\n` +
-      `╠══════════════════════╣\n` +
-      `║ 👤 ${(u.name || pushName || sender).slice(0,18).padEnd(18)} ║\n` +
-      `║ 📊 Level: ${String(level).padEnd(11)} ║\n` +
-      `║ ⭐ XP: ${xpBar.slice(0,14).padEnd(14)} ║\n` +
-      `║ ${cls ? `${cls.emoji} ${cls.name.slice(0,16).padEnd(16)}` : '🎭 No class yet'.padEnd(18)} ║\n` +
-      `║ 💰 $${String(u.wallet||0).padEnd(16)} ║\n` +
-      `║ ${questLine.slice(0,20).padEnd(20)} ║\n` +
-      `╚══════════════════════╝\n\n` +
-      `🎮 *Commands:*\n` +
-      `• *.dungeon* — Enter dungeon\n` +
-      `• *.selectclass* — Pick your class\n` +
-      `• *.quest* — Pick a level quest\n` +
-      `• *.explore* — View your map\n` +
-      `• *.travel n/s/e/w* — Navigate map\n` +
-      `• *.worldmap* — See all maps\n\n` +
-      `_The shadows await your journey._ 🖤`
-
+    const text =
+      `⚔️ *RPG SYSTEM*\n\n` +
+      `👤 ${u.name || sender}\n📊 Level: ${u.level || 1}\n⭐ XP: ${u.xp || 0}/${(u.level || 1) * 1000}\n\n` +
+      (cls ? `${cls.emoji} Class: *${cls.name}*\n${cls.passiveDesc}\n\n` : `⚠️ No class selected! Use *.selectclass*\n\n`) +
+      `🎮 *Commands:*\n• *.dungeon* — Enter dungeon\n• *.adventure* — Quick adventure\n• *.selectclass* — Choose/change class\n• *.skillinfo* — View your skills\n• *.guildraid* — Start guild raid\n• *.quest* — Daily quest\n\n_The shadows await your journey._ 🖤`
     try {
-      const imgPrompt = `anime fantasy adventurer character card level ${level} ${cls ? cls.name.toLowerCase() : 'warrior'} dark fantasy dramatic portrait glowing eyes epic art`
-      const imgBuf = await fetchPollinationsImage(imgPrompt)
-      if (imgBuf && imgBuf.length > 500) {
-        await sock.sendMessage(jid, { image: imgBuf, caption: card }, { quoted: msg })
-        return
-      }
-    } catch {}
-    await reply(card)
-  },
-
-  async quest({ reply, sender, user, pushName }) {
-    const u = user || await db.getOrCreateUser(sender, pushName)
-    if (questSessions[sender]) {
-      const qs = questSessions[sender]
-      return reply(
-        `📋 *ACTIVE QUEST*\n\n` +
-        `🗺 *${qs.questId}*\n` +
-        `📍 Map: ${qs.map}  Row ${qs.row+1}, Col ${qs.col+1}\n` +
-        `📊 Progress: ${qs.progress}/${qs.total}\n\n` +
-        `_Use *.explore* to navigate, *.questclaim* when done, *.abandquest* to abandon._`
-      )
+      await sock.sendMessage(jid, { text }, { quoted: msg })
+    } catch {
+      await reply(text)
     }
-    const level = u.level || 1
-    const available = maps.getQuestsForLevel(level)
-    if (!available.length) return reply(`❌ No quests available at your level (${level}).\n\nLevel up through *.dungeon* to unlock quests!`)
-    const list = available.map((q, i) =>
-      `*${i+1}.* ${q.name}\n   🏆 ${q.reward} coins  |  📍 ${q.steps} steps  |  Map: ${q.map}`
-    ).join('\n\n')
-    return reply(
-      `📜 *QUEST BOARD*  (Lv.${level})\n\n` +
-      `${list}\n\n` +
-      `_Reply *.quest <number>* to accept a quest._\n` +
-      `_Example: *.quest 1*_`
-    )
   },
 
-  async questaccept({ reply, sender, user, pushName, args }) {
-    const u = user || await db.getOrCreateUser(sender, pushName)
-    if (questSessions[sender]) return reply(`⚠️ You already have an active quest! Use *.myquest* to check it or *.abandquest* to abandon.`)
-    const idx = parseInt(args[0]) - 1
-    const level = u.level || 1
-    const available = maps.getQuestsForLevel(level)
-    if (isNaN(idx) || idx < 0 || idx >= available.length) return reply(`❌ Invalid number. Use *.quest* to see available quests.`)
-    const chosen = available[idx]
-    const mapObj = maps.WORLD_MAPS[chosen.map]
-    const startRow = mapObj ? Math.floor(mapObj.grid.length / 2) : 4
-    const startCol = mapObj ? Math.floor(mapObj.grid[0].length / 2) : 4
-    questSessions[sender] = { questId: chosen.name, map: chosen.map, row: startRow, col: startCol, progress: 0, total: chosen.steps, reward: chosen.reward }
-    const rendered = maps.renderMap(chosen.map, startRow, startCol)
-    return reply(
-      `✅ *QUEST ACCEPTED!*\n\n` +
-      `📜 *${chosen.name}*\n` +
-      `🏆 Reward: ${chosen.reward} coins\n` +
-      `📊 Steps needed: ${chosen.steps}\n\n` +
-      `\`\`\`\n${rendered}\n\`\`\`\n` +
-      `*(${mapObj?.name || chosen.map})*\n\n` +
-      `📍 You are here! Use *.travel n/s/e/w* to navigate.\n` +
-      `Use *.explore* to see your map, *.questclaim* when done.`
-    )
-  },
-
-  async myquest({ reply, sender }) {
-    const qs = questSessions[sender]
-    if (!qs) return reply(`📋 No active quest.\n\nUse *.quest* to pick one!`)
-    return reply(
-      `📋 *YOUR QUEST*\n\n` +
-      `📜 *${qs.questId}*\n` +
-      `🗺 Map: ${qs.map}\n` +
-      `📍 Position: Row ${qs.row+1}, Col ${qs.col+1}\n` +
-      `📊 Progress: ${qs.progress}/${qs.total} steps\n\n` +
-      `_*.travel n/s/e/w* to move  |  *.questclaim* to complete  |  *.abandquest* to abandon_`
-    )
-  },
-
-  async abandquest({ reply, sender }) {
-    if (!questSessions[sender]) return reply(`❌ No active quest to abandon.`)
-    const name = questSessions[sender].questId
-    delete questSessions[sender]
-    return reply(`🗑️ Quest *${name}* abandoned.\n\nUse *.quest* to pick a new one.`)
-  },
-
-  async questclaim({ reply, sender, user, pushName }) {
-    const qs = questSessions[sender]
-    if (!qs) return reply(`❌ No active quest. Use *.quest* to start one.`)
-    if (qs.progress < qs.total) return reply(`⏳ Not done yet!\n\nProgress: ${qs.progress}/${qs.total} steps\n\n_Keep navigating with *.travel n/s/e/w*_`)
-    const u = user || await db.getOrCreateUser(sender, pushName)
-    await db.updateUser(sender, { wallet: (u.wallet || 0) + qs.reward })
-    delete questSessions[sender]
-    return reply(
-      `🏆 *QUEST COMPLETE!*\n\n` +
-      `📜 *${qs.questId}*\n\n` +
-      `💰 +${qs.reward} coins added to wallet!\n\n` +
-      `_The shadows reward the diligent._ 🖤`
-    )
-  },
-
-  async explore({ reply, sender, args }) {
-    const qs = questSessions[sender]
-    if (!qs && !args[0]) {
-      const mapList = Object.entries(maps.WORLD_MAPS).slice(0,5).map(([k,v]) => `• *${v.name}* — \`.explore ${k}\``).join('\n')
-      return reply(`🗺 *WORLD MAPS*\n\nYou have no active quest.\n\n${mapList}\n\n_Start a quest with *.quest* to begin exploring._`)
+  async quest({ reply, sender, user }) {
+    const u = user || await db.getOrCreateUser(sender)
+    const remaining = await db.getCooldown(sender, 'quest')
+    if (remaining > 0) {
+      const mins = Math.floor(remaining / 60000)
+      const secs = Math.floor((remaining % 60000) / 1000)
+      return reply(`⏳ *QUEST COOLDOWN*\n\n🕒 Wait: ${mins}m ${secs}s\n\n_The quest requires preparation._ 🖤`)
     }
-    const mapKey = args[0] || qs?.map
-    const mapObj = maps.WORLD_MAPS[mapKey]
-    if (!mapObj) return reply(`❌ Map not found: *${mapKey}*\n\nUse *.worldmap* to list all maps.`)
-    const row = qs?.map === mapKey ? qs.row : Math.floor(mapObj.grid.length/2)
-    const col = qs?.map === mapKey ? qs.col : Math.floor(mapObj.grid[0].length/2)
-    const rendered = maps.renderMap(mapKey, row, col)
-    const tileInfo = mapObj.grid[row]?.[col]
-    const tileDesc = tileInfo === 'S' ? '🏠 Town — Safe zone' : tileInfo === 'B' ? '💀 Boss tile' : tileInfo === 'C' ? '💰 Loot tile' : tileInfo === 'E' ? '⚔️ Enemy tile' : '🌿 Open path'
-    return reply(
-      `🗺 *${mapObj.name}*\n_${mapObj.desc}_\n\n\`\`\`\n${rendered}\n\`\`\`\n\n` +
-      `📍 Row ${row+1}, Col ${col+1} — ${tileDesc}\n\n` +
-      (qs ? `📊 Quest Progress: ${qs.progress}/${qs.total}\n` : '') +
-      `🧭 *.travel n/s/e/w* to move`
-    )
-  },
-
-  async travel({ reply, sender, args }) {
-    const qs = questSessions[sender]
-    if (!qs) return reply(`❌ No active quest!\n\nUse *.quest* to pick a quest and start your journey.`)
-    const dirMap = { n: 'north', north: 'north', s: 'south', south: 'south', e: 'east', east: 'east', w: 'west', west: 'west' }
-    const dir = dirMap[(args[0] || '').toLowerCase()]
-    if (!dir) return reply(`🧭 *TRAVEL*\n\nUsage: *.travel <direction>*\n• *.travel north* / *.travel n*\n• *.travel south* / *.travel s*\n• *.travel east* / *.travel e*\n• *.travel west* / *.travel w*`)
-    const result = maps.movePlayer(qs.map, qs.row, qs.col, dir)
-    if (!result.ok) return reply(`🚧 *${result.msg}*`)
-    qs.row = result.row
-    qs.col = result.col
-    qs.progress = Math.min(qs.total, qs.progress + 1)
-    const mapObj = maps.WORLD_MAPS[qs.map]
-    const rendered = maps.renderMap(qs.map, qs.row, qs.col)
-    const tileInfo = mapObj?.grid[qs.row]?.[qs.col]
-    let eventStr = ''
-    if (tileInfo === 'C') eventStr = `\n💰 *Loot tile!* Use *.loot* to collect items.`
-    else if (tileInfo === 'E') eventStr = `\n⚔️ *Enemy tile!* Use *.dungeon* to fight.`
-    else if (tileInfo === 'B') eventStr = `\n💀 *BOSS TILE!* Use *.dungeon* for the boss!`
-    else if (tileInfo === 'S') eventStr = `\n🏠 *Town!* You are safe here.`
-    const done = qs.progress >= qs.total
-    return reply(
-      `✅ *Moved ${dir}*\n\n\`\`\`\n${rendered}\n\`\`\`\n*(${mapObj?.name || qs.map})*\n` +
-      `${eventStr}\n\n📍 Row ${qs.row+1}, Col ${qs.col+1}\n` +
-      `📊 Quest: ${qs.progress}/${qs.total} steps${done ? ' ✅ *DONE!* Use *.questclaim*' : ''}\n\n` +
-      `🧭 *.travel n/s/e/w* | *.explore* | *.myquest*`
-    )
-  },
-
-  async worldmap({ reply }) {
-    const mapList = Object.entries(maps.WORLD_MAPS).map(([k, v]) =>
-      `• *${v.name}* — _${v.desc}_`
-    ).join('\n')
-    return reply(
-      `🌍 *WORLD MAP — Town: Axel*\n${'─'.repeat(22)}\n\n${mapList}\n\n${'━'.repeat(22)}\n\n` +
-      `📌 *.explore <map>* to jump to a map\n🧭 *.travel n/s/e/w* to navigate\n📋 *.quest* for quests\n\n_The world of Axel awaits._ 🖤`
-    )
-  },
-
-  async loot({ reply, sender, user, pushName }) {
-    const qs = questSessions[sender]
-    if (!qs) return reply(`❌ Start a quest first with *.quest*`)
-    const mapObj = maps.WORLD_MAPS[qs.map]
-    const tile = mapObj?.grid[qs.row]?.[qs.col]
-    if (tile !== 'C') return reply(`❌ No loot here! Move to a 💰 tile on the map.`)
-    const u = user || await db.getOrCreateUser(sender, pushName)
-    const coins = 50 + Math.floor(Math.random() * 200)
-    await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
-    return reply(`💰 *LOOT COLLECTED!*\n\n+${coins} coins added to wallet!\n\n_Keep exploring for more._ 🖤`)
+    const quests = [
+      { name: 'Collect 5 shadows', reward: 200 },
+      { name: 'Defeat 3 dungeon enemies', reward: 350 },
+      { name: 'Trade with another user', reward: 150 },
+    ]
+    const quest = quests[Math.floor(Math.random() * quests.length)]
+    await db.updateUser(sender, { wallet: (u.wallet || 0) + quest.reward })
+    await db.setCooldown(sender, 'quest', 10 * 60)
+    await reply(`📜 *QUEST COMPLETE*\n\n👤 ${u.name || sender}\n\n✅ Quest: *${quest.name}*\n💰 Reward: +$${quest.reward}\n\n⏳ Next quest in 10 minutes.\n\n_The shadows reward the diligent._ 🖤`)
   },
 
   async raid({ sock, jid, reply, sender, isGroup, user }) {
@@ -1128,8 +941,8 @@ module.exports = {
     const boss = ENEMIES[4]
     const reward = 500 + Math.floor(Math.random() * 500)
     await db.updateUser(sender, { wallet: (u.wallet || 0) + reward })
-    await db.setCooldown(sender, 'raid', 25 * 60)
-    await reply(`⚔️ *RAID COMPLETE*\n\n👥 Your group defeated *${boss.name}*!\n\n💰 Raid Reward: +$${reward}\n\n⏳ Next raid in 25 minutes.\n\n_The raid boss falls before shadow warriors._ 🖤`)
+    await db.setCooldown(sender, 'raid', 10 * 60)
+    await reply(`⚔️ *RAID COMPLETE*\n\n👥 Your group defeated *${boss.name}*!\n\n💰 Raid Reward: +$${reward}\n\n⏳ Next raid in 10 minutes.\n\n_The raid boss falls before the Konosuba warriors._ 🖤`)
   },
 
   async class({ reply, sender, user }) {
@@ -1145,10 +958,8 @@ module.exports = {
 
   // ─── SKILL USE HELPER ────────────────────────────────────────
   async _useSkill(sender, user, baseSkill, session) {
-    // Always fetch fresh skill_xp from DB to avoid stale evolution state
-    const freshUser = await db.getOrCreateUser(sender).catch(() => user)
     let skillXp = {}
-    try { skillXp = JSON.parse((freshUser || user).skill_xp || '{}') } catch {}
+    try { skillXp = JSON.parse(user.skill_xp || '{}') } catch {}
 
     // Find the current evolution of the base skill
     let currentSkill = baseSkill
@@ -1194,18 +1005,17 @@ module.exports = {
       reward.xp    = Math.floor(reward.xp    * 1.5)
     }
 
-    // Level up check (uses rpg_xp to keep RPG XP separate from economy XP)
-    const newRpgXp  = (user.rpg_xp || 0) + reward.xp
-    const xpNeeded  = (user.level || 1) * 1000
-    const levelUp   = newRpgXp >= xpNeeded
-    const newLevel  = levelUp ? (user.level || 1) + 1 : (user.level || 1)
-    const newXp     = levelUp ? newRpgXp - xpNeeded : newRpgXp
+    // Level up check
+    const newXp    = (user.xp || 0) + reward.xp
+    const xpNeeded = (user.level || 1) * 5000
+    const levelUp  = newXp >= xpNeeded
+    const newLevel = levelUp ? (user.level || 1) + 1 : (user.level || 1)
 
     await db.updateUser(sender, {
-      rpg_wallet: (user.rpg_wallet || 0) + reward.coins,
-      gems:       (user.gems       || 0) + reward.gems,
-      rpg_xp:     newXp,
-      level:      newLevel,
+      wallet: (user.wallet || 0) + reward.coins,
+      gems:   (user.gems   || 0) + reward.gems,
+      xp:     levelUp ? newXp - xpNeeded : newXp,
+      level:  newLevel,
     })
 
     // Advance session to next floor
@@ -1252,10 +1062,6 @@ module.exports = {
         await sock.sendMessage(jid, { image: monsterImg, caption: `👾 *${session.enemy.name}* appears on Floor ${nextFloor}!\n⚡ *${session.enemy.ability.name}* — _${session.enemy.ability.desc}_\n\n_Choose your move wisely._ 🖤` })
       }
     } catch {}
-  },
-
-  async pheal({ reply }) {
-    await reply(`💊 Use *#pheal* (with # prefix) to heal your Pokémon party.\n\n_Example: #pheal_`)
   },
 
   async _dungeonLoss(reply, sender, session) {

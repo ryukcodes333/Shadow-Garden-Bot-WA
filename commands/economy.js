@@ -2,37 +2,35 @@ const db   = require('../database')
 const fs   = require('fs')
 const path = require('path')
 
-const BANK_CARD_IMG  = path.join(__dirname, '../assets/bankcard.png')
+const BANK_CARD_IMG    = path.join(__dirname, '../assets/bankcard.png')
 const TXN_APPROVED_IMG = path.join(__dirname, '../assets/txnapproved.jpg')
 
 const DAILY_COINS = [200, 350, 500, 750, 1000]
 const DAILY_GEMS  = [5, 10, 15, 20, 30]
 const SHOP_ITEMS  = {
-  sword:        { name: 'Sword',              price: 500,   type: 'weapon',    emoji: '⚔️' },
-  shield:       { name: 'Shield',             price: 400,   type: 'weapon',    emoji: '🛡️' },
-  bow:          { name: 'Bow',                price: 350,   type: 'weapon',    emoji: '🏹' },
-  dagger:       { name: 'Dagger',             price: 300,   type: 'weapon',    emoji: '🗡️' },
-  axe:          { name: 'Battle Axe',         price: 650,   type: 'weapon',    emoji: '🪓' },
-  staff_wep:    { name: 'Magic Staff',        price: 700,   type: 'weapon',    emoji: '🪄' },
-  spear:        { name: 'Spear',              price: 550,   type: 'weapon',    emoji: '🔱' },
-  armor:        { name: 'Iron Armor',         price: 800,   type: 'armor',     emoji: '🥋' },
-  helmet:       { name: 'Steel Helmet',       price: 450,   type: 'armor',     emoji: '⛑️' },
-  boots:        { name: 'Shadow Boots',       price: 380,   type: 'armor',     emoji: '👟' },
-  potion:       { name: 'Health Potion',      price: 100,   type: 'consumable',emoji: '🧪' },
-  elixir:       { name: 'Mana Elixir',        price: 120,   type: 'consumable',emoji: '💙' },
-  energy:       { name: 'Energy Drink',       price: 80,    type: 'consumable',emoji: '⚡' },
-  antidote:     { name: 'Antidote',           price: 90,    type: 'consumable',emoji: '💊' },
-  bomb:         { name: 'Shadow Bomb',        price: 200,   type: 'consumable',emoji: '💣' },
-  ticket:       { name: 'Luck Ticket',        price: 150,   type: 'tool',      emoji: '🎟️' },
-  pickaxe:      { name: 'Pickaxe',            price: 280,   type: 'tool',      emoji: '⛏️' },
-  fishingrod:   { name: 'Fishing Rod',        price: 220,   type: 'tool',      emoji: '🎣' },
-  map:          { name: 'Treasure Map',       price: 500,   type: 'tool',      emoji: '🗺️' },
-  lantern:      { name: 'Shadow Lantern',     price: 180,   type: 'tool',      emoji: '🏮' },
-  ring:         { name: 'Power Ring',         price: 950,   type: 'accessory', emoji: '💍' },
-  amulet:       { name: 'Mana Amulet',        price: 850,   type: 'accessory', emoji: '📿' },
-  cloak:        { name: 'Shadow Cloak',       price: 1200,  type: 'accessory', emoji: '🧣' },
-  bank_note_10k:  { name: 'Bank Note (10K)',  price: 5000,  type: 'bank',      emoji: '💵', bankBonus: 50000 },
-  bank_note_100k: { name: 'Bank Note (100K)', price: 40000, type: 'bank',      emoji: '💴', bankBonus: 500000 },
+  sword:      { name: 'Sword',           price: 500,   type: 'weapon',    emoji: '⚔️' },
+  shield:     { name: 'Shield',          price: 400,   type: 'weapon',    emoji: '🛡️' },
+  bow:        { name: 'Bow',             price: 350,   type: 'weapon',    emoji: '🏹' },
+  dagger:     { name: 'Dagger',          price: 300,   type: 'weapon',    emoji: '🗡️' },
+  axe:        { name: 'Battle Axe',      price: 650,   type: 'weapon',    emoji: '🪓' },
+  staff_wep:  { name: 'Magic Staff',     price: 700,   type: 'weapon',    emoji: '🪄' },
+  spear:      { name: 'Spear',           price: 550,   type: 'weapon',    emoji: '🔱' },
+  armor:      { name: 'Iron Armor',      price: 800,   type: 'armor',     emoji: '🥋' },
+  helmet:     { name: 'Steel Helmet',    price: 450,   type: 'armor',     emoji: '⛑️' },
+  boots:      { name: 'Shadow Boots',    price: 380,   type: 'armor',     emoji: '👟' },
+  potion:     { name: 'Health Potion',   price: 100,   type: 'consumable', emoji: '🧪' },
+  elixir:     { name: 'Mana Elixir',     price: 120,   type: 'consumable', emoji: '💙' },
+  energy:     { name: 'Energy Drink',    price: 80,    type: 'consumable', emoji: '⚡' },
+  antidote:   { name: 'Antidote',        price: 90,    type: 'consumable', emoji: '💊' },
+  bomb:       { name: 'Shadow Bomb',     price: 200,   type: 'consumable', emoji: '💣' },
+  ticket:     { name: 'Luck Ticket',     price: 150,   type: 'tool',      emoji: '🎟️' },
+  pickaxe:    { name: 'Pickaxe',         price: 280,   type: 'tool',      emoji: '⛏️' },
+  fishingrod: { name: 'Fishing Rod',     price: 220,   type: 'tool',      emoji: '🎣' },
+  map:        { name: 'Treasure Map',    price: 500,   type: 'tool',      emoji: '🗺️' },
+  lantern:    { name: 'Shadow Lantern',  price: 180,   type: 'tool',      emoji: '🏮' },
+  ring:       { name: 'Power Ring',      price: 950,   type: 'accessory', emoji: '💍' },
+  amulet:     { name: 'Mana Amulet',     price: 850,   type: 'accessory', emoji: '📿' },
+  cloak:      { name: 'Shadow Cloak',    price: 1200,  type: 'accessory', emoji: '🧣' },
 }
 
 const CD_DAILY = 24 * 3600
@@ -40,6 +38,9 @@ const CD_WORK  = 20 * 60
 const CD_FISH  =  2 * 60
 const CD_DIG   =  2 * 60
 const CD_BEG   = 300
+
+// pending .pay confirmations  { sender: { to, toPhone, amount, expiresAt } }
+const pendingPay = {}
 
 async function checkCooldown(sender, cmd, seconds, reply) {
   const remaining = await db.getCooldown(sender, cmd)
@@ -60,7 +61,6 @@ module.exports = {
     const caption =
       `*💰 ACCOUNT BALANCE 💰*\n\n` +
       `*🏦 Bank:* \`\`\`${(u.bank || 0).toLocaleString()}\`\`\`\n` +
-      `*🏦 Bank Limit:* \`\`\`${(u.bank_limit || 50000).toLocaleString()}\`\`\`\n` +
       `*👛 Wallet:* \`\`\`${(u.wallet || 0).toLocaleString()}\`\`\`\n\n` +
       `*💫 Total:* \`\`\`${total.toLocaleString()}\`\`\``
     if (fs.existsSync(BANK_CARD_IMG)) {
@@ -126,46 +126,85 @@ module.exports = {
     const amount = args[0]?.toLowerCase() === 'all' ? u.wallet : parseInt(args[0])
     if (!amount || amount <= 0) return reply('❌ Usage: `.deposit <amount>` or `.deposit all`')
     if (amount > (u.wallet || 0)) return reply(`❌ Not enough in wallet! Wallet: $${(u.wallet || 0).toLocaleString()}`)
-    const bankLimit = u.bank_limit || 50000
-    const currentBank = u.bank || 0
-    const remaining = bankLimit - currentBank
-    if (remaining <= 0) return reply(`❌ Bank full! Limit: $${bankLimit.toLocaleString()}\n\n💵 Buy a *Bank Note* at *.shop* to increase your limit.`)
-    const actualDeposit = Math.min(amount, remaining)
-    await db.updateUser(sender, { wallet: (u.wallet || 0) - actualDeposit, bank: currentBank + actualDeposit })
-    if (actualDeposit < amount) {
-      await reply(`🎉 Deposited $${actualDeposit.toLocaleString()} (bank limit reached!)\n\n🏦 Bank: $${(currentBank + actualDeposit).toLocaleString()} / $${bankLimit.toLocaleString()}\n💵 Buy a *Bank Note* at *.shop* to increase your limit.`)
-    } else {
-      await reply(`🎉 Deposited $${actualDeposit.toLocaleString()} to your bank.\n\n🏦 Bank: $${(currentBank + actualDeposit).toLocaleString()} / $${bankLimit.toLocaleString()}`)
-    }
+    await db.updateUser(sender, { wallet: (u.wallet || 0) - amount, bank: (u.bank || 0) + amount })
+    await reply(`🎉 You have successfully deposited ${amount.toLocaleString()} to your bank.`)
   },
   async dep(ctx) { return module.exports.deposit(ctx) },
 
+  // ─── .pay — supports @mention OR quoting a message ───────────────
   async pay({ sock, msg, jid, reply, sender, user, args }) {
-    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('❌ Usage: `.pay @user <amount>`')
     const u = user || await db.getOrCreateUser(sender)
+
+    // Resolve target: @mention or quoted message participant
+    const ctxInfo    = msg.message?.extendedTextMessage?.contextInfo
+    const mentioned  = ctxInfo?.mentionedJid || []
+    const quotedParticipant = ctxInfo?.participant
+
+    let targetJid  = null
+    let targetPhone = null
+
+    if (mentioned.length) {
+      targetJid   = mentioned[0]
+      targetPhone = targetJid.split('@')[0].split(':')[0]
+    } else if (quotedParticipant) {
+      targetJid   = quotedParticipant
+      targetPhone = quotedParticipant.split('@')[0].split(':')[0]
+    }
+
+    if (!targetPhone) return reply('❌ Usage: `.pay @user <amount>` or quote someone\'s message with `.pay <amount>`')
+    if (targetPhone === sender) return reply('❌ You cannot pay yourself.')
+
     const amount = parseInt(args.find(a => !isNaN(parseInt(a))))
     if (!amount || amount <= 0) return reply('❌ Enter a valid amount.')
     if (amount > (u.wallet || 0)) return reply(`❌ Not enough in wallet! You have $${(u.wallet || 0).toLocaleString()}`)
-    const target = mentioned[0]
-    const tp     = target.split('@')[0].split(':')[0]
-    const tu     = await db.getOrCreateUser(tp)
+
+    // Store pending payment and ask for confirmation
+    pendingPay[sender] = { toPhone: targetPhone, toJid: targetJid, amount, expiresAt: Date.now() + 60000 }
+    setTimeout(() => { if (pendingPay[sender]?.toPhone === targetPhone) delete pendingPay[sender] }, 60000)
+
+    const senderJid = msg.key.participant || msg.key.remoteJid || `${sender}@s.whatsapp.net`
+    await sock.sendMessage(jid, {
+      text: `💸 *PAYMENT CONFIRMATION*\n\n*From:* @${sender}\n*To:* @${targetPhone}\n*Amount:* $${amount.toLocaleString()}\n\n⚠️ Type *.confirmpy* within 60 seconds to confirm this transfer.\n_Type anything else to cancel._`,
+      mentions: [senderJid, targetJid],
+    }, { quoted: msg })
+  },
+  async donate(ctx) { return module.exports.pay(ctx) },
+
+  // ─── .confirmpy — confirm pending payment ────────────────────────
+  async confirmpy({ sock, msg, jid, reply, sender }) {
+    const pending = pendingPay[sender]
+    if (!pending || Date.now() > pending.expiresAt) {
+      delete pendingPay[sender]
+      return reply('❌ No pending payment to confirm (or it expired).\n\nUse *.pay @user <amount>* to start a transfer.')
+    }
+
+    const { toPhone, toJid, amount } = pending
+    delete pendingPay[sender]
+
+    const u  = await db.getOrCreateUser(sender)
+    if (amount > (u.wallet || 0)) return reply(`❌ Insufficient funds! You now have $${(u.wallet || 0).toLocaleString()}`)
+
+    const tu = await db.getOrCreateUser(toPhone)
     await db.updateUser(sender, { wallet: (u.wallet || 0) - amount })
-    await db.updateUser(tp, { wallet: (tu.wallet || 0) + amount })
+    await db.updateUser(toPhone, { wallet: (tu.wallet || 0) + amount })
+
+    const senderJid = msg.key.participant || msg.key.remoteJid || `${sender}@s.whatsapp.net`
     const caption =
       `*💸 TRANSACTION APPROVED ✅*\n\n` +
       `*From:* @${sender}\n` +
-      `*To:* @${tp}\n` +
+      `*To:* @${toPhone}\n` +
       `*Amount:* $${amount.toLocaleString()}\n\n` +
       `_Processed by Konosuba Bank_ 🖤`
-    if (fs.existsSync(TXN_APPROVED_IMG)) {
-      const buf = fs.readFileSync(TXN_APPROVED_IMG)
-      await sock.sendMessage(jid, { image: buf, caption, mentions: [msg.key.participant || msg.key.remoteJid, target] }, { quoted: msg })
+
+    const mentions = [senderJid, toJid]
+    const fs2 = require('fs')
+    if (fs2.existsSync(TXN_APPROVED_IMG)) {
+      const buf = fs2.readFileSync(TXN_APPROVED_IMG)
+      await sock.sendMessage(jid, { image: buf, caption, mentions }, { quoted: msg })
     } else {
-      await sock.sendMessage(jid, { text: caption, mentions: [msg.key.participant || msg.key.remoteJid, target] }, { quoted: msg })
+      await sock.sendMessage(jid, { text: caption, mentions }, { quoted: msg })
     }
   },
-  async donate(ctx) { return module.exports.pay(ctx) },
 
   async work({ reply, sender, user, pushName }) {
     const u = user || await db.getOrCreateUser(sender, pushName)
@@ -270,8 +309,8 @@ module.exports = {
   async lb(ctx) { return module.exports.leaderboard(ctx) },
 
   async market({ reply, sender, user }) {
-    const u         = user || await db.getOrCreateUser(sender)
-    const byType    = {}
+    const u      = user || await db.getOrCreateUser(sender)
+    const byType = {}
     for (const [k, v] of Object.entries(SHOP_ITEMS)) {
       if (!byType[v.type]) byType[v.type] = []
       byType[v.type].push([k, v])
@@ -308,21 +347,11 @@ module.exports = {
       if ((u.wallet || 0) < data.price) return reply(`❌ Need $${data.price}. You have $${(u.wallet || 0).toLocaleString()}`)
       await db.updateUser(sender, { wallet: (u.wallet || 0) - data.price })
     }
-    // Bank note: instantly applies bank limit bonus instead of going to inventory
-    if (data.bankBonus) {
-      const newLimit = (u.bank_limit || 50000) + data.bankBonus
-      await db.updateUser(sender, { bank_limit: newLimit })
-      return reply(
-        `✅ *Bank Note Applied!*\n\n${data.emoji} *${data.name}*\n\n` +
-        `🏦 Bank limit increased by $${data.bankBonus.toLocaleString()}!\n` +
-        `📈 New limit: $${newLimit.toLocaleString()}`
-      )
-    }
     await db.addItem(sender, data.name)
     await reply(`✅ *Purchased!*\n\n${data.emoji} *${data.name}* added to your inventory.`)
   },
 
-  async inv({ sock, jid, msg, reply, sender, user }) {
+  async inv({ reply, sender, user }) {
     const u     = user || await db.getOrCreateUser(sender)
     const items = await db.getInventory(sender)
     const text  = !items.length
@@ -356,43 +385,18 @@ module.exports = {
     await reply(`✨ Used *${found.item}* - effect applied!`)
   },
 
-  async register({ sock, jid, reply, sender, senderJid, pushName, args, isGroup }) {
-    // Registration must be done in DM for security
-    if (isGroup) {
-      try {
-        await sock.sendMessage(`${sender}@s.whatsapp.net`, {
-          text:
-            `🔐 *REGISTRATION*\n\n` +
-            `For security, registration must be done here in DM.\n\n` +
-            `📝 *Usage:* \`.reg <name> | <password>\`\n` +
-            `Example: \`.reg Shadow Reaper | mypassword123\`\n\n` +
-            `_Your password is private — never share it in groups._ 🖤`,
-        })
-      } catch {}
-      return reply(`🔐 Registration is private! Please check your *DMs* for instructions.`)
-    }
-
+  async register({ reply, sender, pushName, args }) {
     const existing = await db.getUser(sender).catch(() => null)
     if (existing && existing.bio && existing.bio !== '') return reply('⚠️ Already registered.')
-
     const raw = args.join(' ')
     const pipeIdx = raw.indexOf('|')
-    if (pipeIdx === -1) {
-      return reply('❌ Usage: `.reg <name> | <password>`\nExample: `.reg Shadow Reaper | mypassword123`')
-    }
+    if (pipeIdx === -1) return reply('❌ Usage: `.reg <name> | <password>`\nExample: `.reg Shadow Reaper | mypassword123`')
     const name     = raw.slice(0, pipeIdx).trim() || pushName || sender
     const password = raw.slice(pipeIdx + 1).trim()
-    if (!password) {
-      return reply('❌ Password cannot be empty.\nUsage: `.reg <name> | <password>`')
-    }
-
+    if (!password) return reply('❌ Password cannot be empty.\nUsage: `.reg <name> | <password>`')
     const userDoc = await db.getOrCreateUser(sender, name).catch(() => null)
-    if (!userDoc) {
-      return reply('❌ Registration failed — the database may be offline. Please try again in a moment.')
-    }
-
+    if (!userDoc) return reply('❌ Registration failed — the database may be offline. Please try again in a moment.')
     await db.updateUser(sender, { name, password, bio: 'Konosuba Member' }).catch(() => {})
-
     await reply(
       `✅ *REGISTERED!*\n\n` +
       `Welcome to the Konosuba family, *${name}*!\n\n` +
@@ -430,7 +434,7 @@ module.exports = {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     const targetPhone = mentioned.length ? mentioned[0].split('@')[0] : sender
     const u = await db.getOrCreateUser(targetPhone)
-    const xpNeeded = (u.level || 1) * 1000
+    const xpNeeded = (u.level || 1) * 5000
     await reply(
       `👤 *${u.name || targetPhone}*\n\n` +
       `📊 Lv.${u.level || 1} | ⭐ ${u.xp || 0}/${xpNeeded} XP | 🎖️ ${u.role || 'Member'}\n` +
@@ -440,35 +444,26 @@ module.exports = {
   },
   async pstats(ctx) { return module.exports.stats(ctx) },
 
+  // ─── .cds — only show commands that are ON cooldown ────────────────
   async cds({ reply, sender }) {
-    const commands = [
-      { key: 'work',      label: '.work'      },
-      { key: 'fish',      label: '.fish'      },
-      { key: 'dig',       label: '.dig'       },
-      { key: 'beg',       label: '.beg'       },
-      { key: 'crime',     label: '.crime'     },
-      { key: 'rob',       label: '.rob'       },
-      { key: 'heist',     label: '.heist'     },
-      { key: 'bonus',     label: '.bonus'     },
-      { key: 'dungeon',   label: '.dungeon'   },
-      { key: 'adventure', label: '.adventure' },
-    ]
+    const commands = ['daily', 'work', 'fish', 'dig', 'beg', 'weekly', 'monthly', 'crime', 'rob', 'heist', 'bonus', 'raid', 'dungeon', 'quest']
     const lines = []
-    for (const { key, label } of commands) {
-      const remaining = await db.getCooldown(sender, key)
+    for (const cmd of commands) {
+      const remaining = await db.getCooldown(sender, cmd)
       if (remaining > 0) {
-        const hrs     = Math.floor(remaining / 3600000)
-        const mins    = Math.floor((remaining % 3600000) / 60000)
-        const secs    = Math.floor((remaining % 60000) / 1000)
-        const timeStr = hrs > 0 ? `${hrs}h ${mins}m` : mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
-        lines.push(`* \`${label}\` | *${timeStr}*`)
-      } else {
-        lines.push(`* \`${label}\` | *Ready!*`)
+        const mins = Math.floor(remaining / 60000)
+        const secs = Math.floor((remaining % 60000) / 1000)
+        lines.push(`⏳ *.${cmd}* — ${mins > 0 ? `${mins}m ` : ''}${secs}s`)
       }
     }
-    await reply(`⏳ Your Active Cooldowns ⏳\n\n${lines.join('\n')}`)
+    if (!lines.length) {
+      await reply(`✅ *All commands are ready!*\n\nNo active cooldowns.`)
+    } else {
+      await reply(`⏱️ *Active Cooldowns*\n\n${lines.join('\n')}`)
+    }
   },
   async bc(ctx) { return module.exports.cds(ctx) },
+  async cooldowns(ctx) { return module.exports.cds(ctx) },
 
   async membership({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
@@ -644,28 +639,9 @@ module.exports = {
     await reply(`🎁 *Bonus Collected!*\n\n💰 +$${coins}\n\n_Next bonus in 4 hours._`)
   },
 
-  async upgrade({ reply }) {
-    await reply('⚙️ *Upgrade System*\n\n_Upgrades coming soon! Stay tuned._')
-  },
-
-  async prestige({ reply }) {
-    await reply('✨ *Prestige*\n\n_Prestige system coming soon! Keep grinding._')
-  },
-
-  async bankupgrade({ reply, sender, user }) {
-    const u = user || await db.getOrCreateUser(sender)
-    await reply(
-      `🏦 *BANK UPGRADE*\n\n` +
-      `📊 *Current Limit:* $${(u.bank_limit || 50000).toLocaleString()}\n` +
-      `💰 *Current Bank:* $${(u.bank || 0).toLocaleString()}\n\n` +
-      `━━━━━━━━━━━━━━━━━━━\n\n` +
-      `📋 *Available Bank Notes:*\n\n` +
-      `💵 *Bank Note (10K)* — $5,000\n   Increases limit by +$50,000\n   \`.buy bank_note_10k\`\n\n` +
-      `💴 *Bank Note (100K)* — $40,000\n   Increases limit by +$500,000\n   \`.buy bank_note_100k\`\n\n` +
-      `━━━━━━━━━━━━━━━━━━━\n` +
-      `_Bank notes are applied instantly!_ 🖤`
-    )
-  },
+  async upgrade({ reply }) { await reply('⚙️ *Upgrade System*\n\n_Upgrades coming soon! Stay tuned._') },
+  async prestige({ reply }) { await reply('✨ *Prestige*\n\n_Prestige system coming soon! Keep grinding._') },
+  async bankupgrade({ reply }) { await reply('🏦 *Bank Upgrade*\n\n_Bank upgrades coming soon!_') },
 
   async withdrawall({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
@@ -697,7 +673,7 @@ module.exports = {
       const tier = db.getLoanTierForLevel(u.level || 1)
       const { max, interest } = db.LOAN_TIERS[tier]
       return reply(
-        `🏦 *SHADOW GARDEN BANK — LOAN*\n\n` +
+        `🏦 *KONOSUBA BANK — LOAN*\n\n` +
         `*Your Tier:* ${tier}\n` +
         `*Max Loan:* $${max.toLocaleString()}\n` +
         `*Interest Rate:* ${(interest * 100).toFixed(0)}%\n\n` +
@@ -766,54 +742,4 @@ module.exports = {
       )
     }
   },
-
-  async usepp({ sock, msg, jid, reply, sender }) {
-    const ctx    = msg.message?.extendedTextMessage?.contextInfo
-    const quoted = ctx?.quotedMessage
-    if (!quoted?.imageMessage && !msg.message?.imageMessage) {
-      return reply(`🖼️ *PROFILE PICTURE*\n\nSend or reply to an image with *.usepp* to set it as your profile picture.`)
-    }
-    try {
-      const { downloadMediaMessage } = require('@whiskeysockets/baileys')
-      const targetMsg = quoted?.imageMessage
-        ? { message: quoted, key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant } }
-        : msg
-      const buffer = await downloadMediaMessage(targetMsg, 'buffer', {}, {
-        logger: { level: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-        reuploadRequest: sock.updateMediaMessage,
-      })
-      const sharp = require('sharp')
-      const jpegBuf = await sharp(buffer).resize(400, 400, { fit: 'cover' }).jpeg({ quality: 85 }).toBuffer()
-      const b64 = jpegBuf.toString('base64')
-      await db.updateUser(sender, { profile_pp: b64 })
-      await reply(`✅ *Profile picture updated!*\n\n_Use *.profile* to view your card._ 🖤`)
-    } catch (err) {
-      await reply(`❌ Failed: ${err.message}`)
-    }
-  },
-
-  async usebg({ sock, msg, jid, reply, sender }) {
-    const ctx    = msg.message?.extendedTextMessage?.contextInfo
-    const quoted = ctx?.quotedMessage
-    if (!quoted?.imageMessage && !msg.message?.imageMessage) {
-      return reply(`🎨 *PROFILE BACKGROUND*\n\nSend or reply to an image with *.usebg* to set it as your profile background.`)
-    }
-    try {
-      const { downloadMediaMessage } = require('@whiskeysockets/baileys')
-      const targetMsg = quoted?.imageMessage
-        ? { message: quoted, key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant } }
-        : msg
-      const buffer = await downloadMediaMessage(targetMsg, 'buffer', {}, {
-        logger: { level: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-        reuploadRequest: sock.updateMediaMessage,
-      })
-      const sharp = require('sharp')
-      const jpegBuf = await sharp(buffer).resize(800, 400, { fit: 'cover' }).jpeg({ quality: 80 }).toBuffer()
-      const b64 = jpegBuf.toString('base64')
-      await db.updateUser(sender, { profile_bg: b64 })
-      await reply(`✅ *Profile background updated!*\n\n_Use *.profile* to view your card._ 🖤`)
-    } catch (err) {
-      await reply(`❌ Failed: ${err.message}`)
-    }
-  },
-      }
+}

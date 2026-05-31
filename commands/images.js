@@ -16,12 +16,29 @@ async function getImgBuffer(sock, msg) {
   })
 }
 
+async function getVidBuffer(sock, msg) {
+  const vidMsg =
+    msg.message?.videoMessage ||
+    msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage
+  if (!vidMsg) return null
+  const fileSize = Number(vidMsg.fileLength || 0)
+  if (fileSize > 80 * 1024 * 1024) throw new Error('Video too large (max 80 MB).')
+  const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
+  const targetMsg = quoted
+    ? { message: quoted, key: { remoteJid: msg.key.remoteJid, id: msg.message.extendedTextMessage.contextInfo.stanzaId, participant: msg.message.extendedTextMessage.contextInfo.participant } }
+    : msg
+  return downloadMediaMessage(targetMsg, 'buffer', {}, {
+    logger: { level: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+    reuploadRequest: sock.updateMediaMessage,
+  })
+}
+
 module.exports = {
   async removebg({ sock, msg, jid, reply }) {
     const buf = await getImgBuffer(sock, msg)
     if (!buf) return reply('↩️ Send or reply to an image with .removebg')
     const apiKey = process.env.REMOVE_BG_KEY
-    if (!apiKey) return reply('⚠️ .removebg needs a free API key.\n\n1. Sign up at *remove.bg*\n2. Copy your API key\n3. Add it to Render env as *REMOVE_BG_KEY*\n4. Redeploy')
+    if (!apiKey) return reply('⚠️ .removebg needs a free API key.\n\n1. Sign up at *remove.bg*\n2. Copy your API key\n3. Add it to env as *REMOVE_BG_KEY*\n4. Restart')
     try {
       await reply('✂️ Removing background...')
       const FormData = require('form-data')
@@ -61,10 +78,53 @@ module.exports = {
   },
 
   async upscale({ sock, msg, jid, reply }) {
+    // Support both image and video upscaling
+    const sharp = require('sharp')
+
+    // Check for video first
+    const hasVideo = !!(
+      msg.message?.videoMessage ||
+      msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage
+    )
+
+    if (hasVideo) {
+      try {
+        await reply('🎬 Upscaling video... this may take a moment.')
+        const vidBuf = await getVidBuffer(sock, msg)
+        if (!vidBuf) return reply('❌ Could not download video.')
+        const { execFile } = require('child_process')
+        const os   = require('os')
+        const path = require('path')
+        const fs   = require('fs')
+        const tmpIn  = path.join(os.tmpdir(), `upscale_in_${Date.now()}.mp4`)
+        const tmpOut = path.join(os.tmpdir(), `upscale_out_${Date.now()}.mp4`)
+        fs.writeFileSync(tmpIn, vidBuf)
+        await new Promise((resolve, reject) => {
+          execFile('ffmpeg', [
+            '-y', '-i', tmpIn,
+            '-vf', 'scale=iw*2:ih*2:flags=lanczos',
+            '-c:v', 'libx264', '-crf', '23', '-preset', 'fast',
+            '-c:a', 'copy',
+            tmpOut,
+          ], { timeout: 120000 }, (err, _out, stderr) => {
+            if (err) reject(new Error('ffmpeg error: ' + (stderr || err.message).slice(0, 200)))
+            else resolve()
+          })
+        })
+        const outBuf = fs.readFileSync(tmpOut)
+        try { fs.unlinkSync(tmpIn) } catch {}
+        try { fs.unlinkSync(tmpOut) } catch {}
+        await sock.sendMessage(jid, { video: outBuf, caption: '🔼 Video upscaled 2×' }, { quoted: msg })
+      } catch (e) {
+        await reply(`❌ Video upscale failed: ${e.message}`)
+      }
+      return
+    }
+
+    // Image upscaling
     const buf = await getImgBuffer(sock, msg)
-    if (!buf) return reply('↩️ Reply to an image with .upscale')
+    if (!buf) return reply('↩️ Reply to an image or video with .upscale')
     try {
-      const sharp = require('sharp')
       const meta = await sharp(buf).metadata()
       const out = await sharp(buf)
         .resize(Math.min((meta.width || 512) * 2, 3000), Math.min((meta.height || 512) * 2, 3000), { fit: 'inside', kernel: 'lanczos3' }).toBuffer()
@@ -99,78 +159,6 @@ module.exports = {
       const sharp = require('sharp')
       const out = await sharp(buf).modulate({ brightness: 0.75, saturation: 0.7 }).tint({ r: 70, g: 110, b: 200 }).blur(0.8).toBuffer()
       await sock.sendMessage(jid, { image: out, caption: '🌧️ Rain Filter' }, { quoted: msg })
-    } catch (e) { await reply(`❌ Failed: ${e.message}`) }
-  },
-
-  async city({ sock, msg, jid, reply }) {
-    const buf = await getImgBuffer(sock, msg)
-    if (!buf) return reply('↩️ Reply to an image with .city')
-    try {
-      const sharp = require('sharp')
-      const out = await sharp(buf).modulate({ brightness: 0.9, saturation: 0.55 }).tint({ r: 50, g: 70, b: 140 }).sharpen({ sigma: 1 }).toBuffer()
-      await sock.sendMessage(jid, { image: out, caption: '🌆 City Filter' }, { quoted: msg })
-    } catch (e) { await reply(`❌ Failed: ${e.message}`) }
-  },
-
-  async gun({ sock, msg, jid, reply }) {
-    const buf = await getImgBuffer(sock, msg)
-    if (!buf) return reply('↩️ Reply to an image with .gun')
-    try {
-      const sharp = require('sharp')
-      const out = await sharp(buf).grayscale().modulate({ brightness: 0.85 }).sharpen({ sigma: 1.5 }).toBuffer()
-      await sock.sendMessage(jid, { image: out, caption: '🔫 Gun Filter' }, { quoted: msg })
-    } catch (e) { await reply(`❌ Failed: ${e.message}`) }
-  },
-
-  async jail({ sock, msg, jid, reply }) {
-    const buf = await getImgBuffer(sock, msg)
-    if (!buf) return reply('↩️ Reply to an image with .jail')
-    try {
-      const sharp = require('sharp')
-      const meta = await sharp(buf).metadata()
-      const w = meta.width || 512
-      const h = meta.height || 512
-      const bw = Math.floor(w / 7)
-      const bars = Array.from({ length: 7 }, (_, i) =>
-        `<rect x="${Math.floor(i * bw + bw * 0.65)}" y="0" width="${Math.floor(bw * 0.3)}" height="${h}" fill="rgba(20,20,20,0.78)"/>`
-      ).join('')
-      const svg = Buffer.from(`<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">${bars}<rect x="0" y="${Math.floor(h*0.08)}" width="${w}" height="${Math.floor(h*0.05)}" fill="rgba(20,20,20,0.75)"/><rect x="0" y="${Math.floor(h*0.87)}" width="${w}" height="${Math.floor(h*0.05)}" fill="rgba(20,20,20,0.75)"/></svg>`)
-      const base = await sharp(buf).grayscale().modulate({ brightness: 0.75 }).png().toBuffer()
-      const out  = await sharp(base).composite([{ input: svg, blend: 'over' }]).jpeg({ quality: 90 }).toBuffer()
-      await sock.sendMessage(jid, { image: out, caption: '🔒 Jail Filter' }, { quoted: msg })
-    } catch (e) { await reply(`❌ Failed: ${e.message}`) }
-  },
-
-  async toanime({ sock, msg, jid, reply, args }) {
-    const prompt = args.join(' ') || 'anime character'
-    try {
-      await reply('🎌 Generating anime style...')
-      const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(`beautiful anime art ${prompt} vibrant colors sharp linework studio ghibli style`)  }?width=768&height=768&nologo=true&model=flux&seed=${Date.now()}`
-      const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 60000 })
-      await sock.sendMessage(jid, { image: Buffer.from(res.data), caption: `🎌 Anime: ${prompt}` }, { quoted: msg })
-    } catch (e) { await reply(`❌ Failed: ${e.message}`) }
-  },
-
-  async cartoon({ sock, msg, jid, reply, args }) {
-    const prompt = args.join(' ') || 'cartoon character'
-    try {
-      await reply('🎨 Generating cartoon...')
-      const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(`cartoon illustration ${prompt} bright bold colors flat design fun animated`)  }?width=768&height=768&nologo=true&model=flux&seed=${Date.now()}`
-      const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 60000 })
-      await sock.sendMessage(jid, { image: Buffer.from(res.data), caption: `🎭 Cartoon: ${prompt}` }, { quoted: msg })
-    } catch (e) { await reply(`❌ Failed: ${e.message}`) }
-  },
-
-  async carbon({ sock, msg, jid, reply, args }) {
-    const code = args.join(' ')
-    if (!code) return reply('⚠️ Usage: .carbon <code snippet>')
-    try {
-      await reply('💻 Generating...')
-      const res = await axios.post('https://carbonara.solopov.dev/api/cook',
-        { code, theme: 'one-dark', backgroundColor: '#1a1a2e', language: 'auto', paddingHorizontal: '32px', paddingVertical: '32px', fontSize: '14px' },
-        { responseType: 'arraybuffer', timeout: 30000 }
-      )
-      await sock.sendMessage(jid, { image: Buffer.from(res.data), caption: `💻 Carbon` }, { quoted: msg })
     } catch (e) { await reply(`❌ Failed: ${e.message}`) }
   },
 }

@@ -242,45 +242,25 @@ module.exports = {
       `┃\n` +
       `╰━━━━━━━━━━━━━━━━\n\n` +
 
-      `*⚔️ RPG ⚔️*
-` +
-      `┃
-` +
-      `┃ ⤷ .rpg
-` +
-      `┃ ⤷ .dungeon
-` +
-      `┃ ⤷ .quest
-` +
-      `┃ ⤷ .explore
-` +
-      `┃ ⤷ .travel <n/s/e/w>
-` +
-      `┃ ⤷ .encounter
-` +
-      `┃ ⤷ .attack
-` +
-      `┃ ⤷ .selectclass
-` +
-      `┃ ⤷ .skillinfo
-` +
-      `┃ ⤷ .rparty form
-` +
-      `┃ ⤷ .rparty join
-` +
-      `┃ ⤷ .rparty quest
-` +
-      `┃ ⤷ .rparty status
-` +
-      `┃ ⤷ .adventure
-` +
-      `┃ ⤷ .escape
-` +
-      `┃
-` +
-      `╰━━━━━━━━━━━━━━━━
-
-` +
+      `*⚔️ RPG ⚔️*\n` +
+      `┃\n` +
+      `┃ ⤷ .rpg\n` +
+      `┃ ⤷ .stats\n` +
+      `┃ ⤷ .hunt\n` +
+      `┃ ⤷ .boss\n` +
+      `┃ ⤷ .raid\n` +
+      `┃ ⤷ .dungeon\n` +
+      `┃ ⤷ .quest\n` +
+      `┃ ⤷ .equip <item>\n` +
+      `┃ ⤷ .unequip <item>\n` +
+      `┃ ⤷ .skills\n` +
+      `┃ ⤷ .craft <item>\n` +
+      `┃ ⤷ .forge\n` +
+      `┃ ⤷ .shop\n` +
+      `┃ ⤷ .prestige\n` +
+      `┃ ⤷ .rparty\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
       `*🏰 GUILD 🏰*\n` +
       `┃\n` +
@@ -300,24 +280,34 @@ module.exports = {
       `┃ ⤷ .collection / .coll\n` +
       `┃ ⤷ .deck\n` +
       `┃ ⤷ .card\n` +
-      `┃ ⤷ .ci\n` +
-      `┃ ⤷ .mycolls\n` +
+      `┃ ⤷ .ci <name> [tier] — card info (all matches)\n` +
+      `┃ ⤷ .ss <name> — search by name\n` +
+      `┃ ⤷ .fs <series> [tier] — search by series\n` +
       `┃ ⤷ .cardlb\n` +
-      `┃ ⤷ .get\n` +
+      `┃ ⤷ .get <card_id>\n` +
       `┃ ⤷ .stardust\n` +
-      `┃ ⤷ .vs\n` +
-      `┃ ⤷ .cg\n` +
-      `┃ ⤷ .sellc\n` +
-      `┃ ⤷ .tc\n` +
-      `┃ ⤷ .accept\n` +
-      `┃ ⤷ .decline\n` +
-      `┃ ⤷ .ctd\n` +
-      `┃ ⤷ .lc\n` +
-      `┃ ⤷ .lcd\n` +
-      `┃ ⤷ .retrieve\n` +
-      `┃ ⤷ .auction\n` +
-      `┃ ⤷ .myauc\n` +
-      `┃ ⤷ .listauc\n` +
+      `┃ ⤷ .tc @user\n` +
+      `┃ ⤷ .dc <number> — discard card\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
+
+      `*📱 MEDIA 📱*\n` +
+      `┃\n` +
+      `┃ ⤷ .upscale — upscale image or video 2×\n` +
+      `┃ ⤷ .enhance — enhance image\n` +
+      `┃ ⤷ .remini — restore image\n` +
+      `┃ ⤷ .removebg — remove background\n` +
+      `┃ ⤷ .night — night filter\n` +
+      `┃ ⤷ .sunset — sunset filter\n` +
+      `┃ ⤷ .rain — rain filter\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
+
+      `*💸 PAYMENTS 💸*\n` +
+      `┃\n` +
+      `┃ ⤷ .pay @user <amount>\n` +
+      `┃ ⤷ .confirmpy — confirm pending payment\n` +
+      `┃ ⤷ .cooldowns / .cds — show active cooldowns\n` +
       `┃\n` +
       `╰━━━━━━━━━━━━━━━━`
 
@@ -330,11 +320,8 @@ module.exports = {
 
   async ping({ sock, msg, jid }) {
     const start = Date.now()
-    await sock.sendMessage(jid, { text: '...' }, { quoted: msg })
-    const ping  = Date.now() - start
-    await sock.sendMessage(jid, {
-      text: `Aqua's here\n> ${ping}ms`
-    }, { quoted: msg })
+    const ping = Date.now() - start
+    await sock.sendMessage(jid, { text: `🏓 Pong! ${ping}ms` }, { quoted: msg })
   },
 
   async speed({ sock, msg, jid }) {
@@ -441,20 +428,8 @@ module.exports = {
     await reply(`💤 AFK set\n📌 ${reason}\n\nAnyone who tags you will be notified.`)
   },
 
-  async website({ sock, jid, msg, reply }) {
-    const url = 'https://konosuba-bot.vercel.app/'
-    const previewText =
-      `🌐 *Konosuba Bot Website*\n\n` +
-      `The official Konosuba Community Bot dashboard — manage your profile, stats, inventory, and more.\n\n` +
-      `${url}`
-    try {
-      await sock.sendMessage(jid, {
-        image: { url: 'https://konosuba-bot.vercel.app/og-image.png' },
-        caption: previewText,
-      }, { quoted: msg })
-    } catch {
-      await reply(previewText)
-    }
+  async website({ reply }) {
+    await reply(`🌐 Website coming soon`)
   },
 
   async community({ reply }) {
@@ -549,62 +524,26 @@ module.exports = {
   async setms(ctx) { return require('./pokemon').setms(ctx) },
   async delms(ctx) { return require('./pokemon').delms(ctx) },
 
-  async tagall({ sock, msg, jid, senderJid, isGroup, isOwner, args, reply }) {
+  async tagall({ sock, msg, jid, senderJid, sender, isGroup, isOwner, args, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const meta   = await sock.groupMetadata(jid)
+    const meta = await sock.groupMetadata(jid)
     const admins = meta.participants.filter(p => p.admin).map(p => p.id)
     if (!admins.includes(senderJid) && !isOwner) return reply('⚠️ Admin only.')
 
     const message    = args.join(' ') || 'Attention everyone!'
     const actualJids = meta.participants.map(p => p.id)
-    const memberLines = meta.participants
-      .map(p => `💠 @${p.id.split('@')[0].split(':')[0]}`)
-      .join('\n')
+    const activePhones = await db.getActiveUsers(jid, 24 * 7).catch(() => [])
+    const activeSet  = new Set(activePhones)
+
+    const memberLines = meta.participants.map(p => {
+      const num = p.id.split('@')[0].split(':')[0]
+      return `${activeSet.has(num) ? '🟢' : '🔴'} @${num}`
+    }).join('\n')
 
     await sock.sendMessage(jid, {
-      text:
-        `*🔖 Message:* ${message}\n` +
-        `*🎃 Group:* ${meta.subject}\n` +
-        `*👥 Members:* ${meta.participants.length}\n\n` +
-        memberLines,
-      mentions: actualJids,
-    }, { quoted: msg })
-  },
-
-  async active({ sock, msg, jid, senderJid, isGroup, isOwner, reply }) {
-    if (!isGroup) return reply('❌ Groups only.')
-    const meta   = await sock.groupMetadata(jid)
-    const admins = meta.participants.filter(p => p.admin).map(p => p.id)
-    if (!admins.includes(senderJid) && !isOwner) return reply('⚠️ Admin only.')
-
-    const activePhones = await db.getActiveUsers(jid, 24 * 5).catch(() => [])
-    const activeSet    = new Set(activePhones)
-    const active       = meta.participants.filter(p => activeSet.has(p.id.split('@')[0].split(':')[0]))
-
-    const lines    = active.map(p => `□ @${p.id.split('@')[0].split(':')[0]}`).join('\n') || '□ (none)'
-    const mentions = active.map(p => p.id)
-    await sock.sendMessage(jid, {
-      text: `⏳ Showing active members in the last 5 days...\n\n${lines}`,
-      mentions,
-    }, { quoted: msg })
-  },
-
-  async inactive({ sock, msg, jid, senderJid, isGroup, isOwner, reply }) {
-    if (!isGroup) return reply('❌ Groups only.')
-    const meta   = await sock.groupMetadata(jid)
-    const admins = meta.participants.filter(p => p.admin).map(p => p.id)
-    if (!admins.includes(senderJid) && !isOwner) return reply('⚠️ Admin only.')
-
-    const activePhones = await db.getActiveUsers(jid, 24 * 5).catch(() => [])
-    const activeSet    = new Set(activePhones)
-    const inactive     = meta.participants.filter(p => !activeSet.has(p.id.split('@')[0].split(':')[0]))
-
-    const lines    = inactive.map(p => `□ @${p.id.split('@')[0].split(':')[0]}`).join('\n') || '□ (none)'
-    const mentions = inactive.map(p => p.id)
-    await sock.sendMessage(jid, {
-      text: `⏳ Showing inactive members in the last 5 days...\n\n${lines}`,
-      mentions,
-    }, { quoted: msg })
+      text: `📣 *${message}*\n\n👥 ${meta.participants.length} members\n\n${memberLines}`,
+      mentions: actualJids
+    })
   },
 
   async modlist({ sock, jid, msg, reply, isGroup }) {
@@ -662,12 +601,16 @@ module.exports = {
       : msg
 
     try {
-      const buffer = await downloadMediaMessage(targetMsg, 'buffer', {}, {
+      const buffer  = await downloadMediaMessage(targetMsg, 'buffer', {}, {
         logger: { level: () => {}, info: () => {}, warn: () => {}, error: () => {} },
         reuploadRequest: sock.updateMediaMessage,
       })
-      const stickerBuf = await makeSticker(buffer)
-      await sock.sendMessage(jid, { sticker: stickerBuf }, { quoted: msg })
+      let imgBuf = buffer
+      try {
+        const sharp = require('sharp')
+        imgBuf = await sharp(buffer).jpeg({ quality: 90 }).toBuffer()
+      } catch {}
+      await sock.sendMessage(jid, { image: imgBuf }, { quoted: msg })
     } catch (err) {
       await reply(`❌ Sticker failed: ${err.message}`)
     }
@@ -794,37 +737,22 @@ module.exports = {
   },
 
   async myid({ sock, jid, sender, msg, reply }) {
+    const websiteUrl = process.env.WEBSITE_URL || 'https://konosuba-bot.vercel.app'
     await reply(
-      `🆔 *Your Bot ID + Full Setup Guide*\n` +
-      `━━━━━━━━━━━━━━\n\n` +
-      `Hey there 👋 Welcome to Konosuba Bot!\n\n` +
-      `Your unique account ID is:\n` +
+      `🆔 *Your Bot ID*\n` +
+      `━━━━━━━━━━━━━━━━━\n\n` +
+      `Your unique ID is:\n` +
       `*${sender}*\n\n` +
-      `📋 *How to copy it*\n` +
-      `Tap and hold the number above → Copy.\n` +
-      `Make sure there are no spaces before or after it. That number is basically your username in the bot system.\n\n` +
-      `🌐 *Logging into the website*\n` +
-      `1. *Open the site*: Go to https://konosuba-bot.vercel.app in Chrome, Safari, or whatever browser you use.\n` +
-      `2. *Tap Login*: You'll see the Login button right on the homepage.\n` +
-      `3. *Enter your ID*: Paste \`${sender}\` into the Phone / ID field. This tells the website which bot account is yours.\n` +
-      `4. *Enter your password*: Use the password you set when you registered with \`.reg\`. If you forgot it, you'll need to re-register with a new one.\n\n` +
-      `🔒 *Why this ID matters*\n` +
-      `Think of it like your game save file. The bot in WhatsApp and the dashboard on the website both use this ID to recognize you, load your stats, inventory, balance, etc. Without it, the site won't know which account to open.\n\n` +
-      `❓ *First time here? You need to register*\n` +
-      `If you've never set a password, do this first in WhatsApp:\n` +
-      `Send: \`.reg YourName | YourPassword\`\n\n` +
-      `*Example*: \`.reg Shadow | mypass123\`\n\n` +
-      `Rules for it:\n` +
-      `*YourName*: Pick anything you want people to see. No spaces if you want it clean.\n` +
-      `*YourPassword*: Make it something you'll remember. You'll use this on the website too.\n\n` +
-      `After you send that, the bot will reply with your ID. Save it somewhere safe.\n\n` +
-      `⚠️ *Important tips*\n` +
-      `1. *Keep your ID + password private*. Anyone with both can log into your account.\n` +
-      `2. *One ID per person*. Don't share it even with friends.\n` +
-      `3. *Lost password?* Just run \`.reg\` again with a new password. Your ID stays the same.\n` +
-      `4. *Site not loading?* Refresh and check your internet. Vercel links work best on mobile data or WiFi with no VPN.\n\n` +
-      `That's the whole setup. Once you're in, you can manage coins, items, profiles, and more from the dashboard.\n\n` +
-      `Need help with \`.reg\` or can't get into the site? Contact the mods and tell them what error you're seeing and they'll walk you through it.`
+      `📋 _Copy the number above (no spaces)._\n\n` +
+      `🌐 *To login on the website:*\n` +
+      `1. Go to: ${websiteUrl}\n` +
+      `2. Tap *Login*\n` +
+      `3. Enter *${sender}* as your Phone / ID\n` +
+      `4. Enter the password you set with *.reg*\n\n` +
+      `❓ *Haven't registered yet?*\n` +
+      `Send: *.reg YourName | YourPassword*\n` +
+      `Example: _.reg Shadow | mypass123_\n\n` +
+      `> This ID is how the bot and website recognise you.`
     )
   },
 

@@ -90,7 +90,7 @@ module.exports = {
     const povs = [
       'You just discovered you can control shadows.',
       'The bot knows your deepest secret.',
-      'You wake up in the Shadow Garden dungeon.',
+      'You wake up in the Konosuba dungeon.',
       'You are the last human in a world of AIs.',
       'You just leveled up to the maximum level.',
     ]
@@ -134,7 +134,7 @@ module.exports = {
   async dare({ reply }) {
     const dares = [
       'Send a voice note singing for 10 seconds.',
-      'Change your WA status to "I love Shadow Garden Bot" for 1 hour.',
+      'Change your WA status to "I love Konosuba Bot" for 1 hour.',
       'Send a selfie to the group.',
       "Text your last contact \"I'm joining a cult.\"",
       'Do 10 jumping jacks and voice note it.',
