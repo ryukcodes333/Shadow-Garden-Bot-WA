@@ -13,6 +13,7 @@ function buildExif(packname, author) {
     'sticker-pack-id':       'com.aqua.stickers',
     'sticker-pack-name':      packname,
     'sticker-pack-publisher': author,
+    'sticker-name':           'Shadow Garden',
     'emojis':                ['🎴'],
   })
   const data = Buffer.from(json, 'utf8')

@@ -16,6 +16,16 @@ require('./web')
 
 const handleMessage = require('./commands/index')
 
+// ── Global safety net: never let an unhandled rejection kill the process ──
+// Without this, ANY unhandled async error crashes Node, drops the WA session,
+// and forces a re-pair. Log it and keep running.
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason?.message || reason)
+})
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err?.message || err)
+})
+
 const PREFIX = '.'
 const OWNER_LID = '12232838631673@lid'
 const BOT_NAME = 'Alpha'

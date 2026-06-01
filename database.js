@@ -402,7 +402,7 @@ async function getLeaderboard(limit = 10) {
 }
 
 async function getRichList(limit = 10) {
-  return User.find({}).sort({ wallet: -1 }).limit(limit).lean()
+  return User.find({}).sort({ bank: -1, wallet: -1 }).limit(limit).lean()
 }
 
 async function getUserCount() {
