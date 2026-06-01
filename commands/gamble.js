@@ -4,6 +4,20 @@ const db = require('../database')
 const dailyTracker = {}
 const DAILY_LIMIT  = 15
 
+// ── Per-user cooldown: 10 seconds between any gambling command ──
+// This prevents message flooding that causes WhatsApp to force-disconnect the session.
+const gambleCooldown = {}
+const GAMBLE_CD_MS   = 10000  // 10 seconds
+
+function checkGambleCooldown(phone) {
+  const now = Date.now()
+  if (gambleCooldown[phone] && now < gambleCooldown[phone]) {
+    return gambleCooldown[phone] - now  // ms remaining
+  }
+  gambleCooldown[phone] = now + GAMBLE_CD_MS
+  return 0
+}
+
 function checkDailyLimit(phone) {
   const today = new Date().toISOString().split('T')[0]
   if (!dailyTracker[phone] || dailyTracker[phone].date !== today) {
@@ -22,6 +36,23 @@ function getRemainingGambles(phone) {
 // Win rates: 20% normal, 2% for high stakes (>5000)
 function winChance(amount) {
   return amount > 5000 ? 0.02 : 0.20
+}
+
+// Wraps a gambling handler to apply the shared 10-second cooldown
+function withCooldown(fn) {
+  return async function(ctx) {
+    try {
+      const wait = checkGambleCooldown(ctx.sender)
+      if (wait > 0) {
+        const secs = Math.ceil(wait / 1000)
+        return await ctx.reply(`⏳ Slow down! Wait *${secs}s* before gambling again.`)
+      }
+      return await fn(ctx)
+    } catch (err) {
+      console.error('[gamble error]', err?.message || err)
+      try { await ctx.reply(`⚠️ Gambling error: ${err?.message || 'unknown'}`) } catch {}
+    }
+  }
 }
 
 module.exports = {
@@ -413,4 +444,13 @@ module.exports = {
       await reply(`🧮 ${expr} = *${result}*`)
     } catch { await reply(`❌ Invalid expression`) }
   },
+}
+
+// ── Apply 10-second cooldown to all money-gambling commands ──────────────────
+// trivia and math are skipped (no wallet risk, no flood potential)
+const MONEY_GAMBLES = ['bet','cf','slots','sl','dice','rps','blackjack','bj','casino','poker','spin','roulette','horse','jackpot','highlow','hl']
+for (const name of MONEY_GAMBLES) {
+  if (typeof module.exports[name] === 'function') {
+    module.exports[name] = withCooldown(module.exports[name])
+  }
 }

@@ -320,8 +320,7 @@ module.exports = {
 
   async ping({ sock, msg, jid }) {
     const start = Date.now()
-    const ping = Date.now() - start
-    await sock.sendMessage(jid, { text: `🏓 Pong! ${ping}ms` }, { quoted: msg })
+    await sock.sendMessage(jid, { text: `Aqua's here!\n> ${Date.now() - start}ms` }, { quoted: msg })
   },
 
   async speed({ sock, msg, jid }) {

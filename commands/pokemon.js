@@ -325,7 +325,7 @@ module.exports = {
       const mins = Math.floor((cd % 3600000) / 60000)
       return reply(`⏳ *POKÉMON DAILY ALREADY CLAIMED*\n\n⏰ Come back in *${hrs}h ${mins}m*\n\n_The Pokémon world refreshes each day._ 🖤`)
     }
-    const coins = randInt(300, 800)
+    const coins = randInt(3, 8)
     const balls = randInt(2, 5)
     await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
     await db.setCooldown(sender, 'pdaily', CD_PDAILY)
@@ -473,7 +473,7 @@ module.exports = {
 
     battleLog.push(`✅ *${poke.name}* was caught!`)
 
-    const xpGained = Math.floor(poke.baseXp * 0.05) + randInt(5, 15)
+    const xpGained = 1
     const newXp    = (u.xp || 0) + xpGained
     const oldLvl   = u.level || 1
     const xpNeeded = oldLvl * 5000   // very hard — 5000 XP per user level
@@ -698,7 +698,7 @@ module.exports = {
       win ? `\n🏆 *${u.name || sender} WINS!*` : `\n💥 *@${opponentPhone} WINS!*`,
     ]
     if (win) {
-      const xp = 50 + randInt(10, 30)
+      const xp = 2
       await db.updateUser(sender, { xp: (u.xp || 0) + xp, pokemon_wins: (u.pokemon_wins || 0) + 1 })
       log.push(`\n⭐ *+${xp} XP* earned!`)
     } else {
@@ -714,8 +714,8 @@ module.exports = {
     const win     = Math.random() > 0.4
     const u       = user || await db.getOrCreateUser(sender)
     if (win) {
-      await db.updateUser(sender, { pokemon_badges: (u.pokemon_badges || 0) + 1, xp: (u.xp || 0) + 100 })
-      await reply(`🏅 *GYM BATTLE — ${leader.toUpperCase()}!*\n\n🏆 *YOU WIN!*\n\n🥇 Badge earned! Total: ${(u.pokemon_badges || 0) + 1}\n⭐ +100 XP`)
+      await db.updateUser(sender, { pokemon_badges: (u.pokemon_badges || 0) + 1, xp: (u.xp || 0) + 2 })
+      await reply(`🏅 *GYM BATTLE — ${leader.toUpperCase()}!*\n\n🏆 *YOU WIN!*\n\n🥇 Badge earned! Total: ${(u.pokemon_badges || 0) + 1}\n⭐ +2 XP`)
     } else {
       await reply(`🏅 *GYM BATTLE — ${leader.toUpperCase()}!*\n\n💥 *DEFEAT!*\n\n_Train harder and return._ 🖤`)
     }
@@ -723,17 +723,24 @@ module.exports = {
 
   // ── #raid ─────────────────────────────────────────────────────
   async raid({ reply, sender, user }) {
+    const remaining = await db.getCooldown(sender, 'praid').catch(() => 0)
+    if (remaining > 0) {
+      const mins = Math.floor(remaining / 60000)
+      const secs = Math.floor((remaining % 60000) / 1000)
+      return reply(`⏳ *RAID COOLDOWN*\n\n🕒 Wait: ${mins}m ${secs}s\n\n_The boss needs time to respawn._ 🖤`)
+    }
     const bosses = [
-      { name: 'Mega Mewtwo', xp: 500 }, { name: 'Shadow Kyogre', xp: 400 }, { name: 'Dark Rayquaza', xp: 450 },
+      { name: 'Mega Mewtwo', xp: 3 }, { name: 'Shadow Kyogre', xp: 4 }, { name: 'Dark Rayquaza', xp: 3 },
     ]
     const boss = bosses[Math.floor(Math.random() * bosses.length)]
     const win  = Math.random() > 0.5
     const u    = user || await db.getOrCreateUser(sender)
+    await db.setCooldown(sender, 'praid', 6 * 60)
     if (win) {
-      await db.updateUser(sender, { xp: (u.xp || 0) + boss.xp, wallet: (u.wallet || 0) + 2000 })
-      await reply(`🔥 *RAID BOSS — ${boss.name.toUpperCase()}!*\n\n🏆 *RAID CLEARED!*\n\n⭐ +${boss.xp} XP\n💰 +2,000 coins`)
+      await db.updateUser(sender, { xp: (u.xp || 0) + boss.xp, wallet: (u.wallet || 0) + 8 })
+      await reply(`🔥 *RAID BOSS — ${boss.name.toUpperCase()}!*\n\n🏆 *RAID CLEARED!*\n\n⭐ +${boss.xp} XP\n💰 +8 coins\n\n⏳ Next raid in 6 minutes.`)
     } else {
-      await reply(`🔥 *RAID BOSS — ${boss.name.toUpperCase()}!*\n\n💔 *RAID FAILED!*\n\n_Gather more trainers and try again._ 🖤`)
+      await reply(`🔥 *RAID BOSS — ${boss.name.toUpperCase()}!*\n\n💔 *RAID FAILED!*\n\n_Gather more trainers and try again._ 🖤\n\n⏳ Next attempt in 6 minutes.`)
     }
   },
 
@@ -784,7 +791,7 @@ module.exports = {
     if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
 
     // Very hard XP — 1000 XP per pokemon level
-    const xpGain = randInt(30, 80)
+    const xpGain = randInt(1, 2)
     const newXp  = (p.xp || 0) + xpGain
     const oldLvl = p.level || 1
     const newLvl = Math.floor(newXp / 1000) + 1
@@ -1128,7 +1135,7 @@ module.exports = {
 
     // ── Wild fainted? ──────────────────────────────────────────
     if (battle.wildHp <= 0) {
-      const xpGain = 25 + battle.wild.level * 5
+      const xpGain = 1
       const u = user || await db.getOrCreateUser(sender)
       await db.updateUser(sender, {
         xp:           (u.xp || 0) + xpGain,

@@ -189,42 +189,42 @@ const ENEMIES = [
   {
     name: 'Shadow Slime',  level: 1,  hp: 40,  attack: 6,
     ability: { name: 'Slime Coat', chance: 0.3, desc: 'Reduces your damage by 25% this turn', effect: 'dmgReduce' },
-    reward: { coins: 50, xp: 20, gems: 0 },
+    reward: { coins: 2, xp: 1, gems: 0 },
   },
   {
     name: 'Dark Goblin',   level: 3,  hp: 65,  attack: 12,
     ability: { name: 'Steal', chance: 0.25, desc: 'Steals 30 coins from you!', effect: 'steal' },
-    reward: { coins: 120, xp: 45, gems: 1 },
+    reward: { coins: 4, xp: 1, gems: 0 },
   },
   {
     name: 'Void Wraith',   level: 5,  hp: 95,  attack: 20,
     ability: { name: 'Phase Shift', chance: 0.35, desc: 'Phases through your attack — EVADED!', effect: 'dodge' },
-    reward: { coins: 220, xp: 90, gems: 2 },
+    reward: { coins: 6, xp: 1, gems: 0 },
   },
   {
     name: 'Shadow Knight', level: 8,  hp: 150, attack: 32,
     ability: { name: 'Counter Stance', chance: 0.4, desc: 'Reflects 35% of your damage back!', effect: 'counter' },
-    reward: { coins: 450, xp: 160, gems: 3 },
+    reward: { coins: 10, xp: 2, gems: 0 },
   },
   {
     name: 'Void Serpent',  level: 11, hp: 200, attack: 45,
     ability: { name: 'Venom Bite', chance: 0.45, desc: 'Poisons you! -25 HP next 2 turns.', effect: 'poison' },
-    reward: { coins: 700, xp: 280, gems: 5 },
+    reward: { coins: 14, xp: 2, gems: 0 },
   },
   {
     name: 'Shadow Hydra',  level: 15, hp: 280, attack: 58,
     ability: { name: 'Regenerate', chance: 0.35, desc: 'Regenerates 40 HP!', effect: 'regen' },
-    reward: { coins: 1000, xp: 420, gems: 7 },
+    reward: { coins: 18, xp: 3, gems: 0 },
   },
   {
     name: 'Dark Dragon',   level: 20, hp: 400, attack: 80,
     ability: { name: 'Dragon Breath', chance: 0.5, desc: 'Breathes dark fire — MASSIVE damage!', effect: 'breath' },
-    reward: { coins: 1800, xp: 700, gems: 12 },
+    reward: { coins: 25, xp: 4, gems: 1 },
   },
   {
     name: 'Void Overlord', level: 25, hp: 600, attack: 110,
     ability: { name: 'Void Collapse', chance: 0.55, desc: 'Collapses void energy — deals 60% of your MAX HP!', effect: 'collapse' },
-    reward: { coins: 3000, xp: 1200, gems: 20 },
+    reward: { coins: 40, xp: 6, gems: 1 },
   },
 ]
 
@@ -883,10 +883,10 @@ module.exports = {
     const cls = getClassForUser(u)
     const clsBonus = cls ? 1.2 : 1.0
     const adventures = [
-      { text: 'explored an ancient shadow temple', coins: 150, xp: 50 },
-      { text: 'defeated a wandering dark mage', coins: 300, xp: 100 },
-      { text: 'discovered a hidden vault', coins: 500, xp: 75 },
-      { text: 'survived a shadow storm', coins: 200, xp: 120 },
+      { text: 'explored an ancient shadow temple', coins: 5, xp: 1 },
+      { text: 'defeated a wandering dark mage', coins: 7, xp: 1 },
+      { text: 'discovered a hidden vault', coins: 9, xp: 1 },
+      { text: 'survived a shadow storm', coins: 5, xp: 2 },
     ]
     const adv = adventures[Math.floor(Math.random() * adventures.length)]
     const coins = Math.floor(adv.coins * clsBonus)
@@ -919,9 +919,9 @@ module.exports = {
       return reply(`⏳ *QUEST COOLDOWN*\n\n🕒 Wait: ${mins}m ${secs}s\n\n_The quest requires preparation._ 🖤`)
     }
     const quests = [
-      { name: 'Collect 5 shadows', reward: 200 },
-      { name: 'Defeat 3 dungeon enemies', reward: 350 },
-      { name: 'Trade with another user', reward: 150 },
+      { name: 'Collect 5 shadows', reward: 7 },
+      { name: 'Defeat 3 dungeon enemies', reward: 10 },
+      { name: 'Trade with another user', reward: 5 },
     ]
     const quest = quests[Math.floor(Math.random() * quests.length)]
     await db.updateUser(sender, { wallet: (u.wallet || 0) + quest.reward })
@@ -939,7 +939,7 @@ module.exports = {
     }
     const u = user || await db.getOrCreateUser(sender)
     const boss = ENEMIES[4]
-    const reward = 500 + Math.floor(Math.random() * 500)
+    const reward = 8 + Math.floor(Math.random() * 8)
     await db.updateUser(sender, { wallet: (u.wallet || 0) + reward })
     await db.setCooldown(sender, 'raid', 10 * 60)
     await reply(`⚔️ *RAID COMPLETE*\n\n👥 Your group defeated *${boss.name}*!\n\n💰 Raid Reward: +$${reward}\n\n⏳ Next raid in 10 minutes.\n\n_The raid boss falls before the Konosuba warriors._ 🖤`)

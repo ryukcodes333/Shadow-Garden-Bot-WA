@@ -578,14 +578,69 @@ module.exports = {
     const mentioned   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     const targetPhone = mentioned.length ? mentioned[0].split('@')[0].split(':')[0] : sender
     const cards = await db.getUserCards(targetPhone)
-    if (!cards.length) return reply(`*🃏 Card Collection*\n\n_No cards yet._`)
+    if (!cards.length) return reply(`*🃏 Your collection:*\n\n_No cards yet._`)
     const lines = cards.map((uc, i) => {
       const c = uc.card_id || uc
-      return `${i + 1}. ${TIERS[c?.tier] || '🎴'} *${c?.name || 'Unknown'}* _(${c?.tier || '?'})_`
+      return `${i + 1}. ${c?.name || 'Unknown'} [${c?.tier || '?'}]`
     }).join('\n')
-    await reply(`*🃏 Card Collection* — ${cards.length} card(s)\n\n${lines}`)
+    await reply(`*🃏 Your collection:*\n\n${lines}`)
   },
   async collection(ctx) { return module.exports.coll(ctx) },
+
+  async myseries({ reply, sender, msg }) {
+    const mentioned   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    const targetPhone = mentioned.length ? mentioned[0].split('@')[0].split(':')[0] : sender
+    const cards = await db.getUserCards(targetPhone)
+    if (!cards.length) return reply(`*📚 Your Cards By Series 📚*\n\n_No cards yet._`)
+    const seriesSet = new Set()
+    for (const uc of cards) {
+      const c = uc.card_id || uc
+      if (c?.series && c.series !== '-' && c.series !== '') seriesSet.add(c.series)
+    }
+    if (!seriesSet.size) return reply(`*📚 Your Cards By Series 📚*\n\n_No series data found._`)
+    const lines = [...seriesSet].sort().map(s => `* ${s}`).join('\n')
+    await reply(`*📚 Your Cards By Series 📚*\n\n${lines}`)
+  },
+
+  async cbs({ reply, sender, msg, args }) {
+    const mentioned   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    const targetPhone = mentioned.length ? mentioned[0].split('@')[0].split(':')[0] : sender
+    const series = args.join(' ').trim()
+    if (!series) return reply('⚠️ Usage: *.cbs <series name>*\nExample: *.cbs Dog Days*')
+    const cards = await db.getUserCards(targetPhone)
+    if (!cards.length) return reply(`*🃏 Your Cards By Series 📚*\n\n_No cards yet._`)
+    const filtered = cards.filter(uc => {
+      const c = uc.card_id || uc
+      return c?.series && c.series.toLowerCase().includes(series.toLowerCase())
+    })
+    if (!filtered.length) return reply(`*🃏 Your Cards By Series 📚*\n\n_No cards found in series: ${series}_`)
+    const lines = filtered.map(uc => {
+      const c = uc.card_id || uc
+      return `[${c?.tier || '?'}] ${c?.name || 'Unknown'}`
+    }).join('\n')
+    await reply(`*🃏 Your Cards By Series 📚*\n\n${lines}`)
+  },
+
+  async tier({ reply, sender, msg }) {
+    const mentioned   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    const targetPhone = mentioned.length ? mentioned[0].split('@')[0].split(':')[0] : sender
+    const cards = await db.getUserCards(targetPhone)
+    if (!cards.length) return reply(`*🏆 Cards By Tier:*\n\n_No cards yet._`)
+    const TIER_ORDER  = ['TS','T6','T5','T4','T3','T2','T1','TZ','UR','SSR','SR','R','C']
+    const TIER_LABELS = { TS:'S', T6:'6', T5:'5', T4:'4', T3:'3', T2:'2', T1:'1', TZ:'Z', UR:'UR', SSR:'SSR', SR:'SR', R:'R', C:'C' }
+    const byTier = {}
+    for (const uc of cards) {
+      const c = uc.card_id || uc
+      const t = c?.tier || '?'
+      if (!byTier[t]) byTier[t] = []
+      byTier[t].push(c?.name || 'Unknown')
+    }
+    const sections = TIER_ORDER
+      .filter(t => byTier[t])
+      .map(t => `*✨ Tier ${TIER_LABELS[t] || t}*\n\n${byTier[t].join('\n')}`)
+      .join('\n\n')
+    await reply(`*🏆 Cards By Tier:*\n\n${sections}`)
+  },
 
   // ─── .deck ────────────────────────────────────────────────────────────────
   async deck({ sock, jid, msg, reply, sender }) {

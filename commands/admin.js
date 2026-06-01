@@ -360,11 +360,11 @@ module.exports = {
     const taggerNum = senderJid.split('@')[0].split(':')[0]
     const memberLines = members.map(m => `💠 @${m.split('@')[0].split(':')[0]}`).join('\n')
     const text =
-      `*🔖 Message:* ${message}\n` +
-      `*🎃 Group:* ${meta.subject}\n` +
+      `📢 *${message}*\n\n` +
+      memberLines +
+      `\n\n━━━━━━━━━━━━━━━━━\n` +
       `*👥 Members:* ${members.length}\n` +
-      `*🗣️ Tagger:* @${taggerNum}\n\n` +
-      memberLines
+      `*🗣️ Tagged by:* @${taggerNum}`
     await sock.sendMessage(jid, { text, mentions: [...members, senderJid] })
   },
 

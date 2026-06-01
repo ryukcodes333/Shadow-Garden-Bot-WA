@@ -5,8 +5,8 @@ const path = require('path')
 const BANK_CARD_IMG    = path.join(__dirname, '../assets/bankcard.png')
 const TXN_APPROVED_IMG = path.join(__dirname, '../assets/txnapproved.jpg')
 
-const DAILY_COINS = [200, 350, 500, 750, 1000]
-const DAILY_GEMS  = [5, 10, 15, 20, 30]
+const DAILY_COINS = [20, 23, 26, 30, 35]
+const DAILY_GEMS  = [1, 1, 1, 2, 2]
 const SHOP_ITEMS  = {
   sword:      { name: 'Sword',           price: 500,   type: 'weapon',    emoji: '⚔️' },
   shield:     { name: 'Shield',          price: 400,   type: 'weapon',    emoji: '🛡️' },
@@ -93,22 +93,24 @@ module.exports = {
       const mins = Math.floor((cooldown % 3600000) / 60000)
       return reply(`⏳ Already claimed! Try again in *${hrs}h ${mins}m*`)
     }
-    const tier   = Math.min(Math.floor((u.streak || 0) / 7), DAILY_COINS.length - 1)
-    const coins  = DAILY_COINS[tier] + Math.floor(Math.random() * 100)
-    const gems   = DAILY_GEMS[tier]
+    const tier      = Math.min(Math.floor((u.streak || 0) / 7), DAILY_COINS.length - 1)
+    const coins     = DAILY_COINS[tier]
+    const gems      = DAILY_GEMS[tier]
+    const dailyXp   = 21
     const newStreak = (u.streak || 0) + 1
-    const lucky  = Math.random() < 0.3 ? Math.floor(Math.random() * 200) + 50 : 0
     await db.updateUser(sender, {
-      wallet: (u.wallet || 0) + coins + lucky,
+      wallet: (u.wallet || 0) + coins,
       gems:   (u.gems   || 0) + gems,
+      xp:     (u.xp     || 0) + dailyXp,
       streak: newStreak,
       last_daily: new Date().toISOString(),
     })
     await db.setCooldown(sender, 'daily', CD_DAILY)
     await reply(
       `🌟 *Daily Reward Claimed!*\n\n` +
-      `💰 +$${coins}${lucky > 0 ? ` + $${lucky} 🍀 Lucky Bonus` : ''}\n` +
+      `💰 +$${coins}\n` +
       `💎 +${gems} gems\n` +
+      `⭐ +${dailyXp} XP\n` +
       `🔥 Streak: ${newStreak} days\n\n` +
       `_Come back in 24 hours!_`
     )
@@ -235,7 +237,7 @@ module.exports = {
     if (await checkCooldown(sender, 'work', CD_WORK, reply)) return
     const jobs   = ['hacked a server', 'sold rare items', 'completed a bounty', 'trained disciples', 'patrolled the shadows', 'decoded encrypted files', 'delivered a package']
     const job    = jobs[Math.floor(Math.random() * jobs.length)]
-    const earned = Math.floor(Math.random() * 200) + 100
+    const earned = Math.floor(Math.random() * 4) + 2
     await db.updateUser(sender, { wallet: (u.wallet || 0) + earned })
     await db.setCooldown(sender, 'work', CD_WORK)
     await reply(
@@ -251,10 +253,10 @@ module.exports = {
     if (await checkCooldown(sender, 'dig', CD_DIG, reply)) return
     const found = Math.random()
     let result, earned = 0
-    if      (found < 0.05) { result = 'a rare gem! 💎'; earned = 500; await db.updateUser(sender, { gems: (u.gems || 0) + 2 }) }
-    else if (found < 0.3)  { earned = Math.floor(Math.random() * 150) + 50; result = `$${earned} in coins` }
+    if      (found < 0.05) { result = 'a rare gem! 💎'; earned = 8; await db.updateUser(sender, { gems: (u.gems || 0) + 1 }) }
+    else if (found < 0.3)  { earned = Math.floor(Math.random() * 8) + 3; result = `$${earned} in coins` }
     else if (found < 0.6)  { result = 'nothing useful 😐' }
-    else                   { earned = Math.floor(Math.random() * 30) + 5; result = `a rusty coin worth $${earned}` }
+    else                   { earned = Math.floor(Math.random() * 3) + 1; result = `a rusty coin worth $${earned}` }
     if (earned > 0) await db.updateUser(sender, { wallet: (u.wallet || 0) + earned })
     await db.setCooldown(sender, 'dig', CD_DIG)
     await reply(`⛏️ *Digging Result*\n\nYou found: ${result}`)
@@ -267,7 +269,7 @@ module.exports = {
     const weights = [30, 25, 5, 15, 3, 10, 12]
     let rand = Math.random() * 100, cumulative = 0, caught = catches[6]
     for (let i = 0; i < catches.length; i++) { cumulative += weights[i]; if (rand < cumulative) { caught = catches[i]; break } }
-    const coins = caught.includes('Shadow Pearl') ? 500 : caught.includes('Shark') ? 250 : caught.includes('Nothing') || caught.includes('Boot') ? 0 : Math.floor(Math.random() * 80) + 20
+    const coins = caught.includes('Shadow Pearl') ? 15 : caught.includes('Shark') ? 8 : caught.includes('Nothing') || caught.includes('Boot') ? 0 : Math.floor(Math.random() * 4) + 2
     if (coins > 0) await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
     await db.setCooldown(sender, 'fish', CD_FISH)
     await reply(`🎣 *Caught:* ${caught}${coins > 0 ? `\n💰 +$${coins}` : ''}`)
@@ -276,8 +278,8 @@ module.exports = {
   async beg({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
     if (await checkCooldown(sender, 'beg', CD_BEG, reply)) return
-    const success = Math.random() < 0.6
-    const coins   = success ? Math.floor(Math.random() * 50) + 10 : 0
+    const success = Math.random() < 0.5
+    const coins   = success ? Math.floor(Math.random() * 4) + 1 : 0
     if (success) await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
     await db.setCooldown(sender, 'beg', CD_BEG)
     await reply(success ? `🙏 Someone felt generous - *+$${coins}*` : `🙏 Nobody gave you anything. Get a job! 😭`)
@@ -300,12 +302,13 @@ module.exports = {
     const cards = rich.map((u, i) => {
       const hasRealName = u.name && u.name !== u.phone && !/^\d{10,}$/.test(u.name)
       const display = hasRealName ? u.name : `@${u.phone}`
+      const total   = (u.wallet || 0) + (u.bank || 0)
       return (
         `═══════════════\n` +
-        `║ *🔖 Name:* ${display}\n` +
-        `║ *✨ Level:* ${u.level || 1}\n` +
+        `║ *#${i + 1}  🔖 ${display}*\n` +
+        `║ *💰 Wallet:* $${(u.wallet || 0).toLocaleString()}\n` +
         `║ *🏦 Bank:* $${(u.bank || 0).toLocaleString()}\n` +
-        `║  *#️⃣ Position:* ${i + 1}\n` +
+        `║ *💫 Total:* $${total.toLocaleString()}\n` +
         `═══════════════`
       )
     })
@@ -321,14 +324,13 @@ module.exports = {
       const display = hasRealName ? u.name : `@${u.phone}`
       return (
         `═══════════════\n` +
-        `║ *🔖 Name:* ${display}\n` +
+        `║ *#${i + 1}  🔖 ${display}*\n` +
         `║ *✨ Level:* ${u.level || 1}\n` +
-        `║ *🏦 Bank:* $${(u.bank || 0).toLocaleString()}\n` +
-        `║  *#️⃣ Position:* ${i + 1}\n` +
+        `║ *⭐ XP:* ${(u.xp || 0).toLocaleString()}\n` +
         `═══════════════`
       )
     })
-    await reply(`╔═════════╗\n    🏆 Tᴏᴘ 10 Pʟᴀʏᴇʀs\n╚═════════╝\n\n${cards.join('\n\n')}`)
+    await reply(`╔═════════╗\n    🏆 Tᴏᴘ 10 Lᴇᴠᴇʟs\n╚═════════╝\n\n${cards.join('\n\n')}`)
   },
   async lb(ctx) { return module.exports.leaderboard(ctx) },
 
@@ -524,7 +526,7 @@ module.exports = {
       const mins = Math.floor((remaining % 3600000) / 60000)
       return reply(`⏳ Weekly already claimed! Try again in *${hrs}h ${mins}m*`)
     }
-    const coins = Math.floor(Math.random() * 1000) + 1500
+    const coins = Math.floor(Math.random() * 80) + 100
     await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
     await db.setCooldown(sender, 'weekly', 7 * 24 * 3600)
     await reply(`📅 *Weekly Reward!*\n\n💰 +$${coins.toLocaleString()}\n\n_Come back in 7 days!_`)
@@ -538,7 +540,7 @@ module.exports = {
       const hrs  = Math.floor((remaining % 86400000) / 3600000)
       return reply(`⏳ Monthly already claimed! Try again in *${days}d ${hrs}h*`)
     }
-    const coins = Math.floor(Math.random() * 3000) + 5000
+    const coins = Math.floor(Math.random() * 200) + 400
     await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
     await db.setCooldown(sender, 'monthly', 30 * 24 * 3600)
     await reply(`🗓️ *Monthly Reward!*\n\n💰 +$${coins.toLocaleString()}\n\n_Come back in 30 days!_`)
@@ -553,7 +555,7 @@ module.exports = {
       return reply(`⏳ You're laying low. Try again in *${mins}m ${secs}s*`)
     }
     const success = Math.random() < 0.5
-    const amount  = Math.floor(Math.random() * 400) + 100
+    const amount  = Math.floor(Math.random() * 20) + 8
     await db.setCooldown(sender, 'crime', 15 * 60)
     if (success) {
       await db.updateUser(sender, { wallet: (u.wallet || 0) + amount })
@@ -670,7 +672,7 @@ module.exports = {
       const mins = Math.floor((remaining % 3600000) / 60000)
       return reply(`⏳ Bonus claimed! Next in *${hrs}h ${mins}m*`)
     }
-    const coins = Math.floor(Math.random() * 300) + 100
+    const coins = Math.floor(Math.random() * 5) + 2
     await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
     await db.setCooldown(sender, 'bonus', 4 * 3600)
     await reply(`🎁 *Bonus Collected!*\n\n💰 +$${coins}\n\n_Next bonus in 4 hours._`)
