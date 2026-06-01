@@ -482,11 +482,16 @@ module.exports = {
 
     await db.updateUser(sender, { xp: levelUp ? newXp - xpNeeded : newXp, level: newLvl })
 
+    const currentParty = await db.getUserPokemon(sender).catch(() => [])
+    const partyCount   = (currentParty || []).filter(p => p.in_party).length
+    const partyFull    = partyCount >= 6
+    const inParty      = !partyFull
+
     try {
       await db.addPokemon(sender, {
         pokemon_id: poke.id, name: poke.name, types: poke.types,
         level: 1, xp: 0, moves: poke.moves || [], abilities: poke.abilities || [],
-        ball: ballKey, slot, in_party: true, base_xp: poke.baseXp,
+        ball: ballKey, slot: inParty ? slot : null, in_party: inParty, base_xp: poke.baseXp,
         height: poke.height, weight: poke.weight, location: poke.location,
       })
     } catch {}
@@ -499,7 +504,7 @@ module.exports = {
       `📛 *${poke.name}* (No. ${poke.id})\n` +
       `⚡ *Type:* ${poke.types.join(' / ')}\n` +
       `🎯 *Ball Used:* ${ballData.emoji} ${ballData.name}\n` +
-      `📍 *Party Slot:* #${slot}\n\n` +
+      (inParty ? `📍 *Party Slot:* #${slot}\n` : `📦 *Sent to PC* (party full 6/6)\n`) + '\n' +
       `⭐ *+${xpGained} XP gained!*\n` +
       (levelUp ? `\n🆙 *LEVEL UP!* ${oldLvl} → ${newLvl} 🎊\n` : '') +
       `\n_Konosuba grows stronger._ 🖤`
@@ -571,11 +576,52 @@ module.exports = {
   async pc({ reply, sender }) {
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const stored  = (pokemon || []).filter(p => !p.in_party)
-    if (!stored.length) return reply(`📦 *PC STORAGE EMPTY*\n\nAll Pokémon are in your party.`)
+    if (!stored.length) return reply(`📦 *PC STORAGE EMPTY*\n\nAll Pokémon are in your party.\n\n_Use *#topc <party slot>* to move one here._`)
     const lines = stored.map((p, i) =>
-      `${i + 1}. *${p.name}* — Lvl ${p.level || 1} (${Array.isArray(p.types) ? p.types.join('/') : p.types})`
+      `*PC-${i + 1}* 📦 ${p.name} — Lvl ${p.level || 1} (${Array.isArray(p.types) ? p.types.join('/') : p.types})`
     ).join('\n')
-    await reply(`📦 *PC STORAGE*\n\n${lines}`)
+    await reply(`📦 *PC STORAGE* (${stored.length} Pokémon)\n\n${lines}\n\n_Use *#toparty <pc-slot>* to add one to your party._`)
+  },
+
+  // ── #topc ─────────────────────────────────────────────────────
+  async topc({ reply, sender, args }) {
+    const slot = parseInt(args[0])
+    if (!slot || slot < 1 || slot > 6)
+      return reply(`⚠️ Usage: *#topc <slot>* (1–6)\n\nMoves a Pokémon from your party to PC storage.\nUse *#party* to see your party slots.`)
+    const pokemon = await db.getUserPokemon(sender).catch(() => [])
+    const party   = (pokemon || []).filter(p => p.in_party).slice(0, 6)
+    if (party.length <= 1)
+      return reply(`❌ *Can't move your last Pokémon to PC!*\n\nYour party must have at least 1 Pokémon.`)
+    const p = party[slot - 1]
+    if (!p) return reply(`❌ No Pokémon in party slot #${slot}.\n\nUse *#party* to see your party.`)
+    try { await db.updatePokemon(p.id, { in_party: false }) } catch (e) { return reply(`❌ Failed: ${e.message}`) }
+    await reply(
+      `📦 *MOVED TO PC!*\n\n` +
+      `*${p.name}* (Lvl ${p.level || 1}) has been stored in the PC.\n\n` +
+      `🏷️ Party is now ${party.length - 1}/6\n\n` +
+      `_Use *#toparty <pc-slot>* to bring it back._`
+    )
+  },
+
+  // ── #toparty ──────────────────────────────────────────────────
+  async toparty({ reply, sender, args }) {
+    const pcSlot = parseInt(args[0])
+    if (!pcSlot || pcSlot < 1)
+      return reply(`⚠️ Usage: *#toparty <pc-slot>*\n\nUse *#pc* to see your stored Pokémon and their slot numbers.`)
+    const pokemon = await db.getUserPokemon(sender).catch(() => [])
+    const party   = (pokemon || []).filter(p => p.in_party).slice(0, 6)
+    if (party.length >= 6)
+      return reply(`❌ *Party is full! (6/6)*\n\nUse *#topc <slot>* to move a Pokémon to PC first.`)
+    const stored = (pokemon || []).filter(p => !p.in_party)
+    const p      = stored[pcSlot - 1]
+    if (!p) return reply(`❌ No Pokémon in PC slot #${pcSlot}.\n\nUse *#pc* to see your stored Pokémon.`)
+    try { await db.updatePokemon(p.id, { in_party: true }) } catch (e) { return reply(`❌ Failed: ${e.message}`) }
+    await reply(
+      `⚗️ *ADDED TO PARTY!*\n\n` +
+      `*${p.name}* (Lvl ${p.level || 1}) has joined your party!\n\n` +
+      `🏷️ Party is now ${party.length + 1}/6\n\n` +
+      `_Use *#party* to view your team._`
+    )
   },
 
   // ── #swap ─────────────────────────────────────────────────────

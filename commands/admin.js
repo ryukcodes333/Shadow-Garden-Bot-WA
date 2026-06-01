@@ -4,7 +4,11 @@ const { parseDuration } = require('./chat')
 async function isAdmin(sock, jid, senderJid) {
   const meta = await sock.groupMetadata(jid).catch(() => null)
   if (!meta) return false
-  return meta.participants.filter(p => p.admin).map(p => p.id).includes(senderJid)
+  const normalize = id => id.split('@')[0].split(':')[0]
+  const senderNorm = normalize(senderJid)
+  return meta.participants
+    .filter(p => p.admin)
+    .some(p => normalize(p.id) === senderNorm)
 }
 
 async function isBotAdmin(sock, jid) {
@@ -36,9 +40,11 @@ module.exports = {
     if (!isGroup) return reply('❌ Groups only.')
     const admin = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('*🚫 Access Denied*')
-    const quoted = msg.message?.extendedTextMessage?.contextInfo?.stanzaId
+    const ctx = msg.message?.extendedTextMessage?.contextInfo
+    const quoted = ctx?.stanzaId
     if (!quoted) return reply('❌ Reply to a message to delete it.')
-    await sock.sendMessage(jid, { delete: { remoteJid: jid, id: quoted, fromMe: false } })
+    const participant = ctx?.participant || ctx?.remoteJid || jid
+    await sock.sendMessage(jid, { delete: { remoteJid: jid, id: quoted, fromMe: false, participant } })
   },
 
   async antilink({ sock, msg, jid, args, senderJid, isGroup, isOwner, reply }) {
@@ -351,13 +357,15 @@ module.exports = {
     const meta    = await sock.groupMetadata(jid)
     const members = meta.participants.map(p => p.id)
     const message = args.join(' ') || 'Attention everyone!'
-    const memberLines = members.map(m => `💠 @${m.split('@')[0]}`).join('\n')
+    const taggerNum = senderJid.split('@')[0].split(':')[0]
+    const memberLines = members.map(m => `💠 @${m.split('@')[0].split(':')[0]}`).join('\n')
     const text =
       `*🔖 Message:* ${message}\n` +
       `*🎃 Group:* ${meta.subject}\n` +
-      `*👥 Members:* ${members.length}\n\n` +
+      `*👥 Members:* ${members.length}\n` +
+      `*🗣️ Tagger:* @${taggerNum}\n\n` +
       memberLines
-    await sock.sendMessage(jid, { text, mentions: members })
+    await sock.sendMessage(jid, { text, mentions: [...members, senderJid] })
   },
 
   async lockgroup({ sock, jid, senderJid, isGroup, isOwner, reply }) {
@@ -378,10 +386,8 @@ module.exports = {
     await reply('🔓 *Group Unlocked* - everyone can send messages.')
   },
 
-  async invitelink({ sock, jid, senderJid, isGroup, isOwner, reply }) {
+  async invitelink({ sock, jid, isGroup, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const admin = await isAdmin(sock, jid, senderJid)
-    if (!admin && !isOwner) return reply('*🚫 Access Denied*')
     try {
       const code = await sock.groupInviteCode(jid)
       await reply(`🔗 *Group Invite Link*\n\nhttps://chat.whatsapp.com/${code}`)

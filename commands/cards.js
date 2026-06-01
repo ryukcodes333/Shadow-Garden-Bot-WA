@@ -64,8 +64,12 @@ function cardBlock(name, tier, series, ownerCount, cardId, ownersList) {
     holdersSection = '\n> No owners found for this card yet.'
   } else {
     const roman = ['Ⅰ','Ⅱ','Ⅲ','Ⅳ','Ⅴ','Ⅵ','Ⅶ','Ⅷ','Ⅸ','Ⅹ']
+    const toNum = o => {
+      const raw = (typeof o === 'object' ? (o?.phone || '') : String(o || ''))
+      return raw.split('@')[0].split(':')[0].replace(/\D/g, '') || '?'
+    }
     const lines  = ownersList.slice(0, 10).map((o, i) =>
-      `⟡ 𝗖𝗼𝗽𝘆 ${roman[i] || i + 1} | \`${cardId}\`\n   👤 @${o.phone || o}`
+      `⟡ 𝗖𝗼𝗽𝘆 ${roman[i] || i + 1} | \`${cardId}\`\n   👤 @${toNum(o)}`
     ).join('\n')
     holdersSection = '\n' + lines
   }
@@ -121,18 +125,26 @@ async function fetchBuf(url, _redirects = 0) {
   })
 }
 
+function isGifBuffer(buf) {
+  return buf && buf.length >= 6 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46
+}
+
 async function gifBufToMp4(gifBuf) {
   return new Promise((resolve) => {
-    const tmpGif = path.join(os.tmpdir(), `cg_${Date.now()}.gif`)
-    const tmpMp4 = path.join(os.tmpdir(), `cg_${Date.now()}.mp4`)
+    const ts     = Date.now()
+    const tmpGif = path.join(os.tmpdir(), `cg_${ts}.gif`)
+    const tmpMp4 = path.join(os.tmpdir(), `cg_${ts}.mp4`)
     fs.writeFileSync(tmpGif, gifBuf)
     execFile('ffmpeg', [
       '-y', '-i', tmpGif,
       '-movflags', 'faststart',
       '-pix_fmt', 'yuv420p',
-      '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+      '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=15',
+      '-b:v', '1M',
+      '-maxrate', '1M',
+      '-bufsize', '2M',
       '-an', tmpMp4,
-    ], { timeout: 20000 }, (err) => {
+    ], { timeout: 25000 }, (err) => {
       try { fs.unlinkSync(tmpGif) } catch {}
       if (err) { try { fs.unlinkSync(tmpMp4) } catch {}; return resolve(null) }
       try {
@@ -148,20 +160,20 @@ async function gifBufToMp4(gifBuf) {
 async function sendCardMedia(sock, jid, msg, url, caption) {
   if (!url) return false
   try {
-    if (url.toLowerCase().endsWith('.gif')) {
-      const gifBuf = await fetchBuf(url)
-      if (gifBuf) {
-        const mp4Buf = await gifBufToMp4(gifBuf)
-        if (mp4Buf) {
-          await sock.sendMessage(jid, { video: mp4Buf, gifPlayback: true, caption }, { quoted: msg })
-          return true
-        }
-        await sock.sendMessage(jid, { video: { url }, gifPlayback: true, caption }, { quoted: msg })
-        return true
-      }
-    }
     // Fetch buffer first so CDNs like mazoku.cc that block direct URL access still work
     const buf = await fetchBuf(url)
+    // Detect GIF by URL extension OR by magic bytes (GIF87a / GIF89a = 0x47 0x49 0x46)
+    const isGif = url.toLowerCase().endsWith('.gif') || isGifBuffer(buf)
+    if (isGif && buf) {
+      const mp4Buf = await gifBufToMp4(buf)
+      if (mp4Buf) {
+        await sock.sendMessage(jid, { video: mp4Buf, gifPlayback: true, caption }, { quoted: msg })
+        return true
+      }
+      // ffmpeg not available — send as gifPlayback via URL
+      await sock.sendMessage(jid, { video: { url }, gifPlayback: true, caption }, { quoted: msg })
+      return true
+    }
     if (buf) {
       await sock.sendMessage(jid, { image: buf, caption }, { quoted: msg })
     } else {
@@ -321,10 +333,10 @@ async function _buildDeckImage(cards) {
   let sharp
   try { sharp = require('sharp') } catch { return null }
 
-  // Upscaled to MAX — large card tiles
+  // Upscaled to MAX — large card tiles, 4 rows × 3 cols = 12 cards
   const COLS = 3, CW = 280, CH = 390, PAD = 12, HEADER_H = 0
-  const slice = cards.slice(0, 9)
-  const ROWS  = Math.ceil(slice.length / COLS)
+  const slice = cards.slice(0, 12)
+  const ROWS  = Math.max(4, Math.ceil(slice.length / COLS))
   const W     = COLS * (CW + PAD) + PAD
   const H     = ROWS * (CH + PAD) + PAD + HEADER_H
 
@@ -361,9 +373,10 @@ async function _buildDeckImage(cards) {
       composites.push({ input: tile, left: PAD + col * (CW + PAD), top: HEADER_H + PAD + row * (CH + PAD) })
     } catch {}
   }
-  if (!composites.length) return null
   try {
-    return await sharp(base).composite(composites).jpeg({ quality: 95 }).toBuffer()
+    if (composites.length)
+      return await sharp(base).composite(composites).jpeg({ quality: 95 }).toBuffer()
+    return base
   } catch { return null }
 }
 
@@ -578,7 +591,7 @@ module.exports = {
   async deck({ sock, jid, msg, reply, sender }) {
     const cards = await db.getUserCards(sender)
     if (!cards.length) return reply('📭 Your deck is empty.')
-    const deckSlice  = cards.slice(0, 9)
+    const deckSlice  = cards.slice(0, 12)
     const deckExtIds = deckSlice.map(uc => { const c = uc.card_id || uc; return c?.external_id || c?.id || '?' })
     let ownerCounts = {}
     try { ownerCounts = await db.getOwnerCountsBatch(deckExtIds) } catch {}
@@ -590,7 +603,7 @@ module.exports = {
     const caption =
       `*🎴 Your Deck 🎴*${ZWLTR}` +
       cardLines +
-      (cards.length > 9 ? `\n\n_...and ${cards.length - 9} more. Use *.coll* for full list._` : '')
+      (cards.length > 12 ? `\n\n_...and ${cards.length - 12} more. Use *.coll* for full list._` : '')
     let deckImage = null
     try { deckImage = await _buildDeckImage(deckSlice) } catch {}
     try {
