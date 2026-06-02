@@ -424,7 +424,20 @@ module.exports = {
   async afk({ reply, args, sender }) {
     const reason = args.join(' ') || 'No reason'
     await db.setAFK(sender, reason)
-    await reply(`💤 AFK set\n📌 ${reason}\n\nAnyone who tags you will be notified.`)
+    await reply(`You are now AFK`)
+  },
+
+  async unafk({ reply, sender, args, isOwner, isMod, isGuardian, msg }) {
+    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    if (!isOwner && !isMod && !isGuardian) {
+      return reply('⚠️ Staff only.')
+    }
+    const targetPhone = mentioned.length
+      ? mentioned[0].split('@')[0].split(':')[0]
+      : (args[0] ? args[0].replace(/[^0-9]/g, '') : null)
+    if (!targetPhone) return reply('❌ Usage: *.unafk @user*')
+    await db.removeAFK(targetPhone)
+    await reply(`✅ AFK removed for *${targetPhone}*.`)
   },
 
   async website({ reply }) {
@@ -525,24 +538,24 @@ module.exports = {
 
   async tagall({ sock, msg, jid, senderJid, sender, isGroup, isOwner, args, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const meta = await sock.groupMetadata(jid)
+    const meta   = await sock.groupMetadata(jid)
     const admins = meta.participants.filter(p => p.admin).map(p => p.id)
     if (!admins.includes(senderJid) && !isOwner) return reply('⚠️ Admin only.')
 
     const message    = args.join(' ') || 'Attention everyone!'
     const actualJids = meta.participants.map(p => p.id)
-    const activePhones = await db.getActiveUsers(jid, 24 * 7).catch(() => [])
-    const activeSet  = new Set(activePhones)
+    const taggerNum  = senderJid.split('@')[0].split(':')[0]
+    const groupName  = meta.subject || 'Group'
+    const memberLines = actualJids.map(j => `💠 @${j.split('@')[0].split(':')[0]}`).join('\n')
 
-    const memberLines = meta.participants.map(p => {
-      const num = p.id.split('@')[0].split(':')[0]
-      return `${activeSet.has(num) ? '🟢' : '🔴'} @${num}`
-    }).join('\n')
+    const text =
+      `*🔖 Message:* ${message}\n` +
+      `*🎃 Group:* ${groupName}\n` +
+      `*👥 Members:* ${actualJids.length}\n` +
+      `*🗣️ Tagger:* @${taggerNum}\n\n` +
+      memberLines
 
-    await sock.sendMessage(jid, {
-      text: `📣 *${message}*\n\n👥 ${meta.participants.length} members\n\n${memberLines}`,
-      mentions: actualJids
-    })
+    await sock.sendMessage(jid, { text, mentions: [...actualJids, senderJid] })
   },
 
   async modlist({ sock, jid, msg, reply, isGroup }) {

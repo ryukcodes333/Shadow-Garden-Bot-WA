@@ -31,7 +31,10 @@ const SHOP_ITEMS  = {
   ring:       { name: 'Power Ring',      price: 950,   type: 'accessory', emoji: '💍' },
   amulet:     { name: 'Mana Amulet',     price: 850,   type: 'accessory', emoji: '📿' },
   cloak:      { name: 'Shadow Cloak',    price: 1200,  type: 'accessory', emoji: '🧣' },
-  bank_note:  { name: 'Bank Note',       price: 10000, type: 'banking',   emoji: '💵' },
+  bank_note:      { name: 'Bank Note',         price: 10000,  type: 'banking', emoji: '💵' },
+  bank_note_100k: { name: 'Bank Note (100K)',  price: 50000,  type: 'banking', emoji: '💴' },
+  bank_note_500k: { name: 'Bank Note (500K)',  price: 100000, type: 'banking', emoji: '💶' },
+  bank_note_1m:   { name: 'Bank Note (1M)',    price: 500000, type: 'banking', emoji: '💷' },
 }
 
 const CD_DAILY = 24 * 3600
@@ -58,20 +61,14 @@ async function checkCooldown(sender, cmd, seconds, reply) {
 module.exports = {
   async bal({ sock, msg, jid, reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
-    const total     = (u.wallet || 0) + (u.bank || 0)
-    const bankLimit = u.bank_limit || 50000
-    const caption =
-      `*💰 ACCOUNT BALANCE 💰*\n\n` +
-      `*🏦 Bank:* \`\`\`${(u.bank || 0).toLocaleString()} / ${bankLimit.toLocaleString()}\`\`\`\n` +
-      `*👛 Wallet:* \`\`\`${(u.wallet || 0).toLocaleString()}\`\`\`\n\n` +
-      `*💫 Total:* \`\`\`${total.toLocaleString()}\`\`\`\n` +
-      `_Buy a 💵 Bank Note to increase your bank limit_`
-    if (fs.existsSync(BANK_CARD_IMG)) {
-      const buf = fs.readFileSync(BANK_CARD_IMG)
-      await sock.sendMessage(jid, { image: buf, caption, mentions: [`${sender}@s.whatsapp.net`] }, { quoted: msg })
-    } else {
-      await sock.sendMessage(jid, { text: caption, mentions: [`${sender}@s.whatsapp.net`] }, { quoted: msg })
-    }
+    const total = (u.wallet || 0) + (u.bank || 0)
+    const text =
+      `💰 𝗔𝗖𝗖𝗢𝗨𝗡𝗧 𝗕𝗔𝗟𝗔𝗡𝗖𝗘 💰\n\n` +
+      `🏦 𝗕𝗮𝗻𝗸: \`\`\`${(u.bank || 0).toLocaleString()}\`\`\`\n` +
+      `👛 𝗪𝗮𝗹𝗹𝗲𝘁: \`\`\`${(u.wallet || 0).toLocaleString()}\`\`\`\n\n` +
+      `💫 𝗧𝗼𝘁𝗮𝗹: \`\`\`${total.toLocaleString()}\`\`\`\n\n` +
+      `> Buy a *💵 Bank Note* to increase your bank capacity.`
+    await sock.sendMessage(jid, { text, mentions: [`${sender}@s.whatsapp.net`] }, { quoted: msg })
   },
   async balance(ctx) { return module.exports.bal(ctx) },
   async wallet(ctx)  { return module.exports.bal(ctx) },
@@ -138,7 +135,11 @@ module.exports = {
         `❌ *Bank limit reached!*\n\n` +
         `🏦 Bank: $${(u.bank||0).toLocaleString()} / $${bankLimit.toLocaleString()}\n` +
         `📥 Space remaining: $${space.toLocaleString()}\n\n` +
-        `💵 Buy a *Bank Note* from *.shop* ($10,000) to increase your limit by $50,000!`
+        `💵 Buy a *Bank Note* from *.shop* to increase your limit!\n` +
+        `  💵 Bank Note — +$50K ($10K)\n` +
+        `  💴 Bank Note (100K) — +$100K ($50K)\n` +
+        `  💶 Bank Note (500K) — +$500K ($100K)\n` +
+        `  💷 Bank Note (1M) — +$1M ($500K)`
       )
     }
     await db.updateUser(sender, { wallet: (u.wallet || 0) - amount, bank: (u.bank || 0) + amount })
@@ -407,11 +408,18 @@ module.exports = {
     const items    = await db.getInventory(sender)
     const found    = items.find(i => i.item.toLowerCase() === itemName.toLowerCase())
     if (!found) return reply('❌ Item not in inventory.')
-    // Bank Note: increases bank_limit by $50,000
-    if (found.item.toLowerCase() === 'bank note') {
-      const u = await db.getOrCreateUser(sender)
+    // Bank Note variants: increase bank_limit
+    const bankNoteMap = {
+      'bank note':        50000,
+      'bank note (100k)': 100000,
+      'bank note (500k)': 500000,
+      'bank note (1m)':   1000000,
+    }
+    const itemLower = found.item.toLowerCase()
+    if (bankNoteMap[itemLower] !== undefined) {
+      const u        = await db.getOrCreateUser(sender)
+      const increase = bankNoteMap[itemLower]
       const current  = u.bank_limit || 50000
-      const increase = 50000
       await db.updateUser(sender, { bank_limit: current + increase })
       await db.removeItem(sender, found.item)
       return reply(

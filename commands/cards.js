@@ -64,9 +64,10 @@ function cardBlock(name, tier, series, ownerCount, cardId, ownersList) {
     holdersSection = '\n> No owners found for this card yet.'
   } else {
     const roman = ['Ⅰ','Ⅱ','Ⅲ','Ⅳ','Ⅴ','Ⅵ','Ⅶ','Ⅷ','Ⅸ','Ⅹ']
+    // Show stored phone/JID cleanly — strip @domain and :resource
     const toNum = o => {
       const raw = (typeof o === 'object' ? (o?.phone || '') : String(o || ''))
-      return raw.split('@')[0].split(':')[0].replace(/\D/g, '') || '?'
+      return raw.split('@')[0].split(':')[0] || '?'
     }
     const lines  = ownersList.slice(0, 10).map((o, i) =>
       `⟡ 𝗖𝗼𝗽𝘆 ${roman[i] || i + 1} | \`${cardId}\`\n   👤 @${toNum(o)}`
@@ -131,20 +132,26 @@ function isGifBuffer(buf) {
 
 async function gifBufToMp4(gifBuf) {
   return new Promise((resolve) => {
-    const ts     = Date.now()
-    const tmpGif = path.join(os.tmpdir(), `cg_${ts}.gif`)
-    const tmpMp4 = path.join(os.tmpdir(), `cg_${ts}.mp4`)
+    const ts      = Date.now()
+    const tmpGif  = path.join(os.tmpdir(), `cg_${ts}.gif`)
+    const tmpMp4  = path.join(os.tmpdir(), `cg_${ts}.mp4`)
+    const isLarge = gifBuf.length > 15 * 1024 * 1024   // >15 MB
     fs.writeFileSync(tmpGif, gifBuf)
+    // For large GIFs, cap resolution at 480px and use lower bitrate to stay ≤19 MB
+    const scaleFilter = isLarge
+      ? `scale='if(gt(iw,480),480,-2)':'if(gt(ih,480),480,-2)',fps=12`
+      : `scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=15`
+    const bitrate = isLarge ? '600k' : '1M'
     execFile('ffmpeg', [
       '-y', '-i', tmpGif,
       '-movflags', 'faststart',
       '-pix_fmt', 'yuv420p',
-      '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=15',
-      '-b:v', '1M',
-      '-maxrate', '1M',
-      '-bufsize', '2M',
+      '-vf', scaleFilter,
+      '-b:v', bitrate,
+      '-maxrate', bitrate,
+      '-bufsize', isLarge ? '1.2M' : '2M',
       '-an', tmpMp4,
-    ], { timeout: 25000 }, (err) => {
+    ], { timeout: 35000 }, (err) => {
       try { fs.unlinkSync(tmpGif) } catch {}
       if (err) { try { fs.unlinkSync(tmpMp4) } catch {}; return resolve(null) }
       try {
@@ -643,10 +650,13 @@ module.exports = {
   },
 
   // ─── .deck ────────────────────────────────────────────────────────────────
-  async deck({ sock, jid, msg, reply, sender }) {
+  async deck({ sock, jid, msg, reply, react, sender }) {
+    await react('🎴')
     const cards = await db.getUserCards(sender)
     if (!cards.length) return reply('📭 Your deck is empty.')
-    const deckSlice  = cards.slice(0, 12)
+    // Prefer cards explicitly added to deck; fall back to first 12
+    const deckCards = cards.filter(uc => uc.in_deck)
+    const deckSlice = deckCards.length ? deckCards.slice(0, 12) : cards.slice(0, 12)
     const deckExtIds = deckSlice.map(uc => { const c = uc.card_id || uc; return c?.external_id || c?.id || '?' })
     let ownerCounts = {}
     try { ownerCounts = await db.getOwnerCountsBatch(deckExtIds) } catch {}
@@ -736,6 +746,110 @@ module.exports = {
       `💰 *+$${price.toLocaleString()}* added to your wallet.\n` +
       `_(Sold at 1.5× base price of $${base.toLocaleString()})_`
     )
+  },
+
+  // ─── .ctd <number> — collection card → deck ──────────────────────────────
+  async ctd({ reply, react, sender, args }) {
+    await react('⏳')
+    const index = parseInt(args[0])
+    if (!index || index < 1) return reply('⚠️ Usage: *.ctd <card_number>*\nMoves card from collection into your deck.')
+    const cards = await db.getUserCards(sender)
+    if (!cards.length) return reply('📭 Your collection is empty.')
+    if (index > cards.length) return reply(`❌ You only have *${cards.length}* card(s).`)
+    const uc     = cards[index - 1]
+    const c      = uc.card_id || uc
+    const deckCount = cards.filter(x => x.in_deck).length
+    if (deckCount >= 12) return reply('❌ Deck is full (max 12 cards). Use *.dtc* to remove one first.')
+    if (uc.in_deck) return reply(`❌ *${c?.name || 'Unknown'}* is already in your deck.`)
+    await db.updateUserCardById(uc._id || uc.id, { in_deck: true })
+    await reply(
+      `✅ *ADDED TO DECK*\n\n` +
+      `${TIERS[c?.tier] || '🎴'} *${c?.name || 'Unknown'}* (${c?.tier || '?'})\n\n` +
+      `📦 Collection → 🎴 Deck\n` +
+      `_Deck now has ${deckCount + 1}/12 cards._`
+    )
+  },
+
+  // ─── .dtc <number> | .dtc --all — deck card → collection ─────────────────
+  async dtc({ reply, react, sender, args }) {
+    await react('⏳')
+    const all   = args[0]?.toLowerCase() === '--all'
+    const cards = await db.getUserCards(sender)
+    if (!cards.length) return reply('📭 Your collection is empty.')
+    const deckCards = cards.filter(uc => uc.in_deck)
+    if (!deckCards.length) return reply('📭 Your deck is empty. Use *.ctd* to add cards.')
+
+    if (all) {
+      await Promise.all(deckCards.map(uc => db.updateUserCardById(uc._id || uc.id, { in_deck: false }).catch(() => {})))
+      return reply(`✅ *DECK CLEARED*\n\n🎴 ${deckCards.length} card(s) moved back to collection.`)
+    }
+
+    const index = parseInt(args[0])
+    if (!index || index < 1) return reply('⚠️ Usage: *.dtc <deck_card_number>* or *.dtc --all*')
+    if (index > deckCards.length) return reply(`❌ Deck only has *${deckCards.length}* card(s).`)
+    const uc = deckCards[index - 1]
+    const c  = uc.card_id || uc
+    await db.updateUserCardById(uc._id || uc.id, { in_deck: false })
+    await reply(
+      `✅ *MOVED TO COLLECTION*\n\n` +
+      `${TIERS[c?.tier] || '🎴'} *${c?.name || 'Unknown'}* (${c?.tier || '?'})\n\n` +
+      `🎴 Deck → 📦 Collection`
+    )
+  },
+
+  // ─── .spawncard {name} {tier} — owner-only: spawn specific card ──────────
+  async spawncard({ sock, jid, msg, reply, react, sender, isOwner, args }) {
+    if (!isOwner) return reply('⚠️ Owner only.')
+    await react('⏳')
+    if (args.length < 2) return reply('⚠️ Usage: *.spawncard <name> <tier>*\nExample: *.spawncard Rimuru T5*')
+    const tierArg = args[args.length - 1].toUpperCase()
+    if (!ALL_VALID_TIERS.includes(tierArg)) return reply(`⚠️ Invalid tier. Valid: ${ALL_VALID_TIERS.join(', ')}`)
+    const nameQuery = args.slice(0, -1).join(' ')
+
+    // Search across all card sources
+    const matches = [
+      ...findOld(nameQuery, tierArg),
+      ...findNew(nameQuery, tierArg),
+      ...findMazoku(nameQuery, tierArg),
+    ]
+    if (!matches.length) {
+      // Try DB cards
+      try {
+        const dbCards = await db.getCards()
+        const found   = dbCards.find(c => {
+          return norm(c.name) === norm(nameQuery) && c.tier.toUpperCase() === tierArg
+        })
+        if (found) {
+          const uc = await db.assignCard(sender, found._id)
+          return reply(
+            `✅ *CARD SPAWNED*\n\n` +
+            `${TIERS[found.tier] || '🎴'} *${found.name}* (${found.tier})\n` +
+            `📚 Series: ${found.series || '—'}\n\n` +
+            `_Added directly to your collection._`
+          )
+        }
+      } catch {}
+      return reply(`❌ No card found matching *${nameQuery}* [${tierArg}]`)
+    }
+
+    const card = matches[0]
+    try {
+      const dbCard = await db.getOrCreateShoobCard(card.name, card.tier, card.series || '', card.url || null, sender)
+      await db.assignCard(sender, dbCard._id)
+      const caption =
+        `✅ *CARD SPAWNED*\n\n` +
+        `${TIERS[card.tier] || '🎴'} *${card.name}* (${card.tier})\n` +
+        `📚 Series: ${card.series || '—'}\n\n` +
+        `_Added directly to your collection._ 🖤`
+      if (card.url && sock) {
+        const sent = await sendCardMedia(sock, jid, msg, card.url, caption).catch(() => false)
+        if (!sent) await reply(caption)
+      } else {
+        await reply(caption)
+      }
+    } catch (err) {
+      await reply(`❌ Error spawning card: ${err.message}`)
+    }
   },
 
   async stardust({ reply }) { await reply(`✨ *STARDUST*\n\n_Coming soon…_ 🖤`) },

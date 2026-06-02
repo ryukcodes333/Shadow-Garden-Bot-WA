@@ -352,19 +352,20 @@ module.exports = {
 
   async tagall({ sock, jid, senderJid, isGroup, isOwner, args, reply }) {
     if (!isGroup) return reply('❌ Groups only.')
-    const admin   = await isAdmin(sock, jid, senderJid)
+    const admin = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('*🚫 Access Denied*')
-    const meta    = await sock.groupMetadata(jid)
-    const members = meta.participants.map(p => p.id)
-    const message = args.join(' ') || 'Attention everyone!'
+    const meta      = await sock.groupMetadata(jid)
+    const members   = meta.participants.map(p => p.id)
+    const message   = args.join(' ') || 'Attention everyone!'
     const taggerNum = senderJid.split('@')[0].split(':')[0]
+    const groupName = meta.subject || 'Group'
     const memberLines = members.map(m => `💠 @${m.split('@')[0].split(':')[0]}`).join('\n')
     const text =
-      `📢 *${message}*\n\n` +
-      memberLines +
-      `\n\n━━━━━━━━━━━━━━━━━\n` +
+      `*🔖 Message:* ${message}\n` +
+      `*🎃 Group:* ${groupName}\n` +
       `*👥 Members:* ${members.length}\n` +
-      `*🗣️ Tagged by:* @${taggerNum}`
+      `*🗣️ Tagger:* @${taggerNum}\n\n` +
+      memberLines
     await sock.sendMessage(jid, { text, mentions: [...members, senderJid] })
   },
 

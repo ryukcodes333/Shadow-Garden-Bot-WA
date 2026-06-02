@@ -142,9 +142,10 @@ async function handleMessage(sock, msg) {
       const mins        = Math.floor(duration / 60000)
       const hrs         = Math.floor(mins / 60)
       const durationStr = hrs > 0 ? `${hrs}h ${mins % 60}m` : `${mins}m`
+      const displayName = msg.pushName || sender
       await db.removeAFK(sender)
       await sock.sendMessage(jid, {
-        text: `🌑 *Welcome back!*\n\n👤 @${sender}\n⏳ AFK for: ${durationStr}\n💤 ${afkRecord.reason}`,
+        text: `Welcome back ${displayName}-senpai! You were AFK for ${durationStr}\n> ${afkRecord.reason}`,
         mentions: [senderJid],
       })
     }
@@ -158,9 +159,8 @@ async function handleMessage(sock, msg) {
       const afkRecord = await db.getAFK(mentionedPhone).catch(() => null)
       if (afkRecord) {
         await db.incrementAFKMentions(mentionedPhone)
-        const since = new Date(afkRecord.since).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
         await sock.sendMessage(jid, {
-          text: `💤 @${mentionedPhone} is AFK\n📌 ${afkRecord.reason}\n⏰ Since: ${since}`,
+          text: `🔔 Please don't tag ${mentionedPhone}-senpai! They are currently AFK.\n> Reason: ${afkRecord.reason}`,
           mentions: [mentionedJid],
         })
       }
@@ -369,6 +369,7 @@ async function handleMessage(sock, msg) {
       if (cmd === 'pokemon')                     return await pk.pokemon(ctx)
       if (cmd === 'setms')                       return await pk.setms(ctx)
       if (cmd === 'delms')                       return await pk.delms(ctx)
+      if (cmd === 'move' || cmd === 'mb')        return await pk.move(ctx)
       return
     }
 

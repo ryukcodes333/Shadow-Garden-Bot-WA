@@ -426,6 +426,20 @@ module.exports = {
       return reply(`⚠️ A wild Pokémon is already here!\n\nUse *#catch <slot> | <ball>* to catch it first!`)
     }
     await db.setCooldown(sender, 'hunt', CD_HUNT)
+    // 40/100 chance of finding a Pokémon
+    if (Math.random() >= 0.40) {
+      const NO_FIND_REASONS = [
+        'The tall grass rustled, but nothing was there.',
+        'You heard footsteps... turned out to be the wind.',
+        'A shadow moved in the bushes — just a leaf.',
+        'The Pokémon escaped into the deep forest.',
+        'Heavy rain washed away all tracks.',
+        'Too noisy — the Pokémon scattered.',
+        'You searched every corner... but found nothing.',
+        'The area seems abandoned today.',
+      ]
+      return reply(`🍃 You searched the entire area and couldn't find a pokemon to catch.\n> ${NO_FIND_REASONS[Math.floor(Math.random() * NO_FIND_REASONS.length)]}`)
+    }
     await module.exports.spawnPokemon(sock, jid, msg)
   },
 
@@ -517,7 +531,7 @@ module.exports = {
 
     battleLog.push(`✅ *${poke.name}* was caught!`)
 
-    const xpGained = 1
+    const xpGained = Math.max(5, Math.floor((poke.baseXp || 50) / 10))
     const newXp    = (u.xp || 0) + xpGained
     const oldLvl   = u.level || 1
     const xpNeeded = oldLvl * 5000   // very hard — 5000 XP per user level
@@ -549,7 +563,7 @@ module.exports = {
       `⚡ *Type:* ${poke.types.join(' / ')}\n` +
       `🎯 *Ball Used:* ${ballData.emoji} ${ballData.name}\n` +
       (inParty ? `📍 *Party Slot:* #${slot}\n` : `📦 *Sent to PC* (party full 6/6)\n`) + '\n' +
-      `⭐ *+${xpGained} XP gained!*\n` +
+      `⭐ *+${xpGained} XP gained!* _(Pokémon XP)_\n` +
       (levelUp ? `\n🆙 *LEVEL UP!* ${oldLvl} → ${newLvl} 🎊\n` : '') +
       `\n_Konosuba grows stronger._ 🖤`
 
@@ -818,6 +832,8 @@ module.exports = {
         opponentHp:      oMaxHp,
         opponentMaxHp:   oMaxHp,
         turn:            challengerPhone,
+        challengerSwitchUsed: false,
+        opponentSwitchUsed:   false,
       }
       pvpBattles[challengerPhone] = battle
       pvpBattles[sender]          = battle
@@ -902,12 +918,14 @@ module.exports = {
       return reply(`🔄 *SWITCH POKÉMON*\n\n${list}\n\n_Type *#battle switch <number>* to switch._`)
     }
 
-    // ── #battle switch <n> ────────────────────────────────────
+    // ── #battle switch <n> — allowed only ONCE per match ────────
     if (subCmd === 'switch') {
       const battle = pvpBattles[sender]
       if (!battle) return reply(`❌ You're not in a PvP battle.`)
       if (battle.turn !== sender) return reply(`⏳ It's not your turn!`)
       const isChallenger = sender === battle.challengerPhone
+      const switchUsedKey = isChallenger ? 'challengerSwitchUsed' : 'opponentSwitchUsed'
+      if (battle[switchUsedKey]) return reply(`❌ You've already used your switch for this match!`)
       const myParty = isChallenger ? battle.challengerParty : battle.opponentParty
       const myPoke  = isChallenger ? battle.challengerPoke  : battle.opponentPoke
       const others  = myParty.filter(p => p.name !== myPoke.name)
@@ -915,6 +933,7 @@ module.exports = {
       const newPoke = others[idx]
       if (!newPoke) return reply(`❌ Invalid selection.`)
       const newMaxHp = 200 + (newPoke.level || 1) * 15
+      battle[switchUsedKey] = true
       if (isChallenger) {
         battle.challengerPoke  = newPoke
         battle.challengerHp    = newMaxHp
@@ -925,7 +944,7 @@ module.exports = {
         battle.opponentMaxHp = newMaxHp
       }
       battle.turn = isChallenger ? battle.opponentPhone : battle.challengerPhone
-      return reply(`🔄 *Switched to ${newPoke.name}!*\n\nYour opponent's turn now.`)
+      return reply(`🔄 *Switched to ${newPoke.name}!*\n\n_(Switch used — you cannot switch again this match)_\nYour opponent's turn now.`)
     }
 
     // ── #battle forfeit ───────────────────────────────────────
@@ -1416,13 +1435,13 @@ module.exports = {
         const u = user || await db.getOrCreateUser(sender).catch(() => ({}))
         const w = await db.getOrCreateUser(theirPhone).catch(() => ({}))
         await Promise.all([
-          db.updateUser(sender,     { pokemon_wins:   (u.pokemon_wins   || 0) + 1, xp: (u.xp || 0) + 3 }).catch(() => {}),
+          db.updateUser(sender,     { pokemon_wins:   (u.pokemon_wins   || 0) + 1, xp: (u.xp || 0) + 27 }).catch(() => {}),
           db.updateUser(theirPhone, { pokemon_losses: (w.pokemon_losses || 0) + 1 }).catch(() => {}),
         ])
 
         const endText =
           `💥 *${theirPoke.name} fainted!*\n\n` +
-          `🏆 *@${sender}* wins the battle!\n⭐ +3 XP earned!`
+          `🏆 *@${sender}* wins the battle!\n⭐ +27 XP earned!`
 
         let imgBuf = null
         try {
@@ -1667,6 +1686,7 @@ module.exports = {
 
   // Legacy alias
   async wb(ctx) { return module.exports.hunt(ctx) },
+  async mb(ctx) { return module.exports.move(ctx) },
 }
 
 // ── Level-up image via Pollinations (URL-based, no download) ─────
