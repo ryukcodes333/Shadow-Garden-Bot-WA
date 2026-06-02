@@ -8,8 +8,10 @@ const { buildBattleImage } = require('../battleHelper')
 const PHELP_IMAGE = path.join(__dirname, '../assets/phelp.jpg')
 
 // ── Pending wild pokemon & battles ───────────────────────────────
-const pendingPokemon = {}
-const activeBattles  = {}
+const pendingPokemon    = {}
+const activeBattles     = {}
+const pendingChallenges = {}  // key: `${jid}:${challengerPhone}`
+const pvpBattles        = {}  // key: phone number (both players point to same obj)
 
 // ── Mention sticker store (file-based) ───────────────────────────
 const MS_FILE = path.join(__dirname, '../mention_stickers.json')
@@ -175,6 +177,47 @@ async function fetchPokeData(nameOrId) {
 
 // ── Captions ──────────────────────────────────────────────────────
 const WEATHER_BOOSTS = ['Sunny ☀️', 'Rainy 🌧️', 'Windy 🌬️', 'Cloudy ⛅', 'Snowy ❄️', 'Foggy 🌫️', 'Stormy ⚡']
+
+const WEATHER_BATTLE_EFFECTS = {
+  'Sunny ☀️':  ['Strong sunlight scorches the field!',      'Fire-type moves are boosted this battle!'],
+  'Rainy 🌧️':  ['Heavy rain drenches the battlefield!',      'Water-type moves are boosted this battle!'],
+  'Windy 🌬️':  ['Strong winds sweep the arena!',             'Flying-type moves are boosted this battle!'],
+  'Cloudy ⛅':  ['Thick clouds block the sunlight.',          'No special weather effects active.'],
+  'Snowy ❄️':  ['Blizzard conditions rage across the field!','Ice-type moves are boosted this battle!'],
+  'Foggy 🌫️':  ['Dense fog reduces visibility!',             'Accuracy of all moves is slightly reduced.'],
+  'Stormy ⚡':  ['Thunder crashes across the battlefield!',   'Electric-type moves are boosted this battle!'],
+}
+
+const BATTLE_FORMATS = ['Singles (1v1)', 'Doubles (2v2)', 'Ranked Singles', 'Casual Battle']
+
+const PVP_EXPIRE_MS = 2 * 60 * 1000  // 2 minutes
+
+function buildBattleStatus(battle, currentPhone) {
+  const TB = '\`\`\`'
+  const isChallenger = currentPhone === battle.challengerPhone
+  const myPoke    = isChallenger ? battle.challengerPoke  : battle.opponentPoke
+  const theirPoke = isChallenger ? battle.opponentPoke    : battle.challengerPoke
+  const myHp      = isChallenger ? battle.challengerHp    : battle.opponentHp
+  const myMaxHp   = isChallenger ? battle.challengerMaxHp : battle.opponentMaxHp
+  const theirHp   = isChallenger ? battle.opponentHp      : battle.challengerHp
+  const theirMaxHp= isChallenger ? battle.opponentMaxHp   : battle.challengerMaxHp
+  const type1 = Array.isArray(myPoke.types)    ? myPoke.types.join('/')    : (myPoke.types    || 'Normal')
+  const type2 = Array.isArray(theirPoke.types) ? theirPoke.types.join('/') : (theirPoke.types || 'Normal')
+  const effects = WEATHER_BATTLE_EFFECTS[battle.weather] || ['The battle rages on!', 'Stay sharp, Trainer!']
+  return (
+    `*🌦️ Weather Effect: ${battle.weather}*\n` +
+    `_${effects[0]}_\n` +
+    `_${effects[1]}_\n\n` +
+    `*⚔️ Battle Status*\n\n` +
+    `${myPoke.name} Lv.${myPoke.level || 1} | ${myHp}/${myMaxHp} HP | ${type1}\n` +
+    `${theirPoke.name} Lv.${theirPoke.level || 1} | ${theirHp}/${theirMaxHp} HP | ${type2}\n\n` +
+    `*Choose your next move, Trainer!*\n\n` +
+    `${TB}#battle fight${TB} - View ${myPoke.name}'s moves\n\n` +
+    `${TB}#battle pokemon${TB} - Switch your active Pokémon\n\n` +
+    `${TB}#battle forfeit${TB} - Surrender the match\n\n` +
+    `${TB}#move {move number}${TB} - Choose your move `
+  )
+}
 const MOODS = ['curious', 'aggressive', 'playful', 'timid', 'confused', 'hungry', 'sleepy', 'excited']
 const STATUSES = ['Wild 🟢', 'Weakened 🔴', 'Energized ⚡', 'Cautious 👀', 'Raging 🔥']
 
@@ -595,7 +638,7 @@ module.exports = {
       return reply(`❌ *Can't move your last Pokémon to PC!*\n\nYour party must have at least 1 Pokémon.`)
     const p = party[slot - 1]
     if (!p) return reply(`❌ No Pokémon in party slot #${slot}.\n\nUse *#party* to see your party.`)
-    try { await db.updatePokemon(p.id, { in_party: false }) } catch (e) { return reply(`❌ Failed: ${e.message}`) }
+    try { await db.updatePokemon(p._id, { in_party: false }) } catch (e) { return reply(`❌ Failed: ${e.message}`) }
     await reply(
       `📦 *MOVED TO PC!*\n\n` +
       `*${p.name}* (Lvl ${p.level || 1}) has been stored in the PC.\n\n` +
@@ -616,7 +659,7 @@ module.exports = {
     const stored = (pokemon || []).filter(p => !p.in_party)
     const p      = stored[pcSlot - 1]
     if (!p) return reply(`❌ No Pokémon in PC slot #${pcSlot}.\n\nUse *#pc* to see your stored Pokémon.`)
-    try { await db.updatePokemon(p.id, { in_party: true }) } catch (e) { return reply(`❌ Failed: ${e.message}`) }
+    try { await db.updatePokemon(p._id, { in_party: true }) } catch (e) { return reply(`❌ Failed: ${e.message}`) }
     await reply(
       `⚗️ *ADDED TO PARTY!*\n\n` +
       `*${p.name}* (Lvl ${p.level || 1}) has joined your party!\n\n` +
@@ -635,7 +678,7 @@ module.exports = {
     const pa = party[a - 1], pb = party[b - 1]
     if (!pa) return reply(`❌ No Pokémon in slot #${a}`)
     if (!pb) return reply(`❌ No Pokémon in slot #${b}`)
-    try { await db.updatePokemon(pa.id, { slot: b }); await db.updatePokemon(pb.id, { slot: a }) } catch {}
+    try { await db.updatePokemon(pa._id, { slot: b }); await db.updatePokemon(pb._id, { slot: a }) } catch {}
     await reply(`🔄 *SWAP COMPLETE!*\n\n#${a} ${pa.name} ↔️ #${b} ${pb.name}`)
   },
 
@@ -673,39 +716,238 @@ module.exports = {
   },
 
   // ── #battle ───────────────────────────────────────────────────
-  async battle({ sock, jid, msg, reply, sender, user, args }) {
+  async battle({ sock, jid, msg, reply, sender, senderJid, user, args }) {
+    const TB       = '\`\`\`'
+    const subCmd   = args[0]?.toLowerCase()
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply(`⚠️ Usage: *#battle @user*`)
-    const opponentPhone = mentioned[0].split('@')[0]
-    if (opponentPhone === sender) return reply(`❌ You can't battle yourself!`)
-    const u = user || await db.getOrCreateUser(sender)
-    const myPoke    = await db.getUserPokemon(sender).catch(() => [])
-    const myParty   = (myPoke || []).filter(p => p.in_party)
-    if (!myParty.length) return reply(`❌ You need Pokémon in your party! Use *#hunt*.`)
-    const theirPoke = await db.getUserPokemon(opponentPhone).catch(() => [])
-    const theirPart = (theirPoke || []).filter(p => p.in_party)
-    if (!theirPart.length) return reply(`❌ @${opponentPhone} has no Pokémon in their party!`)
-    const mine   = myParty[0]
-    const theirs = theirPart[0]
-    const win    = Math.random() > 0.5
-    const log = [
-      `⚔️ *TRAINER BATTLE!*\n`,
-      `*${u.name || sender}* vs *@${opponentPhone}*\n`,
-      `🔵 *${mine.name}* (Lvl ${mine.level || 1}) vs 🔴 *${theirs.name}* (Lvl ${theirs.level || 1})\n`,
-      `━━━━━━━━━━━━━━━━━━`,
-      `${mine.name} used *${Array.isArray(mine.moves) ? mine.moves[0] : 'Tackle'}*!`,
-      `${theirs.name} used *${Array.isArray(theirs.moves) ? theirs.moves[0] : 'Scratch'}*!`,
-      win ? `💥 ${mine.name} lands a *critical hit!*` : `💥 ${theirs.name} lands a *critical hit!*`,
-      win ? `\n🏆 *${u.name || sender} WINS!*` : `\n💥 *@${opponentPhone} WINS!*`,
-    ]
-    if (win) {
-      const xp = 2
-      await db.updateUser(sender, { xp: (u.xp || 0) + xp, pokemon_wins: (u.pokemon_wins || 0) + 1 })
-      log.push(`\n⭐ *+${xp} XP* earned!`)
-    } else {
-      await db.updateUser(sender, { pokemon_losses: (u.pokemon_losses || 0) + 1 })
+
+    // ── Cleanup expired challenges ────────────────────────────
+    for (const key of Object.keys(pendingChallenges)) {
+      if (Date.now() > pendingChallenges[key].expiresAt) delete pendingChallenges[key]
     }
-    await sock.sendMessage(jid, { text: log.join('\n'), mentions: [mentioned[0]] }, { quoted: msg })
+
+    // ── #battle @user — Issue a challenge ─────────────────────
+    if (mentioned.length > 0 && (!subCmd || subCmd.startsWith('@'))) {
+      const opponentJid   = mentioned[0]
+      const opponentPhone = opponentJid.split('@')[0]
+      if (opponentPhone === sender) return reply(`❌ You can't challenge yourself!`)
+
+      const [myPoke, theirPoke] = await Promise.all([
+        db.getUserPokemon(sender).catch(() => []),
+        db.getUserPokemon(opponentPhone).catch(() => []),
+      ])
+      const myParty    = (myPoke   || []).filter(p => p.in_party)
+      const theirParty = (theirPoke || []).filter(p => p.in_party)
+      if (!myParty.length)    return reply(`❌ You need Pokémon in your party! Use *#hunt*.`)
+      if (!theirParty.length) return reply(`❌ @${opponentPhone} has no Pokémon in their party!`)
+
+      // Cancel any existing challenge from this sender in this jid
+      for (const key of Object.keys(pendingChallenges)) {
+        if (key.startsWith(`${jid}:${sender}`)) delete pendingChallenges[key]
+      }
+
+      const weather     = WEATHER_BOOSTS[Math.floor(Math.random() * WEATHER_BOOSTS.length)]
+      const battleFmt   = BATTLE_FORMATS[Math.floor(Math.random() * BATTLE_FORMATS.length)]
+      const expiresAt   = Date.now() + PVP_EXPIRE_MS
+      const challengeKey = `${jid}:${sender}`
+
+      const myTeamNames    = myParty.slice(0, 3).map(p => p.name).join(', ')
+      const theirTeamNames = theirParty.slice(0, 3).map(p => p.name).join(', ')
+
+      pendingChallenges[challengeKey] = {
+        jid, challengerPhone: sender, challengerJid: senderJid,
+        opponentPhone, opponentJid,
+        weather, battleFmt,
+        myParty, theirParty,
+        expiresAt,
+      }
+
+      const text =
+        `🎊 Battle Request! 🎊\n\n` +
+        `*@${sender}* has challenged *@${opponentPhone}* to a Pokémon battle! ⚔️\n\n` +
+        `⚔️ Match Setup\n\n` +
+        `- *Format:* ${battleFmt}\n` +
+        `- *Weather:* ${weather}\n\n` +
+        `*🔥 Teams Ready*\n\n` +
+        `*@${sender}:* ${myTeamNames},\n\n` +
+        `*@${opponentPhone}:* ${theirTeamNames}, }\n\n` +
+        `*@${opponentPhone},* do you accept the challenge?\n\n` +
+        `${TB}#battle accept${TB} - Accept and begin battle\n` +
+        `${TB}#battle decline${TB} - Decline the challenge\n\n` +
+        `⏳ This request will expire in *2 minutes*`
+
+      return await sock.sendMessage(jid, {
+        text,
+        mentions: [senderJid, opponentJid],
+      }, { quoted: msg })
+    }
+
+    // ── #battle accept ────────────────────────────────────────
+    if (subCmd === 'accept') {
+      // Find a pending challenge in this jid targeting the sender
+      const challengeKey = Object.keys(pendingChallenges).find(k => {
+        const c = pendingChallenges[k]
+        return c.jid === jid && c.opponentPhone === sender
+      })
+      if (!challengeKey) return reply(`❌ No pending battle challenge for you in this group.`)
+
+      const challenge = pendingChallenges[challengeKey]
+      delete pendingChallenges[challengeKey]
+
+      const { challengerPhone, challengerJid, opponentJid: oppJid, weather, battleFmt, myParty, theirParty } = challenge
+
+      const cPoke = myParty[0]
+      const oPoke = theirParty[0]
+      const cMaxHp = 200 + (cPoke.level || 1) * 15
+      const oMaxHp = 200 + (oPoke.level || 1) * 15
+
+      const battle = {
+        jid,
+        challengerPhone,
+        challengerJid,
+        opponentPhone: sender,
+        opponentJid: oppJid,
+        weather,
+        battleFmt,
+        challengerParty: myParty,
+        opponentParty:   theirParty,
+        challengerPoke:  cPoke,
+        opponentPoke:    oPoke,
+        challengerHp:    cMaxHp,
+        challengerMaxHp: cMaxHp,
+        opponentHp:      oMaxHp,
+        opponentMaxHp:   oMaxHp,
+        turn:            challengerPhone,
+      }
+      pvpBattles[challengerPhone] = battle
+      pvpBattles[sender]          = battle
+
+      // "Challenge Accepted" message
+      await sock.sendMessage(jid, {
+        text: `🌟 Challenge Accepted. Good luck trainer 🧧`,
+        mentions: [challengerJid, oppJid],
+      }, { quoted: msg })
+
+      // Battle status + image
+      const effects  = WEATHER_BATTLE_EFFECTS[weather] || ['The battle begins!', 'Good luck!']
+      const statusText =
+        buildBattleStatus(battle, challengerPhone) +
+        `\n\n*@${challengerPhone}, your turn awaits... ⏳*`
+
+      let imgBuf = null
+      try {
+        imgBuf = await buildBattleImage({
+          myName:    cPoke.name,    myLevel:   cPoke.level || 1,
+          myHp:      cMaxHp,        myMaxHp:   cMaxHp,
+          myId:      cPoke.pokemon_id || null,
+          wildName:  oPoke.name,    wildLevel: oPoke.level || 1,
+          wildHp:    oMaxHp,        wildMaxHp: oMaxHp,
+          wildId:    oPoke.pokemon_id || null,
+          logLines:  [effects[0], effects[1]],
+        })
+      } catch {}
+
+      if (imgBuf) {
+        return await sock.sendMessage(jid, {
+          image:    imgBuf,
+          caption:  statusText,
+          mimetype: 'image/png',
+          mentions: [challengerJid, oppJid],
+        }, { quoted: msg })
+      }
+      return await sock.sendMessage(jid, {
+        text: statusText, mentions: [challengerJid, oppJid],
+      }, { quoted: msg })
+    }
+
+    // ── #battle decline ───────────────────────────────────────
+    if (subCmd === 'decline') {
+      const challengeKey = Object.keys(pendingChallenges).find(k => {
+        const c = pendingChallenges[k]
+        return c.jid === jid && c.opponentPhone === sender
+      })
+      if (!challengeKey) return reply(`❌ No pending challenge for you to decline.`)
+      const challenge = pendingChallenges[challengeKey]
+      delete pendingChallenges[challengeKey]
+      return await sock.sendMessage(jid, {
+        text: `❌ *@${sender}* declined the battle challenge from *@${challenge.challengerPhone}*.`,
+        mentions: [senderJid, challenge.challengerJid],
+      }, { quoted: msg })
+    }
+
+    // ── #battle fight — show current pokemon's moves ──────────
+    if (subCmd === 'fight') {
+      const battle = pvpBattles[sender]
+      if (!battle) return reply(`❌ You're not in a PvP battle.`)
+      const isChallenger = sender === battle.challengerPhone
+      const myPoke = isChallenger ? battle.challengerPoke : battle.opponentPoke
+      const moves  = Array.isArray(myPoke.moves) ? myPoke.moves : ['Tackle']
+      const list   = moves.map((m, i) => `*${i + 1}.* ${m}`).join('\n')
+      return reply(`🎮 *${myPoke.name.toUpperCase()} — MOVES*\n\n${list}\n\nUse *#move <number>* to attack!`)
+    }
+
+    // ── #battle pokemon — show switchable pokemon ─────────────
+    if (subCmd === 'pokemon') {
+      const battle = pvpBattles[sender]
+      if (!battle) return reply(`❌ You're not in a PvP battle.`)
+      const isChallenger = sender === battle.challengerPhone
+      const myParty = isChallenger ? battle.challengerParty : battle.opponentParty
+      const myPoke  = isChallenger ? battle.challengerPoke  : battle.opponentPoke
+      const others  = myParty.filter(p => p.name !== myPoke.name)
+      if (!others.length) return reply(`❌ No other Pokémon to switch to!`)
+      const list = others.map((p, i) => {
+        const hp = 200 + (p.level || 1) * 15
+        return `*${i + 1}.* ${p.name} Lv.${p.level || 1} | HP: ${hp}`
+      }).join('\n')
+      return reply(`🔄 *SWITCH POKÉMON*\n\n${list}\n\n_Type *#battle switch <number>* to switch._`)
+    }
+
+    // ── #battle switch <n> ────────────────────────────────────
+    if (subCmd === 'switch') {
+      const battle = pvpBattles[sender]
+      if (!battle) return reply(`❌ You're not in a PvP battle.`)
+      if (battle.turn !== sender) return reply(`⏳ It's not your turn!`)
+      const isChallenger = sender === battle.challengerPhone
+      const myParty = isChallenger ? battle.challengerParty : battle.opponentParty
+      const myPoke  = isChallenger ? battle.challengerPoke  : battle.opponentPoke
+      const others  = myParty.filter(p => p.name !== myPoke.name)
+      const idx     = (parseInt(args[1]) || 1) - 1
+      const newPoke = others[idx]
+      if (!newPoke) return reply(`❌ Invalid selection.`)
+      const newMaxHp = 200 + (newPoke.level || 1) * 15
+      if (isChallenger) {
+        battle.challengerPoke  = newPoke
+        battle.challengerHp    = newMaxHp
+        battle.challengerMaxHp = newMaxHp
+      } else {
+        battle.opponentPoke  = newPoke
+        battle.opponentHp    = newMaxHp
+        battle.opponentMaxHp = newMaxHp
+      }
+      battle.turn = isChallenger ? battle.opponentPhone : battle.challengerPhone
+      return reply(`🔄 *Switched to ${newPoke.name}!*\n\nYour opponent's turn now.`)
+    }
+
+    // ── #battle forfeit ───────────────────────────────────────
+    if (subCmd === 'forfeit') {
+      const battle = pvpBattles[sender]
+      if (!battle) return reply(`❌ You're not in a PvP battle.`)
+      const winnerId = sender === battle.challengerPhone ? battle.opponentPhone : battle.challengerPhone
+      const winnerJid = sender === battle.challengerPhone ? battle.opponentJid : battle.challengerJid
+      delete pvpBattles[battle.challengerPhone]
+      delete pvpBattles[battle.opponentPhone]
+      const u = user || await db.getOrCreateUser(sender)
+      await db.updateUser(sender,    { pokemon_losses: (u.pokemon_losses || 0) + 1 }).catch(() => {})
+      const w = await db.getOrCreateUser(winnerId).catch(() => ({}))
+      await db.updateUser(winnerId, { pokemon_wins: (w.pokemon_wins || 0) + 1, xp: (w.xp || 0) + 3 }).catch(() => {})
+      return await sock.sendMessage(jid, {
+        text: `🏳️ *@${sender}* has forfeited the battle!\n\n🏆 *@${winnerId}* wins! +3 XP`,
+        mentions: [senderJid, winnerJid],
+      }, { quoted: msg })
+    }
+
+    // ── Default ───────────────────────────────────────────────
+    return reply(`⚠️ Usage: *#battle @user* | *#battle accept / decline / fight / forfeit*`)
   },
 
   // ── #gym ──────────────────────────────────────────────────────
@@ -760,7 +1002,7 @@ module.exports = {
     const newData = await fetchPokeData(evoName).catch(() => null)
     if (!newData) return reply(`❌ Could not fetch evolution data. Try again later.`)
     try {
-      await db.updatePokemon(p.id, {
+      await db.updatePokemon(p._id, {
         name:        newData.name,
         pokemon_id:  newData.id,
         types:       newData.types,
@@ -803,12 +1045,12 @@ module.exports = {
     // Check for evolution at levels 16 and 36
     if (leveled && (newLvl === 16 || newLvl === 36)) {
       try {
-        await db.updatePokemon(p.id, { xp: newXp, level: newLvl })
+        await db.updatePokemon(p._id, { xp: newXp, level: newLvl })
         const evoName = await getPokeEvolutionTarget(p.pokemon_id, p.name.toLowerCase())
         if (evoName) {
           const newData = await fetchPokeData(evoName).catch(() => null)
           if (newData) {
-            await db.updatePokemon(p.id, {
+            await db.updatePokemon(p._id, {
               name:       newData.name,
               pokemon_id: newData.id,
               types:      newData.types,
@@ -828,7 +1070,7 @@ module.exports = {
       } catch {}
     }
 
-    try { await db.updatePokemon(p.id, { xp: newXp, level: newLvl }) } catch {}
+    try { await db.updatePokemon(p._id, { xp: newXp, level: newLvl }) } catch {}
     await reply(
       `💪 *TRAINING COMPLETE!*\n\n📛 *${p.name}* trained hard!\n\n⭐ *+${xpGain} XP*\n🔮 *XP:* ${newXp}/${newLvl * 1000}` +
       (leveled ? `\n\n🆙 *LEVEL UP!* → Level ${newLvl} 🎊${newLvl >= 16 ? '\n\n_Pokémon can now evolve! Use *#evolve ' + slot + '*_' : ''}` : '') +
@@ -858,7 +1100,7 @@ module.exports = {
     const allMoves = data?.moves || []
     const newMove  = allMoves[Math.floor(Math.random() * allMoves.length)] || 'Hyper Beam'
     const curMoves = Array.isArray(p.moves) ? [...p.moves] : ['Tackle']
-    if (!curMoves.includes(newMove)) { curMoves.push(newMove); try { await db.updatePokemon(p.id, { moves: curMoves.slice(0, 8) }) } catch {} }
+    if (!curMoves.includes(newMove)) { curMoves.push(newMove); try { await db.updatePokemon(p._id, { moves: curMoves.slice(0, 8) }) } catch {} }
     await reply(`📚 *MOVE LEARNED!*\n\n📛 *${p.name}* learned *${newMove}*!`)
   },
 
@@ -1135,8 +1377,109 @@ module.exports = {
     }, { quoted: msg })
   },
 
-  // ── .move — use a move during wild battle ─────────────────────
-  async move({ sock, jid, msg, reply, sender, user, args }) {
+  // ── .move — use a move during wild OR pvp battle ──────────────
+  async move({ sock, jid, msg, reply, sender, senderJid, user, args }) {
+    // ── PvP battle handling ─────────────────────────────────────
+    const pvp = pvpBattles[sender]
+    if (pvp && pvp.jid === jid) {
+      if (pvp.turn !== sender) return reply(`⏳ It's not your turn yet! Wait for your opponent.`)
+
+      const isChallenger = sender === pvp.challengerPhone
+      const myPoke    = isChallenger ? pvp.challengerPoke  : pvp.opponentPoke
+      const theirPoke = isChallenger ? pvp.opponentPoke    : pvp.challengerPoke
+      const myHpKey   = isChallenger ? 'challengerHp'      : 'opponentHp'
+      const theirHpKey= isChallenger ? 'opponentHp'        : 'challengerHp'
+      const theirPhone= isChallenger ? pvp.opponentPhone   : pvp.challengerPhone
+      const theirJid  = isChallenger ? pvp.opponentJid     : pvp.challengerJid
+
+      const moves    = Array.isArray(myPoke.moves) && myPoke.moves.length ? myPoke.moves : ['Tackle']
+      const moveIdx  = Math.max(0, (parseInt(args[0]) || 1) - 1)
+      const moveName = moves[Math.min(moveIdx, moves.length - 1)] || 'Tackle'
+
+      const lvl      = myPoke.level || 1
+      const baseDmg  = 20 + lvl * 2
+      const crit     = Math.random() < 0.10
+      const dmg      = Math.round(randInt(baseDmg, baseDmg + 15) * (crit ? 1.5 : 1))
+
+      pvp[theirHpKey] = Math.max(0, pvp[theirHpKey] - dmg)
+
+      const logLines = [
+        `${myPoke.name} used ${moveName}!`,
+        crit ? `✨ Critical hit! -${dmg} HP` : `-${dmg} HP`,
+      ]
+
+      // ── Opponent fainted ──────────────────────────────────
+      if (pvp[theirHpKey] <= 0) {
+        delete pvpBattles[pvp.challengerPhone]
+        delete pvpBattles[pvp.opponentPhone]
+
+        const u = user || await db.getOrCreateUser(sender).catch(() => ({}))
+        const w = await db.getOrCreateUser(theirPhone).catch(() => ({}))
+        await Promise.all([
+          db.updateUser(sender,     { pokemon_wins:   (u.pokemon_wins   || 0) + 1, xp: (u.xp || 0) + 3 }).catch(() => {}),
+          db.updateUser(theirPhone, { pokemon_losses: (w.pokemon_losses || 0) + 1 }).catch(() => {}),
+        ])
+
+        const endText =
+          `💥 *${theirPoke.name} fainted!*\n\n` +
+          `🏆 *@${sender}* wins the battle!\n⭐ +3 XP earned!`
+
+        let imgBuf = null
+        try {
+          imgBuf = await buildBattleImage({
+            myName:    myPoke.name,    myLevel:   myPoke.level || 1,
+            myHp:      pvp[myHpKey],   myMaxHp:   isChallenger ? pvp.challengerMaxHp : pvp.opponentMaxHp,
+            myId:      myPoke.pokemon_id || null,
+            wildName:  theirPoke.name, wildLevel: theirPoke.level || 1,
+            wildHp:    0,              wildMaxHp: isChallenger ? pvp.opponentMaxHp : pvp.challengerMaxHp,
+            wildId:    theirPoke.pokemon_id || null,
+            logLines:  [`${theirPoke.name} fainted!`, `@${sender} wins!`],
+          })
+        } catch {}
+
+        if (imgBuf) {
+          return await sock.sendMessage(jid, {
+            image: imgBuf, caption: endText, mimetype: 'image/png',
+            mentions: [senderJid, theirJid],
+          }, { quoted: msg })
+        }
+        return await sock.sendMessage(jid, {
+          text: endText, mentions: [senderJid, theirJid],
+        }, { quoted: msg })
+      }
+
+      // ── Battle continues — switch turn ────────────────────
+      pvp.turn = theirPhone
+
+      const statusText =
+        buildBattleStatus(pvp, theirPhone) +
+        `\n\n*@${theirPhone}, your turn awaits... ⏳*`
+
+      let imgBuf = null
+      try {
+        imgBuf = await buildBattleImage({
+          myName:    pvp.challengerPoke.name,    myLevel:   pvp.challengerPoke.level || 1,
+          myHp:      pvp.challengerHp,           myMaxHp:   pvp.challengerMaxHp,
+          myId:      pvp.challengerPoke.pokemon_id || null,
+          wildName:  pvp.opponentPoke.name,      wildLevel: pvp.opponentPoke.level || 1,
+          wildHp:    pvp.opponentHp,             wildMaxHp: pvp.opponentMaxHp,
+          wildId:    pvp.opponentPoke.pokemon_id || null,
+          logLines,
+        })
+      } catch {}
+
+      if (imgBuf) {
+        return await sock.sendMessage(jid, {
+          image: imgBuf, caption: statusText, mimetype: 'image/png',
+          mentions: [senderJid, theirJid],
+        }, { quoted: msg })
+      }
+      return await sock.sendMessage(jid, {
+        text: statusText, mentions: [senderJid, theirJid],
+      }, { quoted: msg })
+    }
+
+    // ── Wild battle handling ────────────────────────────────────
     const battle = activeBattles[sender]
     if (!battle) return reply(
       `❌ *Not in a battle!*\n\nUse *#hunt* to find a wild Pokémon, then *.fight* to battle it.`
