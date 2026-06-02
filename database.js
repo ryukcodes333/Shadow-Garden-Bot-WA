@@ -501,7 +501,7 @@ async function getOrCreateShoobCard(shoobId, name, tier, series, imageUrl, price
 
 async function getUserPokemon(phone) {
   phone = cleanPhone(phone)
-  return UserPokemon.find({ phone }).lean()
+  return UserPokemon.find({ phone }).sort({ in_party: -1, slot: 1 }).lean()
 }
 
 async function addPokemon(phone, pokemonData) {
