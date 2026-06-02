@@ -173,16 +173,16 @@ async function buildBattleImage(opts) {
   const uiSvg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
   <!-- Enemy platform — top-right -->
-  ${svgPlatform(460, 175, 80, 22)}
+  ${svgPlatform(468, 188, 76, 20)}
 
   <!-- Player platform — bottom-left -->
-  ${svgPlatform(150, 315, 105, 26)}
+  ${svgPlatform(152, 288, 100, 24)}
 
   <!-- Enemy HP box — top-left -->
-  ${svgHpBox(12, 10, wildName, wildLevel, wildHp, wildMaxHp, 'left')}
+  ${svgHpBox(12, 8, wildName, wildLevel, wildHp, wildMaxHp, 'left')}
 
-  <!-- Player HP box — right-center -->
-  ${svgHpBox(W - 12, 158, myName, myLevel, myHp, myMaxHp, 'right')}
+  <!-- Player HP box — bottom-right -->
+  ${svgHpBox(W - 12, 212, myName, myLevel, myHp, myMaxHp, 'right')}
 
   <!-- Action log -->
   ${svgActionLog(logLines)}
@@ -226,27 +226,29 @@ async function buildBattleImage(opts) {
   // UI overlay
   if (uiBuf) composites.push({ input: uiBuf, top: 0, left: 0 })
 
-  // Wild / enemy Pokemon (top-right, UPSCALED to 210x210)
+  // Wild / enemy Pokemon (top-right, sized to NOT cover HP bars)
   if (wildBuf) {
     try {
       const scaled = await sharp(wildBuf)
-        .resize(210, 210, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .resize(155, 155, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
         .png()
         .toBuffer()
-      // Center over enemy platform at ~cx=460
-      composites.push({ input: scaled, top: 5, left: 355 })
+      // Center over enemy platform at cx≈468; top=22 keeps it below HP box bottom (y=82)
+      // horizontally: cx=468 - 155/2 = 390
+      composites.push({ input: scaled, top: 22, left: 390 })
     } catch {}
   }
 
-  // Player Pokemon back sprite (bottom-left, UPSCALED to 240x240)
+  // Player Pokemon back sprite (bottom-left, sized to NOT cover action log)
   if (myBuf) {
     try {
       const scaled = await sharp(myBuf)
-        .resize(240, 240, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 }, kernel: 'nearest' })
+        .resize(160, 160, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 }, kernel: 'nearest' })
         .png()
         .toBuffer()
-      // Center over player platform at ~cx=150
-      composites.push({ input: scaled, top: 100, left: 15 })
+      // Center over player platform at cx≈152; bottom at 122+160=282 (above log ~288)
+      // horizontally: cx=152 - 160/2 = 72
+      composites.push({ input: scaled, top: 122, left: 72 })
     } catch {}
   }
 

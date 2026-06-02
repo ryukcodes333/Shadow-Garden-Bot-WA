@@ -124,6 +124,7 @@ const cardSchema = new mongoose.Schema({
 const userCardSchema = new mongoose.Schema({
   phone:   String,
   card_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Card' },
+  in_deck: { type: Boolean, default: false },
 }, { timestamps: true })
 
 const userPokemonSchema = new mongoose.Schema({
@@ -434,7 +435,7 @@ async function getCard(id) {
 
 async function getUserCards(phone) {
   phone = cleanPhone(phone)
-  return UserCard.find({ phone }).populate('card_id').lean()
+  return UserCard.find({ phone }).populate('card_id').sort({ in_deck: -1, createdAt: 1 }).lean()
 }
 
 async function getUserCardCount(phone) {
@@ -454,6 +455,10 @@ async function addUserCard(phone, cardId) {
 
 async function deleteUserCardById(rowId) {
   await UserCard.deleteOne({ _id: rowId })
+}
+
+async function updateUserCardById(rowId, fields) {
+  await UserCard.updateOne({ _id: rowId }, { $set: fields })
 }
 
 async function getCardOwners(externalId) {
@@ -848,7 +853,7 @@ module.exports = {
   getLeaderboard, getRichList, getUserCount, getGroupCount,
   // Cards
   addCard, getCards, getCard, getUserCards, getUserCardCount,
-  assignCard, addUserCard, deleteUserCardById, getCardOwners, getOrCreateShoobCard,
+  assignCard, addUserCard, deleteUserCardById, updateUserCardById, getCardOwners, getOrCreateShoobCard,
   getCardByExternalId, getOwnerCountsBatch,
   addMutedUser, removeMutedUser, deleteAllUsers,
   // Pokémon
