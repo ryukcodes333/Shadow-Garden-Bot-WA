@@ -194,6 +194,12 @@ async function startBot() {
       console.log(`\n✅ KonoBot (${BOT_NAME}) is ONLINE! 🌑`)
       console.log(`📱 Bot Number: ${botNum}`)
       console.log(`💡 If this number is admin in a group, the bot can kick/manage members.\n`)
+      // Auto-start $100,000 lottery on every connect
+      try {
+        const { autoStartLottery } = require('./commands/lottery')
+        autoStartLottery('$100,000 Cash', 10)
+        console.log('🎰 Auto-lottery started! Prize: $100,000 Cash — first 10 participants.')
+      } catch (e) { console.error('Auto-lottery error:', e.message) }
     }
 
     if (connection === 'connecting') {
