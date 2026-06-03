@@ -147,18 +147,16 @@ module.exports = {
     try {
       if (u.profile_pp) {
         const raw = await fetchBuffer(u.profile_pp)
-        ppBuffer = u.profile_pp.endsWith('.mp4')
-          ? await extractVideoFrame(raw)
-          : raw
+        const isVideo = u.profile_pp.startsWith('data:video/') || u.profile_pp.endsWith('.mp4')
+        ppBuffer = isVideo ? await extractVideoFrame(raw) : raw
       }
     } catch { ppBuffer = null }
 
     try {
       if (u.profile_bg) {
         const raw = await fetchBuffer(u.profile_bg)
-        bgBuffer = u.profile_bg.endsWith('.mp4')
-          ? await extractVideoFrame(raw)
-          : raw
+        const isVideo = u.profile_bg.startsWith('data:video/') || u.profile_bg.endsWith('.mp4')
+        bgBuffer = isVideo ? await extractVideoFrame(raw) : raw
       }
     } catch { bgBuffer = null }
 

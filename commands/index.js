@@ -232,7 +232,7 @@ async function handleMessage(sock, msg) {
     const mentionsAlpha = /\balpha\b/i.test(textRaw)
     const mentionsAqua  = /\baqua\b/i.test(textRaw)
 
-    if ((isBotMentioned || mentionsAlpha || mentionsAqua) && !textRaw.startsWith(PREFIX) && !textRaw.startsWith(POKE_PREFIX)) {
+    if ((isBotMentioned || isReplyToBot || mentionsAlpha || mentionsAqua) && !textRaw.startsWith(PREFIX) && !textRaw.startsWith(POKE_PREFIX)) {
       if (mentionsAqua && !mentionsAlpha) {
         await aquaChatReply(sock, jid, msg, sender, msg.pushName || sender, textRaw)
       } else {
