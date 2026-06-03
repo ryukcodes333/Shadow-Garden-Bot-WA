@@ -1,6 +1,10 @@
 const sharp = require('sharp')
 const https = require('https')
 const http = require('http')
+const { execFile } = require('child_process')
+const os = require('os')
+const path = require('path')
+const fs = require('fs')
 
 const CARD_W = 500
 const CARD_H = 720
@@ -970,3 +974,95 @@ async function generateFrameCatalog(page = 1) {
 }
 module.exports.generateFrameCatalog = generateFrameCatalog
 module.exports.fetchBuffer = fetchBuffer
+
+// ─── ANIMATED PROFILE CARD (GIF bg → per-frame composite → MP4 gifPlayback) ──
+async function generateAnimatedProfileCard(user, ppBuffer, gifBgBuffer) {
+  const sessionId = Date.now() + '_' + Math.random().toString(36).slice(2, 7)
+  const tmpDir    = os.tmpdir()
+  const gifIn     = path.join(tmpDir, `sgbot_bgin_${sessionId}.gif`)
+  const frDir     = path.join(tmpDir, `sgbot_fr_${sessionId}`)
+  const outDir    = path.join(tmpDir, `sgbot_ofr_${sessionId}`)
+  const outMp4    = path.join(tmpDir, `sgbot_anim_${sessionId}.mp4`)
+
+  const run = (cmd, args, timeout) => new Promise((res, rej) =>
+    execFile(cmd, args, { timeout: timeout || 60000 }, (err, _o, stderr) =>
+      err ? rej(new Error((stderr || err.message).slice(0, 300))) : res()
+    )
+  )
+
+  try {
+    fs.writeFileSync(gifIn, gifBgBuffer)
+    fs.mkdirSync(frDir,  { recursive: true })
+    fs.mkdirSync(outDir, { recursive: true })
+
+    // Probe FPS of the GIF
+    let fps = 12
+    try {
+      const probe = await new Promise((res, rej) =>
+        execFile('ffprobe', [
+          '-v', 'quiet', '-select_streams', 'v:0',
+          '-show_entries', 'stream=r_frame_rate',
+          '-of', 'default=noprint_wrappers=1:nokey=1',
+          gifIn,
+        ], { timeout: 10000 }, (err, out) => err ? rej(err) : res(out.trim()))
+      )
+      const [num, den] = probe.split('/').map(Number)
+      const calc = num / (den || 1)
+      if (calc > 0 && calc <= 30) fps = calc
+    } catch {}
+
+    // Extract frames
+    await run('ffmpeg', ['-y', '-i', gifIn, '-vsync', '0', path.join(frDir, 'frame_%04d.png')])
+
+    const frameFiles = fs.readdirSync(frDir).filter(f => f.endsWith('.png')).sort()
+    if (frameFiles.length === 0) throw new Error('No frames extracted from GIF')
+
+    // Cap at 72 frames to keep processing reasonable
+    const maxFrames = Math.min(frameFiles.length, 72)
+
+    // Build static layers once
+    const diameter  = AV_R * 2
+    const avatarBuf = ppBuffer
+      ? await makeCircleAvatar(ppBuffer, diameter)
+      : await makeInitialsAvatar(user.name || user.phone || '?', diameter)
+    const avatarTop  = AV_CY - AV_R   // 130
+    const avatarLeft = AV_CX - AV_R   // 115
+    const overlayBuf = Buffer.from(buildStatsSvg(user))
+
+    // Composite each bg frame with static layers
+    for (let i = 0; i < maxFrames; i++) {
+      const raw     = fs.readFileSync(path.join(frDir, frameFiles[i]))
+      const bgFrame = await sharp(raw).resize(CARD_W, CARD_H, { fit: 'cover' }).png().toBuffer()
+      const out     = await sharp(bgFrame)
+        .composite([
+          { input: avatarBuf,  top: avatarTop,  left: avatarLeft },
+          { input: overlayBuf, top: 0,           left: 0 },
+        ])
+        .png()
+        .toBuffer()
+      fs.writeFileSync(path.join(outDir, `frame_${String(i).padStart(4, '0')}.png`), out)
+    }
+
+    // Encode composited frames → MP4 (even dims required for yuv420p)
+    const w = CARD_W % 2 === 0 ? CARD_W : CARD_W - 1
+    const h = CARD_H % 2 === 0 ? CARD_H : CARD_H - 1
+    await run('ffmpeg', [
+      '-y',
+      '-framerate', String(Math.round(fps * 100) / 100),
+      '-i', path.join(outDir, 'frame_%04d.png'),
+      '-c:v', 'libx264', '-preset', 'fast',
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
+      '-vf', `scale=${w}:${h}`,
+      outMp4,
+    ])
+
+    return fs.readFileSync(outMp4)
+  } finally {
+    try { fs.unlinkSync(gifIn) } catch {}
+    try { fs.rmSync(frDir,  { recursive: true, force: true }) } catch {}
+    try { fs.rmSync(outDir, { recursive: true, force: true }) } catch {}
+    try { fs.unlinkSync(outMp4) } catch {}
+  }
+}
+module.exports.generateAnimatedProfileCard = generateAnimatedProfileCard
