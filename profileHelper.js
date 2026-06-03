@@ -588,19 +588,19 @@ function buildStatsSvg(user) {
   return `<svg width="${CARD_W}" height="${CARD_H}" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="xpGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#2266CC"/>
-      <stop offset="100%" stop-color="#44AAEE"/>
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#A855F7"/>
     </linearGradient>
   </defs>
 
   <!-- ── AVATAR RING (glow layers, no SVG filters) ── -->
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 22}" fill="#4488CC" opacity="0.04"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 17}" fill="#4488CC" opacity="0.06"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 12}" fill="#4488CC" opacity="0.08"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 8}"  fill="none" stroke="#4488CC" stroke-width="2"   opacity="0.28"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 5}"  fill="none" stroke="#4488CC" stroke-width="2.5" opacity="0.50"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 3}"  fill="none" stroke="#5599DD" stroke-width="3.5" opacity="0.72"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 1}"  fill="none" stroke="#66AAEE" stroke-width="4.5" opacity="0.90"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 22}" fill="#8B5CF6" opacity="0.04"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 17}" fill="#8B5CF6" opacity="0.06"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 12}" fill="#8B5CF6" opacity="0.08"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 8}"  fill="none" stroke="#8B5CF6" stroke-width="2"   opacity="0.28"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 5}"  fill="none" stroke="#8B5CF6" stroke-width="2.5" opacity="0.50"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 3}"  fill="none" stroke="#A78BFA" stroke-width="3.5" opacity="0.72"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 1}"  fill="none" stroke="#C4B5F7" stroke-width="4.5" opacity="0.90"/>
   <!-- Inner white ring at avatar edge -->
   <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R - 3}"  fill="none" stroke="rgba(255,255,255,0.92)" stroke-width="2"/>
 
@@ -614,45 +614,45 @@ function buildStatsSvg(user) {
 
   <!-- ── NAME ── -->
   <text x="${AV_CX}" y="${botY + 52}"
-    fill="#1a2040" font-size="46" font-weight="bold" text-anchor="middle"
+    fill="white" font-size="46" font-weight="bold" text-anchor="middle"
     font-family="Liberation Sans,sans-serif" letter-spacing="4">${name}</text>
 
   <!-- ── SUBTITLE ── -->
   <text x="${AV_CX}" y="${botY + 78}"
-    fill="#8890AA" font-size="16" text-anchor="middle"
+    fill="#C4B5F7" font-size="16" text-anchor="middle"
     font-family="Liberation Sans,sans-serif">(${title})</text>
 
   <!-- ── DIAMOND SEPARATOR ── -->
   <text x="${AV_CX}" y="${botY + 97}"
-    fill="#9AA0B8" font-size="13" text-anchor="middle"
+    fill="#A78BFA" font-size="13" text-anchor="middle"
     font-family="Liberation Sans,sans-serif">◇</text>
 
   <!-- ── RANK (left) ── -->
   <text x="38" y="${botY + 127}"
-    fill="#4488CC" font-size="15" font-weight="bold"
+    fill="#A78BFA" font-size="15" font-weight="bold"
     font-family="Liberation Sans,sans-serif">Rank # ${rank}</text>
 
   <!-- ── LEVEL (left) ── -->
   <text x="38" y="${botY + 148}"
-    fill="#2a3050" font-size="15" font-weight="bold"
+    fill="white" font-size="15" font-weight="bold"
     font-family="Liberation Sans,sans-serif">Level ${level}</text>
 
   <!-- ── XP BADGE (right, centered between rank and level lines) ── -->
-  <circle cx="442" cy="${botY + 136}" r="30" fill="#1a2040"/>
-  <circle cx="442" cy="${botY + 136}" r="30" fill="none" stroke="#D4920A" stroke-width="2.5"/>
+  <circle cx="442" cy="${botY + 136}" r="30" fill="#2D1B69"/>
+  <circle cx="442" cy="${botY + 136}" r="30" fill="none" stroke="#7C3AED" stroke-width="2.5"/>
   <text x="442" y="${botY + 142}"
-    fill="#E8C040" font-size="15" font-weight="bold" text-anchor="middle"
+    fill="#D4B0FF" font-size="15" font-weight="bold" text-anchor="middle"
     font-family="Liberation Sans,sans-serif">XP</text>
 
   <!-- ── PROGRESS BAR ── -->
   <!-- Track -->
-  <rect x="${barX}" y="${botY + 166}" width="${barMaxW}" height="13" fill="#1a2040" rx="6"/>
+  <rect x="${barX}" y="${botY + 163}" width="${barMaxW}" height="22" fill="#1a1030" rx="11"/>
   <!-- Fill -->
-  <rect x="${barX}" y="${botY + 166}" width="${xpBarW}" height="13" fill="url(#xpGrad)" rx="6"/>
-  <!-- XP counter (right-aligned after bar) -->
-  <text x="${barX + barMaxW}" y="${botY + 179}"
-    fill="#7880A0" font-size="11" text-anchor="end"
-    font-family="Liberation Sans,sans-serif">${xp}/${xpNeed}</text>
+  <rect x="${barX}" y="${botY + 163}" width="${xpBarW}" height="22" fill="url(#xpGrad)" rx="11"/>
+  <!-- XP counter inside bar -->
+  <text x="${barX + barMaxW / 2}" y="${botY + 179}"
+    fill="white" font-size="12" font-weight="bold" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif" opacity="0.92">${xp} / ${xpNeed} XP</text>
 
   <!-- ── STAR ABOVE BOTTOM BANNER ── -->
   <line x1="${AV_CX - 46}" y1="${CARD_H - 79}" x2="${AV_CX - 18}" y2="${CARD_H - 79}"
@@ -820,11 +820,17 @@ async function generateProfileCard(user, ppBuffer = null, bgBuffer = null) {
   const overlayBuf = Buffer.from(buildStatsSvg(user))
 
   // ── Composite: bg → avatar → overlay ──
-  return sharp(bgLayer)
+  const cardBuf = await sharp(bgLayer)
     .composite([
       { input: avatarBuf,  top: avatarTop,  left: avatarLeft },
       { input: overlayBuf, top: 0,          left: 0          },
     ])
+    .png()
+    .toBuffer()
+
+  // Always upscale 2× for crisp output (works with custom bg / pp / video frame too)
+  return sharp(cardBuf)
+    .resize(CARD_W * 2, CARD_H * 2, { kernel: 'lanczos3' })
     .png()
     .toBuffer()
 }
