@@ -23,7 +23,7 @@ const profileCmds     = require('./profile')
 const aiCmds          = require('./ai')
 const utilityCmds     = require('./utility')
 const imagesCmds      = require('./images')
-const { alphaChatReply } = require('./chat')
+const { alphaChatReply, aquaChatReply } = require('./chat')
 
 const PREFIX      = global.prefix   || '.'
 const POKE_PREFIX = '#'
@@ -34,8 +34,25 @@ const spamTracker = {}
 async function handleMessage(sock, msg) {
   const jid       = msg.key.remoteJid
   const isGroup   = jid?.endsWith('@g.us')
-  const senderJid = isGroup ? msg.key.participant : msg.key.remoteJid
-  const sender    = senderJid?.split('@')[0]?.split(':')[0] || ''
+  let senderJid   = isGroup ? msg.key.participant : msg.key.remoteJid
+
+  // ── LID → @s.whatsapp.net normalization ─────────────────────────────────
+  // Newer WhatsApp versions may send participants as @lid JIDs (internal Meta IDs).
+  // Resolve to the real @s.whatsapp.net JID via group metadata so stored phone
+  // numbers are always real phone numbers, not LID identifiers.
+  if (senderJid?.endsWith('@lid') && isGroup) {
+    try {
+      const meta = await sock.groupMetadata(jid).catch(() => null)
+      const matched = (meta?.participants || []).find(p =>
+        p.lid === senderJid || p.id === senderJid
+      )
+      if (matched?.id && matched.id.endsWith('@s.whatsapp.net')) {
+        senderJid = matched.id
+      }
+    } catch {}
+  }
+
+  const sender = senderJid?.split('@')[0]?.split(':')[0] || ''
 
   const isOwner = senderJid === OWNER_LID ||
     senderJid?.replace('@s.whatsapp.net', '') === OWNER_LID.replace('@lid', '') ||
@@ -213,9 +230,14 @@ async function handleMessage(sock, msg) {
     const isReplyToBot = quotedParticipant && botPhone && quotedParticipant === botPhone
     const isBotMentioned = botPhone && mentionedJids.some(m => m.split('@')[0].split(':')[0] === botPhone)
     const mentionsAlpha = /\balpha\b/i.test(textRaw)
+    const mentionsAqua  = /\baqua\b/i.test(textRaw)
 
-    if ((isReplyToBot || isBotMentioned || mentionsAlpha) && !textRaw.startsWith(PREFIX) && !textRaw.startsWith(POKE_PREFIX)) {
-      await alphaChatReply(sock, jid, msg, sender, msg.pushName || sender, textRaw, isOwner)
+    if ((isReplyToBot || isBotMentioned || mentionsAlpha || mentionsAqua) && !textRaw.startsWith(PREFIX) && !textRaw.startsWith(POKE_PREFIX)) {
+      if (mentionsAqua && !mentionsAlpha) {
+        await aquaChatReply(sock, jid, msg, sender, msg.pushName || sender, textRaw)
+      } else {
+        await alphaChatReply(sock, jid, msg, sender, msg.pushName || sender, textRaw, isOwner)
+      }
       return
     }
   }

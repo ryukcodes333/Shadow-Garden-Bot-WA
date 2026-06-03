@@ -304,7 +304,8 @@ module.exports = {
     }
 
     // Image path
-    const buffer = await getImageBuffer(sock, msg)
+    let buffer = null
+    try { buffer = await getImageBuffer(sock, msg) } catch {}
 
     if (!buffer) {
       const staffNote = isStaff
@@ -312,7 +313,7 @@ module.exports = {
         : ''
       return reply(
         `🖼️ *SET PROFILE PICTURE*\n\n` +
-        `Send or quote a *JPG/PNG* image with *.setpp*\n\n` +
+        `Reply to an image (or send one) with *.setpp* to set your profile picture.\n\n` +
         `This sets the inner circle of your profile card.\n\n` +
         `_The image will be cropped to a circle._ 🖤${staffNote}`
       )
@@ -381,7 +382,8 @@ module.exports = {
     }
 
     // Image path
-    const buffer = await getImageBuffer(sock, msg)
+    let buffer = null
+    try { buffer = await getImageBuffer(sock, msg) } catch {}
 
     if (!buffer) {
       const staffNote = isStaff
@@ -389,9 +391,9 @@ module.exports = {
         : ''
       return reply(
         `🎨 *SET PROFILE BACKGROUND*\n\n` +
-        `Send or quote a *JPG/PNG* image with *.setbg*\n\n` +
+        `Reply to an image (or send one) with *.setbg* to set your profile card background.\n\n` +
         `This sets the background of your profile card.\n\n` +
-        `_Any image works - landscapes, gradients, etc._ 🖤${staffNote}`
+        `_Any image works — landscapes, gradients, anime screenshots, etc._ 🖤${staffNote}`
       )
     }
 

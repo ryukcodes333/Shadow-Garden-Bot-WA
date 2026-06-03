@@ -164,27 +164,37 @@ async function gifBufToMp4(gifBuf) {
 }
 
 // Send a card image — always fetches buffer (needed for CDNs like mazoku.cc)
-async function sendCardMedia(sock, jid, msg, url, caption) {
+// Build @s.whatsapp.net mention JIDs from an owners list (for card captions)
+function ownerMentions(ownersList) {
+  if (!ownersList || !ownersList.length) return []
+  return ownersList.slice(0, 10).map(o => {
+    const raw = (typeof o === 'object' ? (o?.phone || '') : String(o || ''))
+    const num = raw.split('@')[0].split(':')[0]
+    return num ? num + '@s.whatsapp.net' : null
+  }).filter(Boolean)
+}
+
+async function sendCardMedia(sock, jid, msg, url, caption, mentions) {
   if (!url) return false
   try {
     // Fetch buffer first so CDNs like mazoku.cc that block direct URL access still work
     const buf = await fetchBuf(url)
     // Detect GIF by URL extension OR by magic bytes (GIF87a / GIF89a = 0x47 0x49 0x46)
     const isGif = url.toLowerCase().endsWith('.gif') || isGifBuffer(buf)
+    const mentionsArr = mentions && mentions.length ? mentions : undefined
     if (isGif && buf) {
       const mp4Buf = await gifBufToMp4(buf)
       if (mp4Buf) {
-        await sock.sendMessage(jid, { video: mp4Buf, gifPlayback: true, caption }, { quoted: msg })
+        await sock.sendMessage(jid, { video: mp4Buf, gifPlayback: true, caption, ...(mentionsArr ? { mentions: mentionsArr } : {}) }, { quoted: msg })
         return true
       }
-      // ffmpeg not available — send as gifPlayback via URL
-      await sock.sendMessage(jid, { video: { url }, gifPlayback: true, caption }, { quoted: msg })
+      await sock.sendMessage(jid, { video: { url }, gifPlayback: true, caption, ...(mentionsArr ? { mentions: mentionsArr } : {}) }, { quoted: msg })
       return true
     }
     if (buf) {
-      await sock.sendMessage(jid, { image: buf, caption }, { quoted: msg })
+      await sock.sendMessage(jid, { image: buf, caption, ...(mentionsArr ? { mentions: mentionsArr } : {}) }, { quoted: msg })
     } else {
-      await sock.sendMessage(jid, { image: { url }, caption }, { quoted: msg })
+      await sock.sendMessage(jid, { image: { url }, caption, ...(mentionsArr ? { mentions: mentionsArr } : {}) }, { quoted: msg })
     }
     return true
   } catch { return false }
@@ -466,7 +476,7 @@ module.exports = {
         const cardId = extractCardId(m.url)
         const owners = await db.getCardOwners(m.url).catch(() => [])
         const caption = cardBlock(m.name, m.tier, m.series, owners.length, cardId, owners)
-        const sent = await sendCardMedia(sock, jid, msg, m.url, caption)
+        const sent = await sendCardMedia(sock, jid, msg, m.url, caption, ownerMentions(owners))
         if (!sent) await reply(caption)
       }))
 
@@ -576,7 +586,7 @@ module.exports = {
     const cardId   = extractCardId(imageUrl || name)
     const owners   = await db.getCardOwners(imageUrl).catch(() => [])
     const caption  = cardBlock(name, tier, series, owners.length, cardId, owners)
-    const sent = await sendCardMedia(sock, jid, msg, imageUrl, caption)
+    const sent = await sendCardMedia(sock, jid, msg, imageUrl, caption, ownerMentions(owners))
     if (!sent) await reply(caption)
   },
 
