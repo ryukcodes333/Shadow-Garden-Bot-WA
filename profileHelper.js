@@ -715,6 +715,12 @@ async function makeInitialsAvatar(name, diameter) {
 
 // ─── FETCH REMOTE BUFFER ─────────────────────────────────────────────────────
 function fetchBuffer(url) {
+  // Handle base64 data URLs stored directly in MongoDB (used by setpp / setbg)
+  if (url && url.startsWith('data:')) {
+    const match = url.match(/^data:[^;]+;base64,(.+)$/)
+    if (match) return Promise.resolve(Buffer.from(match[1], 'base64'))
+    return Promise.reject(new Error('Invalid data URL'))
+  }
   return new Promise((resolve, reject) => {
     const client = url.startsWith('https') ? https : http
     const req = client.get(url, { timeout: 15000 }, (res) => {
