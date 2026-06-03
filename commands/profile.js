@@ -281,6 +281,9 @@ module.exports = {
       } catch (err) {
         return reply(`❌ Video error: ${err.message}`)
       }
+      if (!videoBuf) {
+        return reply('❌ Could not read the video. Make sure you\'re sending or quoting a video.')
+      }
       try {
         const storagePath = `profiles/pp/${sender}.mp4`
         const url = await uploadToStorage(videoBuf, storagePath, 'video/mp4')
@@ -358,6 +361,9 @@ module.exports = {
         videoBuf = await getRawVideoBuffer(sock, msg)
       } catch (err) {
         return reply(`❌ Video error: ${err.message}`)
+      }
+      if (!videoBuf) {
+        return reply('❌ Could not read the video. Make sure you\'re sending or quoting a video.')
       }
       try {
         const storagePath = `profiles/bg/${sender}.mp4`

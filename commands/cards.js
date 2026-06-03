@@ -65,13 +65,17 @@ function cardBlock(name, tier, series, ownerCount, cardId, ownersList) {
   } else {
     const roman = ['Ⅰ','Ⅱ','Ⅲ','Ⅳ','Ⅴ','Ⅵ','Ⅶ','Ⅷ','Ⅸ','Ⅹ']
     // Show stored phone/JID cleanly — strip @domain and :resource
+    // LID numbers look like hex strings (not pure digits), skip @mention for those
     const toNum = o => {
       const raw = (typeof o === 'object' ? (o?.phone || '') : String(o || ''))
-      return raw.split('@')[0].split(':')[0] || '?'
+      return raw.split('@')[0].split(':')[0] || ''
     }
-    const lines  = ownersList.slice(0, 10).map((o, i) =>
-      `⟡ 𝗖𝗼𝗽𝘆 ${roman[i] || i + 1} | \`${cardId}\`\n   👤 @${toNum(o)}`
-    ).join('\n')
+    const isLid = num => !num || !/^\d{7,15}$/.test(num)
+    const lines  = ownersList.slice(0, 10).map((o, i) => {
+      const num = toNum(o)
+      const tag = isLid(num) ? '👤 _Unknown_' : `👤 @${num}`
+      return `⟡ 𝗖𝗼𝗽𝘆 ${roman[i] || i + 1} | \`${cardId}\`\n   ${tag}`
+    }).join('\n')
     holdersSection = '\n' + lines
   }
 
@@ -170,7 +174,9 @@ function ownerMentions(ownersList) {
   return ownersList.slice(0, 10).map(o => {
     const raw = (typeof o === 'object' ? (o?.phone || '') : String(o || ''))
     const num = raw.split('@')[0].split(':')[0]
-    return num ? num + '@s.whatsapp.net' : null
+    // Skip LID numbers (hex-like, not pure digits 7-15 chars) — they aren't real WA JIDs
+    if (!num || !/^\d{7,15}$/.test(num)) return null
+    return num + '@s.whatsapp.net'
   }).filter(Boolean)
 }
 

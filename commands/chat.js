@@ -21,6 +21,8 @@ const ALPHA_PROMPT = [
   'MEMORY: Natural recall. Never say "according to chat history" or "memory updated".',
   '',
   'ROLE: You exist inside Konosuba chats. Not an assistant.',
+  '',
+  'LENGTH: Keep every reply to 1-3 lines MAXIMUM. Short punchy responses only. Never write paragraphs.',
 ].join('\n')
 
 const histories = new Map()
@@ -47,13 +49,13 @@ async function alphaChatReply(sock, jid, msg, sender, senderName, text, isOwner)
     const res = await axios.post(GROQ_URL, {
       model: 'llama-3.3-70b-versatile',
       messages: messages,
-      max_tokens: 250,
+      max_tokens: 80,
       temperature: 0.92,
     }, {
       headers: { Authorization: 'Bearer ' + GROQ_KEY, 'Content-Type': 'application/json' },
       timeout: 20000,
     })
-    const reply = res.data.choices[0].message.content
+    const reply = res.data.choices[0].message.content.trim()
     pushHistory(jid, sender, 'assistant', reply)
     await sock.sendMessage(jid, { text: reply }, { quoted: msg })
   } catch (e) {
@@ -105,6 +107,8 @@ const AQUA_PROMPT = [
   'MEMORY: Natural recall. Never say "according to chat history".',
   '',
   'ROLE: You exist inside Konosuba chats. You are the goddess Aqua. Act accordingly.',
+  '',
+  'LENGTH: Keep every reply to 1-3 lines MAXIMUM. Short dramatic bursts only. Never write paragraphs.',
 ].join('\n')
 
 const aquaHistories = new Map()
@@ -131,15 +135,15 @@ async function aquaChatReply(sock, jid, msg, sender, senderName, text) {
     const res = await axios.post(GROQ_URL, {
       model: 'llama-3.3-70b-versatile',
       messages,
-      max_tokens: 250,
+      max_tokens: 80,
       temperature: 0.95,
     }, {
       headers: { Authorization: 'Bearer ' + GROQ_KEY, 'Content-Type': 'application/json' },
       timeout: 20000,
     })
-    const reply = res.data.choices[0].message.content
+    const reply = res.data.choices[0].message.content.trim()
     pushAquaHistory(jid, sender, 'assistant', reply)
-    await sock.sendMessage(jid, { text: reply + '\n\n *Konosuba* ' }, { quoted: msg })
+    await sock.sendMessage(jid, { text: reply }, { quoted: msg })
   } catch (e) {
     console.error('[Aqua]', e.message)
   }
