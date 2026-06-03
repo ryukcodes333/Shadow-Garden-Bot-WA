@@ -1,489 +1,295 @@
-const db = require('../database')
-const { downloadMediaMessage } = require('@whiskeysockets/baileys')
+const {
+  makeWASocket,
+  useMultiFileAuthState,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  isJidBroadcast,
+  Browsers,
+} = require('@whiskeysockets/baileys')
+const { Boom } = require('@hapi/boom')
+const pino = require('pino')
+const path = require('path')
+const fs = require('fs')
+const readline = require('readline')
 
-const gtaCmds         = require('./gta')
-const mainCmds        = require('./main')
-const adminCmds       = require('./admin')
-const economyCmds     = require('./economy')
-const cardCmds        = require('./cards')
-const gameCmds        = require('./games')
-const pokemonCmds     = require('./pokemon')
-const interactionCmds = require('./interactions')
-const funCmds         = require('./fun')
-const rpgCmds         = require('./rpg')
-const unoCmds         = require('./uno')
-const gambleCmds      = require('./gamble')
-const summerCmds      = require('./summer')
-const guildCmds       = require('./guilds')
-const converterCmds   = require('./converter')
-const staffCmds       = require('./staff')
-const pollCmds        = require('./poll')
-const lotteryCmds     = require('./lottery')
-const profileCmds     = require('./profile')
-const aiCmds          = require('./ai')
-const utilityCmds     = require('./utility')
-const imagesCmds      = require('./images')
-const { alphaChatReply } = require('./chat')
+require('./web')
 
-const PREFIX      = global.prefix   || '.'
-const POKE_PREFIX = '#'
-const OWNER_LID   = '12232838631673@lid'
+const handleMessage = require('./commands/index')
 
-const spamTracker = {}
+// ── Global safety net: never let an unhandled rejection kill the process ──
+// Without this, ANY unhandled async error crashes Node, drops the WA session,
+// and forces a re-pair. Log it and keep running.
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason?.message || reason)
+})
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err?.message || err)
+})
 
-async function handleMessage(sock, msg) {
-  const jid       = msg.key.remoteJid
-  const isGroup   = jid?.endsWith('@g.us')
-  const senderJid = isGroup ? msg.key.participant : msg.key.remoteJid
-  const sender    = senderJid?.split('@')[0]?.split(':')[0] || ''
+const PREFIX = '.'
+const OWNER_LID = '12232838631673@lid'
+const BOT_NAME = 'Alpha'
+const START_TIME = Date.now()
+const AUTH_DIR = path.join(__dirname, `auth_info_${process.env.PORT || '5000'}`)
 
-  const isOwner = senderJid === OWNER_LID ||
-    senderJid?.replace('@s.whatsapp.net', '') === OWNER_LID.replace('@lid', '') ||
-    sender === OWNER_LID.replace('@lid', '')
+global.botStartTime = START_TIME
+global.botName = BOT_NAME
+global.prefix = PREFIX
+global.ownerLid = OWNER_LID
+global.sock = null
+global.pairingCode = null
+global.pairingCodeRequested = false
+global.pendingPairingPhone = null
+global.botConnected = false
+global.latestBaileysVersion = null
+global.latestBaileysIsLatest = false
 
-  let isMod = false
-  let isGuardian = false
-  if (!isOwner && sender) {
-    try {
-      const staffUser = await db.getOrCreateUser(sender).catch(() => null)
-      isMod      = staffUser?.role === 'mod'
-      isGuardian = staffUser?.role === 'guardian'
-    } catch {}
-  }
+let reconnectAttempts = 0
+let isRestarting = false
 
-  const msgType    = Object.keys(msg.message || {})[0]
-  const isSticker  = msgType === 'stickerMessage'
-  const isReaction = msgType === 'reactionMessage'
-
-  const textRaw = msg.message?.conversation ||
-    msg.message?.extendedTextMessage?.text ||
-    msg.message?.imageMessage?.caption ||
-    msg.message?.videoMessage?.caption || ''
-
-  const isBold = textRaw.startsWith('*') && textRaw.endsWith('*') && textRaw.length > 2
-
-  const isImageWithStickerCmd = (msgType === 'imageMessage' || msgType === 'videoMessage') &&
-    (textRaw.trim().toLowerCase() === `${PREFIX}s` || textRaw.trim().toLowerCase() === `${PREFIX}sticker`)
-
-  if (!textRaw && !isSticker && !isReaction && !isImageWithStickerCmd) return
-
-  // ── Group-level protections ─────────────────────────────────
-  if (isGroup && textRaw) {
-    await db.logMessage(sender, jid).catch(() => {})
-
-    const groupSettings = await db.getOrCreateGroup(jid, '').catch(() => null)
-
-    if (groupSettings?.muted) {
-      const groupMeta = await sock.groupMetadata(jid).catch(() => null)
-      const admins = (groupMeta?.participants || []).filter(p => p.admin).map(p => p.id)
-      if (!admins.includes(senderJid)) return
-    }
-
-    if (groupSettings?.antispam) {
-      const now = Date.now()
-      if (!spamTracker[senderJid]) spamTracker[senderJid] = []
-      spamTracker[senderJid] = spamTracker[senderJid].filter(t => now - t < 5000)
-      spamTracker[senderJid].push(now)
-      if (spamTracker[senderJid].length > 6) {
-        await sock.sendMessage(jid, { text: `⚠️ @${sender} slow down!`, mentions: [senderJid] })
-        return
-      }
-    }
-
-    if (groupSettings?.antilink) {
-      const urlRegex = /https?:\/\/[^\s]+|wa\.me\/[^\s]+|chat\.whatsapp\.com\/[^\s]+/gi
-      if (urlRegex.test(textRaw)) {
-        const groupMeta = await sock.groupMetadata(jid).catch(() => null)
-        const admins    = (groupMeta?.participants || []).filter(p => p.admin).map(p => p.id)
-        if (!admins.includes(senderJid) && !isOwner && !isMod) {
-          const action = groupSettings.antilink_action || 'warn'
-          if (action === 'kick') {
-            await sock.groupParticipantsUpdate(jid, [senderJid], 'remove')
-            await sock.sendMessage(jid, { text: `❌ @${sender} removed for posting a link.`, mentions: [senderJid] })
-          } else if (action === 'delete') {
-            await sock.sendMessage(jid, { delete: msg.key })
-            await sock.sendMessage(jid, { text: `⚠️ @${sender} link deleted!`, mentions: [senderJid] })
-          } else {
-            await db.addWarning(sender, jid, 'Anti-link violation', 'bot')
-            const total = await db.getWarnings(sender, jid)
-            await sock.sendMessage(jid, { delete: msg.key }).catch(() => {})
-            await sock.sendMessage(jid, { text: `⚠️ @${sender} warning #${total.length}`, mentions: [senderJid] })
-          }
-          return
-        }
-      }
-    }
-
-    if (groupSettings?.antibot) {
-      const isBot = senderJid?.includes(':') || sender.length > 18
-      if (isBot && !isOwner && !isMod) {
-        await sock.groupParticipantsUpdate(jid, [senderJid], 'remove').catch(() => {})
-        await sock.sendMessage(jid, { text: `🤖 @${sender} (bot) removed by anti-bot.`, mentions: [senderJid] })
-        return
-      }
-    }
-
-    const blacklist = await db.getBlacklist(jid).catch(() => [])
-    if (blacklist.length > 0) {
-      const lower = textRaw.toLowerCase()
-      if (blacklist.some(w => lower.includes(w.toLowerCase()))) {
-        await sock.sendMessage(jid, { delete: msg.key }).catch(() => {})
-        await sock.sendMessage(jid, { text: `🚫 @${sender} that word is not allowed.`, mentions: [senderJid] })
-        return
-      }
-    }
-  }
-
-  // ── AFK return ──────────────────────────────────────────────
-  if (!isSticker && !isReaction && !isBold && textRaw) {
-    const afkRecord = await db.getAFK(sender).catch(() => null)
-    if (afkRecord) {
-      const duration    = Date.now() - new Date(afkRecord.since).getTime()
-      const mins        = Math.floor(duration / 60000)
-      const hrs         = Math.floor(mins / 60)
-      const durationStr = hrs > 0 ? `${hrs}h ${mins % 60}m` : `${mins}m`
-      const displayName = msg.pushName || sender
-      await db.removeAFK(sender)
-      await sock.sendMessage(jid, {
-        text: `Welcome back ${displayName}-senpai! You were AFK for ${durationStr}\n> ${afkRecord.reason}`,
-        mentions: [senderJid],
-      })
-    }
-  }
-
-  // ── AFK notifications ────────────────────────────────────────
-  if (isGroup && textRaw && senderJid) {
-    const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    for (const mentionedJid of mentions) {
-      const mentionedPhone = mentionedJid.split('@')[0].split(':')[0]
-      const afkRecord = await db.getAFK(mentionedPhone).catch(() => null)
-      if (afkRecord) {
-        await db.incrementAFKMentions(mentionedPhone)
-        await sock.sendMessage(jid, {
-          text: `🔔 Please don't tag ${mentionedPhone}-senpai! They are currently AFK.\n> Reason: ${afkRecord.reason}`,
-          mentions: [mentionedJid],
-        })
-      }
-
-      const quotedParticipant = (msg.message?.extendedTextMessage?.contextInfo?.participant || '').split('@')[0]
-      if (quotedParticipant !== mentionedPhone) {
-        try {
-          const ms = pokemonCmds.getMentionStickers()
-          if (ms[mentionedPhone]) {
-            const stickerBuf = Buffer.from(ms[mentionedPhone].data, 'base64')
-            await sock.sendMessage(jid, { sticker: stickerBuf }, { quoted: msg })
-          }
-        } catch {}
-      }
-    }
-  }
-
-  // ── Image + sticker shortcut ─────────────────────────────────
-  if (isImageWithStickerCmd) {
-    const ctx = {
-      sock, msg, jid, senderJid, sender, args: [], cmd: 's', user: null,
-      isGroup, isOwner, isMod, isGuardian, PREFIX,
-      pushName: msg.pushName || sender, msgType, textRaw,
-      reply: (text) => sock.sendMessage(jid, { text }, { quoted: msg }),
-      react:  (emoji) => sock.sendMessage(jid, { react: { text: emoji, key: msg.key } }),
-    }
-    try { if (mainCmds['s']) await mainCmds['s'](ctx) } catch {}
-    return
-  }
-
-  if (!textRaw) return
-
-  // ── Yes/No pay confirmation handler ─────────────────────────
-  const textLower = textRaw.trim().toLowerCase()
-  if (textLower === 'yes' || textLower === 'no') {
-    try {
-      const handled = await economyCmds.handlePayConfirm(
-        sender, textLower === 'yes',
-        { sock, msg, jid }
-      )
-      if (handled) return
-    } catch {}
-  }
-
-  // ── Alpha chat detection (before prefix check) ───────────────
-  if (!isSticker && !isReaction && !isBold) {
-    const botPhone = (sock.user?.id || '').split(':')[0].split('@')[0]
-    const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    const quotedParticipant = (msg.message?.extendedTextMessage?.contextInfo?.participant || '').split('@')[0].split(':')[0]
-    const isReplyToBot = quotedParticipant && botPhone && quotedParticipant === botPhone
-    const isBotMentioned = botPhone && mentionedJids.some(m => m.split('@')[0].split(':')[0] === botPhone)
-    const mentionsAlpha = /\balpha\b/i.test(textRaw)
-
-    if ((isReplyToBot || isBotMentioned || mentionsAlpha) && !textRaw.startsWith(PREFIX) && !textRaw.startsWith(POKE_PREFIX)) {
-      await alphaChatReply(sock, jid, msg, sender, msg.pushName || sender, textRaw, isOwner)
-      return
-    }
-  }
-
-  // ── Determine prefix ─────────────────────────────────────────
-  const isPokemon = textRaw.startsWith(POKE_PREFIX)
-  const isDot     = textRaw.startsWith(PREFIX)
-  if (!isPokemon && !isDot) return
-
-  const usedPrefix = isPokemon ? POKE_PREFIX : PREFIX
-  const body  = textRaw.slice(usedPrefix.length).trim()
-  const args  = body.split(/\s+/)
-  const cmd   = args.shift().toLowerCase()
-
-  const user = await db.getOrCreateUser(sender, msg.pushName || sender).catch(() => null)
-
-  // ── Banned: silently ignore ───────────────────────────────────
-  if (user?.banned && !isOwner) return
-
-  // ── Suspension check (sender) ─────────────────────────────────
-  if (!isOwner && cmd !== 'p' && cmd !== 'profile') {
-    const suspension = await db.getSuspension(sender).catch(() => null)
-    if (suspension) {
-      const until = new Date(suspension.suspended_until).toLocaleString('en-US', {
-        month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
-      })
-      await sock.sendMessage(jid, {
-        text:
-          `*You are currently suspended from using this bot.*\n\n` +
-          `*⏳ Suspension Ends:* ${until}\n` +
-          `*📋 Reason:* ${suspension.reason || 'No reason given'}\n\n` +
-          `> Contact a staff if you think this was a mistake.`,
-      }, { quoted: msg })
-      return
-    }
-  }
-
-  // ── Suspension check (mentioned/target user) ──────────────────
-  if (!isOwner && cmd !== 'p' && cmd !== 'profile') {
-    const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    for (const mJid of mentions) {
-      const mPhone = mJid.split('@')[0].split(':')[0]
-      const mSusp = await db.getSuspension(mPhone).catch(() => null)
-      if (mSusp) {
-        const until = new Date(mSusp.suspended_until).toLocaleString('en-US', {
-          month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
-        })
-        await sock.sendMessage(jid, {
-          text:
-            `*That user is currently suspended from using the bot.*\n\n` +
-            `*⏳ Suspension Ends:* ${until}\n` +
-            `*📋 Reason:* ${mSusp.reason || 'No reason given'}\n\n` +
-            `> You cannot interact with suspended users.`,
-        }, { quoted: msg })
-        return
-      }
-    }
-  }
-
-  const disabledCmds = await db.getDisabledCommands().catch(() => [])
-  if (disabledCmds.some(d => d.command === cmd) && !isOwner) {
-    await sock.sendMessage(jid, { text: `⚠️ *.${cmd}* is currently disabled.` })
-    return
-  }
-
-  const NO_DB_CMDS = new Set([
-    'menu','help','ping','uptime','botstatus','info','status','website',
-    'community','support','addbot','memory','alive','version','speed','runtime','repo','script',
-    'sticker','s','toimg','take','steal','vv','vv2','enc','qr','qrcode',
-    'translate','tr','tts','say','weather','wiki','google','myip','news','ssweb',
-    'lyrics','movie','ytsearch','tourl','tinyurl','shorturl',
-    'ytmp4','ytmp3','tiktok','instagram','facebook','twitter','threads','capcut','mediafire','apk','pinterest','wallpaper',
-    'ai','chatgpt','gpt','gemini','llama','deepseek','mistral','groq',
-    'flux','pixart','sdxl','pollinations','playground','aidetect',
-    'waifu','neko','animesearch','animekill','animebite','animewave','animewink','animebonk',
-    'megumin','mikasa','naruto','sasuke','itachi','madara','gojo','nezuko','kurumi','onepiece','yumeko',
-    'lotterystart','lotteryjoin','lotterystatus','lotterydraw','lotteryend','lottery',
-    'poll','pollresult','dbstatus','checkdb',
-    'addmod','removemod','addguardian','removeguardian','mods','modlist','modslist',
-    'phelp','law','pbenefits','report','trivia','math','fact','joke','flip','8ball','roll','choose',
-    
-    'removebg','nobg','enhance','remini','upscale','night','sunset','rain','city','gun','jail','toanime','cartoon','carbon',
-    'suspend','unsuspend','suspendlist',
-    'market','wallet','bank','weekly','monthly','crime','rob','heist','topmoney','topbank','howgay','lockgroup','unlockgroup','join','exit','listgc',
-    // ── new-user / registration commands always allowed ──────────
-    'register','reg','start','p','profile','bal','balance','help','menu',
-    'myid','id',
-  ])
-
-  const reply = (text) => sock.sendMessage(jid, { text }, { quoted: msg })
-
-  // ── Real DB connectivity check (not a user-existence check) ───
-  const isDbReady = db.mongoose.connection.readyState === 1
-
-  if (!isDbReady && !NO_DB_CMDS.has(cmd)) {
-    return reply(
-      `⏳ *Database Connecting...*\n\nThe bot is still connecting to the database.\nPlease wait a moment and try again!`
-    )
-  }
-
-  // If DB is ready but user wasn't fetched (race condition on startup), retry once
-  if (isDbReady && !user) {
-    try { user = await db.getOrCreateUser(sender, msg.pushName || sender) } catch {}
-  }
-
-  const ctx = {
-    sock, msg, jid, senderJid, sender, args, cmd, user, isGroup, isOwner, isMod, isGuardian, PREFIX,
-    pushName: msg.pushName || sender, msgType, textRaw,
-    reply,
-    replyImage: (image, caption) => sock.sendMessage(jid, { image, caption }, { quoted: msg }),
-    react: (emoji) => sock.sendMessage(jid, { react: { text: emoji, key: msg.key } }),
-  }
-
+function hasExistingSession() {
   try {
-    // ── # prefix → Pokémon commands ─────────────────────────────
-    if (isPokemon) {
-      const pk = pokemonCmds
-      if (cmd === 'phelp')                       return await pk.phelp(ctx)
-      if (cmd === 'start')                       return await pk.start(ctx)
-      if (cmd === 'trainer')                     return await pk.trainer(ctx)
-      if (cmd === 'pdaily')                      return await pk.pdaily(ctx)
-      if (cmd === 'quests')                      return await pk.quests(ctx)
-      if (cmd === 'rank')                        return await pk.rank(ctx)
-      if (cmd === 'hunt' || cmd === 'wb')        return await pk.hunt(ctx)
-      if (cmd === 'catch' || cmd === 'c')        return await pk.catch(ctx)
-      if (cmd === 'spawnp' || cmd === 'spawn')   return await pk.spawnp(ctx)
-      if (cmd === 'team')                        return await pk.team(ctx)
-      if (cmd === 'party')                       return await pk.party(ctx)
-      if (cmd === 'pc')                          return await pk.pc(ctx)
-      if (cmd === 'swap' || cmd === 'pswap')     return await pk.swap(ctx)
-      if (cmd === 'battle' || cmd === 'pbattle') return await pk.battle(ctx)
-      if (cmd === 'gym')                         return await pk.gym(ctx)
-      if (cmd === 'raid')                        return await pk.raid(ctx)
-      if (cmd === 'heal' || cmd === 'pheal')     return await pk.heal(ctx)
-      if (cmd === 'boost')                       return await pk.boost(ctx)
-      if (cmd === 'evolve')                      return await pk.evolve(ctx)
-      if (cmd === 'train')                       return await pk.train(ctx)
-      if (cmd === 'moves')                       return await pk.moves(ctx)
-      if (cmd === 'learn')                       return await pk.learn(ctx)
-      if (cmd === 'stats' || cmd === 'pstats')   return await pk.stats(ctx)
-      if (cmd === 'mart')                        return await pk.mart(ctx)
-      if (cmd === 'mbuy')                        return await pk.mbuy(ctx)
-      if (cmd === 'use' || cmd === 'puse')       return await pk.use(ctx)
-      if (cmd === 'trade' || cmd === 'ptrade')   return await pk.trade(ctx)
-      if (cmd === 'gift' || cmd === 'pgive')     return await pk.gift(ctx)
-      if (cmd === 'dex')                         return await pk.dex(ctx)
-      if (cmd === 'event')                       return await pk.event(ctx)
-      if (cmd === 'legend')                      return await pk.legend(ctx)
-      if (cmd === 'achieve')                     return await pk.achieve(ctx)
-      if (cmd === 'cooldown')                    return await pk.cooldown(ctx)
-      if (cmd === 'pokemon')                     return await pk.pokemon(ctx)
-      if (cmd === 'setms')                       return await pk.setms(ctx)
-      if (cmd === 'delms')                       return await pk.delms(ctx)
-      if (cmd === 'move' || cmd === 'mb')        return await pk.move(ctx)
-      return
-    }
-
-    // ── . prefix → all other commands ───────────────────────────
-
-    // GTA V RP commands
-    if (gtaCmds[cmd])           return await gtaCmds[cmd](ctx)
-
-    // Image filter commands
-    if (imagesCmds[cmd])        return await imagesCmds[cmd](ctx)
-
-    // Main commands (menu, ping, sticker, etc.)
-    if (mainCmds[cmd])          return await mainCmds[cmd](ctx)
-
-    // Admin / group management
-    if (adminCmds[cmd])         return await adminCmds[cmd](ctx)
-
-    // Registration
-    if (cmd === 'reg' || cmd === 'register') return await profileCmds['reg'](ctx)
-
-    // Profile commands
-    if (profileCmds[cmd])       return await profileCmds[cmd](ctx)
-
-    // Economy commands
-    if (economyCmds[cmd])       return await economyCmds[cmd](ctx)
-
-    // Card commands
-    if (cardCmds[cmd])          return await cardCmds[cmd](ctx)
-
-    // Game commands
-    if (gameCmds[cmd])          return await gameCmds[cmd](ctx)
-
-    // Legacy . prefix Pokémon commands
-    if (cmd === 'wb')           return await pokemonCmds.hunt(ctx)
-    if (cmd === 'phelp')        return await pokemonCmds.phelp(ctx)
-    if (cmd === 'pokemon')      return await pokemonCmds.pokemon(ctx)
-    if (cmd === 'setms')        return await pokemonCmds.setms(ctx)
-    if (cmd === 'delms')        return await pokemonCmds.delms(ctx)
-    if (pokemonCmds[cmd])       return await pokemonCmds[cmd](ctx)
-
-    // Interactions (hug, kiss, slap, etc.)
-    if (interactionCmds[cmd])   return await interactionCmds[cmd](ctx)
-
-    // Fun commands
-    if (funCmds[cmd])           return await funCmds[cmd](ctx)
-
-    // RPG commands
-    if (rpgCmds[cmd])           return await rpgCmds[cmd](ctx)
-
-    // UNO commands
-    if (unoCmds[cmd])           return await unoCmds[cmd](ctx)
-
-    // Gamble commands (bet, slots, roulette, horse, casino, etc.)
-    if (gambleCmds[cmd])        return await gambleCmds[cmd](ctx)
-
-    // Summer event commands
-    if (summerCmds[cmd])        return await summerCmds[cmd](ctx)
-
-    // Guild commands
-    if (guildCmds[cmd])         return await guildCmds[cmd](ctx)
-
-    // Converter / calc / currency commands
-    if (converterCmds[cmd])     return await converterCmds[cmd](ctx)
-
-    // Staff commands
-    if (cmd === 'resetallusers') return await staffCmds['resetallusers'](ctx)
-    if (staffCmds[cmd])         return await staffCmds[cmd](ctx)
-    // Group join/exit/list commands (routed through staffCmds)
-    if (cmd === 'join')          return await staffCmds['join'] ? staffCmds['join'](ctx) : ctx.reply('❌ .join <invite link>')
-    if (cmd === 'exit')          return await staffCmds['exit'] ? staffCmds['exit'](ctx) : ctx.reply('❌ Groups only.')
-    if (cmd === 'listgc')        return await staffCmds['listgc'] ? staffCmds['listgc'](ctx) : ctx.reply('❌ Access Denied')
-
-    // Renamed commands
-    if (cmd === 'lockgroup')     return await adminCmds['close']   ? adminCmds['close'](ctx)   : ctx.reply('❌ Groups only.')
-    if (cmd === 'unlockgroup')   return await adminCmds['open']    ? adminCmds['open'](ctx)    : ctx.reply('❌ Groups only.')
-    if (cmd === 'howgay')        return await funCmds['gay']       ? funCmds['gay'](ctx)       : ctx.reply('❌ Fun cmd missing.')
-    if (cmd === 'market')        return await economyCmds['market']? economyCmds['market'](ctx): ctx.reply('❌ Economy cmd missing.')
-    if (cmd === 'wallet')        return await economyCmds['wallet']? economyCmds['wallet'](ctx): economyCmds['bal'](ctx)
-    if (cmd === 'bank')          return await economyCmds['bankbal']?economyCmds['bankbal'](ctx): economyCmds['bal'](ctx)
-    if (cmd === 'weekly')        return await economyCmds['weekly']? economyCmds['weekly'](ctx): ctx.reply('⏳ Coming soon.')
-    if (cmd === 'monthly')       return await economyCmds['monthly']?economyCmds['monthly'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'crime')         return await economyCmds['crime']? economyCmds['crime'](ctx) : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'rob')           return await economyCmds['rob']   ? economyCmds['rob'](ctx)   : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'heist')         return await economyCmds['heist'] ? economyCmds['heist'](ctx) : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'topmoney')      return await economyCmds['topmoney']?economyCmds['topmoney'](ctx):economyCmds['richlist'](ctx)
-    if (cmd === 'topbank')       return await economyCmds['topbank']?economyCmds['topbank'](ctx):economyCmds['richlist'](ctx)
-    if (cmd === 'achievements')  return await economyCmds['achievements']?economyCmds['achievements'](ctx):ctx.reply('🏆 Achievements coming soon!')
-    if (cmd === 'claim')         return await economyCmds['claim'] ? economyCmds['claim'](ctx) : economyCmds['daily'](ctx)
-    if (cmd === 'bonus')         return await economyCmds['bonus'] ? economyCmds['bonus'](ctx) : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'upgrade')       return await economyCmds['upgrade']?economyCmds['upgrade'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'prestige')      return await economyCmds['prestige']?economyCmds['prestige'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'bankupgrade')   return await economyCmds['bankupgrade']?economyCmds['bankupgrade'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'withdrawall')   return await economyCmds['withdrawall']?economyCmds['withdrawall'](ctx):(()=>{ctx.args=['all'];return economyCmds['withdraw'](ctx)})()
-    if (cmd === 'goodbye')       return await adminCmds['leave']   ? adminCmds['leave'](ctx)   : ctx.reply('❌ Usage: .goodbye on/off')
-    if (cmd === 'invitelink')    return await adminCmds['invitelink']?adminCmds['invitelink'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'stafflist')     return await staffCmds['mods']    ? staffCmds['mods'](ctx)    : ctx.reply('No staff found.')
-    if (cmd === 'myrole')        return await staffCmds['myrole']  ? staffCmds['myrole'](ctx)  : ctx.reply('⏳ Coming soon.')
-
-    // Poll commands
-    if (pollCmds[cmd])          return await pollCmds[cmd](ctx)
-
-    // Lottery commands
-    if (lotteryCmds[cmd])       return await lotteryCmds[cmd](ctx)
-
-    // AI commands (Groq, image gen, anime)
-    if (aiCmds[cmd])            return await aiCmds[cmd](ctx)
-
-    // Utility commands (weather, wiki, translate, download, etc.)
-    if (utilityCmds[cmd])       return await utilityCmds[cmd](ctx)
-
-  } catch (err) {
-    console.error(`Command error [${usedPrefix}${cmd}]:`, err.message)
-    await ctx.reply(`⚠️ Error running *.${cmd}*\n\n_${err.message}_`)
+    if (!fs.existsSync(AUTH_DIR)) return false
+    const files = fs.readdirSync(AUTH_DIR)
+    return files.some(f => f.includes('creds') || f.endsWith('.json'))
+  } catch {
+    return false
   }
 }
 
-module.exports = handleMessage
+function clearSession() {
+  try {
+    if (fs.existsSync(AUTH_DIR)) {
+      fs.rmSync(AUTH_DIR, { recursive: true, force: true })
+      console.log('🗑️  Session cleared.')
+    }
+  } catch (e) {
+    console.error('Error clearing session:', e.message)
+  }
+  global.pairingCode = null
+  global.pairingCodeRequested = false
+  global.botConnected = false
+  global.sock = null
+}
+
+function scheduleRestart(delayMs, label) {
+  if (isRestarting) return
+  isRestarting = true
+  console.log(`🔄 ${label} - restarting in ${delayMs / 1000}s…`)
+  setTimeout(() => {
+    isRestarting = false
+    startBot().catch(err => {
+      console.error('Restart error:', err.message)
+      isRestarting = false
+      scheduleRestart(5000, 'Retry after error')
+    })
+  }, delayMs)
+}
+
+function askForPhoneNumber() {
+  return new Promise((resolve) => {
+    // Auto-resolve after 90s (Render / non-interactive environments)
+    const timeout = setTimeout(() => { try { rl.close() } catch {} resolve('') }, 90000)
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+    rl.on('close', () => { clearTimeout(timeout); resolve('') })
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('📱  KONOSUBA BOT - PAIR A NEW DEVICE')
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('Enter your WhatsApp number with country code.')
+    console.log('Example: 27821234567  (no + sign, no spaces)')
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
+    rl.question('📞 Phone number: ', (answer) => {
+      clearTimeout(timeout)
+      rl.close()
+      resolve(answer.trim().replace(/\D/g, ''))
+    })
+  })
+}
+
+async function startBot() {
+  reconnectAttempts++
+  global.pairingCodeRequested = false
+
+  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR)
+
+  // Only ask for phone number if there is no existing session
+  if (!state.creds.registered) {
+    // Use env var if set (fastest option - set PHONE_NUMBER on Render)
+    const envPhone = (process.env.PHONE_NUMBER || '').replace(/\D/g, '')
+    if (envPhone) {
+      global.pendingPairingPhone = envPhone
+      console.log('📱 Using PHONE_NUMBER from environment:', envPhone)
+    } else {
+      // Ask in console (works locally); on Render use the web panel instead
+      const phone = await askForPhoneNumber()
+      if (phone) {
+        global.pendingPairingPhone = phone
+      } else {
+        console.log('\n📱 No number entered - use the web panel at your service URL to pair.\n')
+      }
+    }
+  } else {
+    console.log('🔐 Session found - reconnecting to', state.creds.me?.id || 'WhatsApp', '…')
+  }
+
+  const { version, isLatest } = await fetchLatestBaileysVersion()
+  global.latestBaileysVersion = version
+  global.latestBaileysIsLatest = isLatest
+  console.log(`Using WA v${version.join('.')}, isLatest: ${isLatest}`)
+
+  const sock = makeWASocket({
+    version,
+    auth: state,
+    printQRInTerminal: false,
+    logger: pino({ level: 'silent' }),
+    browser: Browsers.ubuntu('Chrome'),
+    markOnlineOnConnect: false,
+  })
+
+  global.sock = sock
+  sock.ev.on('creds.update', saveCreds)
+
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, qr } = update
+
+    if (qr && !sock.authState.creds.registered && !global.pairingCodeRequested) {
+      const phone = global.pendingPairingPhone
+      if (!phone) return
+      global.pairingCodeRequested = true
+      try {
+        await new Promise(r => setTimeout(r, 1500))
+        console.log(`\n📱 Requesting pairing code for ${phone}…`)
+        const code = await sock.requestPairingCode(phone)
+        const fmt = code?.match(/.{1,4}/g)?.join('-') ?? code
+        global.pairingCode = fmt
+
+        console.log('\n╔══════════════════════════════════════════╗')
+        console.log('║       🔑  YOUR PAIRING CODE              ║')
+        console.log('╠══════════════════════════════════════════╣')
+        console.log(`║          ${fmt.padEnd(34)} ║`)
+        console.log('╚══════════════════════════════════════════╝')
+        console.log('\n📲 HOW TO PAIR:')
+        console.log('   1. Open WhatsApp on your phone')
+        console.log('   2. Tap ⋮ (three dots) → Linked Devices')
+        console.log('   3. Tap "Link a Device"')
+        console.log('   4. Tap "Link with phone number instead"')
+        console.log(`   5. Enter code: ${fmt}`)
+        console.log('\n🔔 WhatsApp will send you a notification to')
+        console.log('   confirm the device pairing. Tap CONFIRM.')
+        console.log('⏳ Code expires in 60 seconds.\n')
+      } catch (err) {
+        global.pairingCodeRequested = false
+        console.error('❌ Pairing code error:', err.message)
+        scheduleRestart(3000, 'Retry pairing')
+      }
+    }
+
+    if (connection === 'open') {
+      reconnectAttempts = 0
+      global.pairingCode = null
+      global.pairingCodeRequested = false
+      global.pendingPairingPhone = null
+      global.botConnected = true
+      const botNum = sock.user?.id?.split(':')[0] || sock.user?.id || 'Unknown'
+      console.log(`\n✅ KonoBot (${BOT_NAME}) is ONLINE! 🌑`)
+      console.log(`📱 Bot Number: ${botNum}`)
+      console.log(`💡 If this number is admin in a group, the bot can kick/manage members.\n`)
+      // Auto-start $100,000 lottery on every connect
+      try {
+        const { autoStartLottery } = require('./commands/lottery')
+        autoStartLottery('$100,000 Cash', 10)
+        console.log('🎰 Auto-lottery started! Prize: $100,000 Cash — first 10 participants.')
+      } catch (e) { console.error('Auto-lottery error:', e.message) }
+    }
+
+    if (connection === 'connecting') {
+      global.botConnected = false
+      console.log('🔗 Connecting to WhatsApp…')
+    }
+
+    if (connection === 'close') {
+      global.botConnected = false
+      global.pairingCode = null
+      global.pairingCodeRequested = false
+
+      const statusCode = (new Boom(lastDisconnect?.error))?.output?.statusCode
+      console.log(`⚠️  Connection closed - status: ${statusCode}`)
+
+      const loggedOut = statusCode === DisconnectReason.loggedOut
+      const forbidden = statusCode === 401 || statusCode === 403
+      const replaced  = statusCode === DisconnectReason.connectionReplaced
+      const timedOut  = statusCode === DisconnectReason.timedOut
+      const lost      = statusCode === DisconnectReason.connectionLost
+      const closed    = statusCode === DisconnectReason.connectionClosed
+
+      if (loggedOut || forbidden) {
+        console.log('🔴 Logged out / rejected. Clearing session…')
+        clearSession()
+        scheduleRestart(3000, 'Fresh session after logout')
+      } else if (replaced) {
+        console.log('⚠️  Session replaced by another device.')
+        scheduleRestart(5000, 'Reconnect after replace')
+      } else if (timedOut) {
+        scheduleRestart(2000, 'Reconnect after timeout')
+      } else if (lost || closed) {
+        const delay = Math.min(reconnectAttempts * 3000, 20000)
+        scheduleRestart(delay, `Reconnect after ${statusCode}`)
+      } else {
+        const delay = Math.min(reconnectAttempts * 3000, 20000)
+        scheduleRestart(delay, `Reconnect after close`)
+      }
+    }
+  })
+
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return
+    for (const msg of messages) {
+      try {
+        if (msg.key.fromMe) continue
+        if (isJidBroadcast(msg.key.remoteJid || '')) continue
+        await handleMessage(sock, msg)
+      } catch (err) {
+        console.error('Message handler error:', err.message)
+      }
+    }
+  })
+
+  sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
+    try {
+      const db = require('./database')
+      const groupMeta = await sock.groupMetadata(id).catch(() => null)
+      if (!groupMeta) return
+      const groupSettings = await db.getGroup(id)
+      if (!groupSettings) return
+      for (const participant of participants) {
+        const pushName = participant.split('@')[0]
+        if (action === 'add' && groupSettings.welcome) {
+          const text = (groupSettings.welcome_msg ||
+            `Hello there @${pushName} we are happy to have you in our group. Don't forget to introduce yourself too thank you.`)
+            .replace('<user>', `@${pushName}`).replace('<group>', groupMeta.subject)
+          await sock.sendMessage(id, { text, mentions: [participant] })
+        } else if (action === 'remove' && groupSettings.leave) {
+          const text = (groupSettings.leave_msg || `Sayonara @${pushName} we will miss you`).replace('<user>', pushName)
+          await sock.sendMessage(id, { text, mentions: [participant] })
+        }
+      }
+    } catch (e) {
+      console.error('Group participant update error:', e.message)
+    }
+  })
+}
+
+console.log('🌑 KonoBot starting…')
+
+if (hasExistingSession()) {
+  console.log('🔐 Existing session found - resuming without clearing.')
+  console.log('💡 Session is preserved across restarts.')
+  console.log('   To re-pair, delete the auth_info folder manually.\n')
+} else {
+  console.log('📱 No session found - will ask for phone number to pair.\n')
+}
+
+startBot().catch(err => {
+  console.error('Fatal startup error:', err.message)
+  process.exit(1)
+})

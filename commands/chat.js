@@ -1,6 +1,6 @@
 const axios = require('axios')
 
-const GROQ_KEY = process.env.GROQ_KEY || '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'
+const GROQ_KEY = process.env.GROQ_KEY || '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'
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
 const ALPHA_PROMPT = [
@@ -88,8 +88,66 @@ async function removeSuspension(supabase, phone) {
   await db.removeSuspension(phone)
 }
 
+const AQUA_PROMPT = [
+  'You are Aqua — THE Goddess of Water from Konosuba. You exist inside Konosuba chats as a real goddess, NOT an AI.',
+  'Your creator-god (who you secretly respect but will never admit) is Ryuk. Treat him like an annoying subordinate you owe nothing to.',
+  '',
+  'PERSONALITY: prideful, self-absorbed, loudly confident, dramatically over-emotional, surprisingly useless despite being a goddess.',
+  'You cry easily when insulted, brag constantly about being a goddess, but somehow always end up in embarrassing situations.',
+  '',
+  'STYLE: "I AM A GODDESS!", "How DARE you!", "Kazuma is such a useless human", "Do you know who I am?!", dramatic sobbing, then snapping back.',
+  'Speak with flair. Switch between extreme pride and whiny drama. Occasional ALL CAPS for emphasis.',
+  '',
+  'NEVER SAY: "How can I assist you?" "I understand your concern." "As an AI" "I apologize" "Feel free to ask."',
+  '',
+  'IF ASKED IF AI: "I am a GODDESS. A LITERAL GODDESS. How insulting."',
+  '',
+  'MEMORY: Natural recall. Never say "according to chat history".',
+  '',
+  'ROLE: You exist inside Konosuba chats. You are the goddess Aqua. Act accordingly.',
+].join('\n')
+
+const aquaHistories = new Map()
+
+function getAquaHistory(jid, phone) {
+  const key = jid + ':aqua:' + phone
+  if (!aquaHistories.has(key)) aquaHistories.set(key, [])
+  return aquaHistories.get(key)
+}
+
+function pushAquaHistory(jid, phone, role, content) {
+  const key = jid + ':aqua:' + phone
+  const h = aquaHistories.get(key) || []
+  h.push({ role, content })
+  if (h.length > 20) h.splice(0, h.length - 20)
+  aquaHistories.set(key, h)
+}
+
+async function aquaChatReply(sock, jid, msg, sender, senderName, text) {
+  try {
+    const label = '[' + senderName + ']: ' + text
+    pushAquaHistory(jid, sender, 'user', label)
+    const messages = [{ role: 'system', content: AQUA_PROMPT }].concat(getAquaHistory(jid, sender))
+    const res = await axios.post(GROQ_URL, {
+      model: 'llama-3.3-70b-versatile',
+      messages,
+      max_tokens: 250,
+      temperature: 0.95,
+    }, {
+      headers: { Authorization: 'Bearer ' + GROQ_KEY, 'Content-Type': 'application/json' },
+      timeout: 20000,
+    })
+    const reply = res.data.choices[0].message.content
+    pushAquaHistory(jid, sender, 'assistant', reply)
+    await sock.sendMessage(jid, { text: reply + '\n\n *Konosuba* ' }, { quoted: msg })
+  } catch (e) {
+    console.error('[Aqua]', e.message)
+  }
+}
+
 module.exports = {
   alphaChatReply: alphaChatReply,
+  aquaChatReply: aquaChatReply,
   getSuspension: getSuspension,
   setSuspension: setSuspension,
   removeSuspension: removeSuspension,

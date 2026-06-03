@@ -171,7 +171,7 @@ module.exports = {
   // ─── .marry @user ─────────────────────────────────────────────────────────────
   async marry({ sock, msg, jid, sender, user, pushName, reply }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('💍 Usage: *.marry @user*\n\nMention the person you want to propose to!')
+    if (!mentioned.length) return reply('Please mention the person you want to propose to.')
 
     const targetJid   = mentioned[0]
     const targetPhone = targetJid.split('@')[0].split(':')[0]
@@ -485,7 +485,7 @@ module.exports = {
   async rob({ sock, msg, jid, sender, user, reply }) {
     const u = user || await db.getOrCreateUser(sender)
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('❌ Usage: *.rob @user*')
+    if (!mentioned.length) return reply('Please mention a user to rob.')
 
     const cdLeft = await db.getCooldown(sender, 'rob').catch(() => 0)
     if (cdLeft > 0) {
@@ -624,7 +624,7 @@ module.exports = {
   async rep({ sock, msg, jid, sender, pushName, reply }) {
     const fs = require('fs')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⭐ Usage: *.rep @user*\nGive someone reputation points! (once every 8h)')
+    if (!mentioned.length) return reply('Please mention a user to give rep to.')
 
     const targetPhone = mentioned[0].split('@')[0].split(':')[0]
     if (targetPhone === sender) return reply('❌ You cannot rep yourself!')
@@ -701,7 +701,7 @@ module.exports = {
   // ─── .report @user <reason> ───────────────────────────────────────────────────
   async report({ sock, msg, jid, sender, pushName, args, reply }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('🚨 Usage: *.report @user <reason>*')
+    if (!mentioned.length) return reply('Please mention a user to report.')
     const reason      = args.filter(a => !a.includes('@')).join(' ').trim() || 'No reason provided'
     const targetPhone = mentioned[0].split('@')[0].split(':')[0]
     if (targetPhone === sender) return reply('❌ Cannot report yourself.')
@@ -1048,7 +1048,7 @@ module.exports = {
   async roast({ sock, msg, jid, sender, pushName, reply }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     const targetPhone = mentioned.length ? mentioned[0].split('@')[0].split(':')[0] : null
-    if (!targetPhone) return reply('🔥 Usage: *.roast @user*')
+    if (!targetPhone) return reply('Please mention a user to roast.')
     if (targetPhone === sender) return reply('😂 Roasting yourself? Bold move. Fine:\n\n_You peaked in your own imagination._ 🖤')
 
     const target = await db.getOrCreateUser(targetPhone).catch(() => null)
@@ -1082,7 +1082,7 @@ module.exports = {
   // ─── .rizz @user ──────────────────────────────────────────────────────────────
   async rizz({ sock, msg, jid, sender, pushName, reply }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('💘 Usage: *.rizz @user*')
+    if (!mentioned.length) return reply('Please mention a user to rizz.')
     const targetPhone = mentioned[0].split('@')[0].split(':')[0]
     const target = await db.getOrCreateUser(targetPhone).catch(() => null)
     const name   = target?.name || targetPhone
@@ -1113,7 +1113,7 @@ module.exports = {
   // ─── .ring @user ──────────────────────────────────────────────────────────────
   async ring({ sock, msg, jid, sender, pushName, reply }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('📞 Usage: *.ring @user*\nPing someone in the chat.')
+    if (!mentioned.length) return reply('Please mention a user to ping.')
     const targetPhone = mentioned[0].split('@')[0].split(':')[0]
     const target = await db.getOrCreateUser(targetPhone).catch(() => null)
     await sock.sendMessage(jid, {
@@ -1813,7 +1813,7 @@ module.exports = {
   async resetstreak({ msg, reply, isOwner, isMod, isGuardian }) {
     if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
     const mentioned   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('❌ Usage: *.resetstreak @user*')
+    if (!mentioned.length) return reply('Please mention a user to reset their streak.')
     const targetPhone = mentioned[0].split('@')[0].split(':')[0]
     await db.updateUser(targetPhone, { streak: 0 })
     await reply(`✅ Streak reset for *${targetPhone}*.`)
@@ -1823,7 +1823,7 @@ module.exports = {
   async refund({ msg, args, reply, isOwner, isMod }) {
     if (!isOwner && !isMod) return reply('⚠️ Mod/Owner only.')
     const mentioned   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('❌ Usage: *.refund @user <amount>*')
+    if (!mentioned.length) return reply('Please mention a user to refund.')
     const targetPhone = mentioned[0].split('@')[0].split(':')[0]
     const amount      = parseInt(args.find(a => /^\d+$/.test(a)))
     if (!amount || amount < 1) return reply('❌ Provide a valid amount.')

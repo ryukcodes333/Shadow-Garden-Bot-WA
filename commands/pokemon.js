@@ -531,7 +531,7 @@ module.exports = {
 
     battleLog.push(`✅ *${poke.name}* was caught!`)
 
-    const xpGained = Math.max(5, Math.floor((poke.baseXp || 50) / 10))
+    const xpGained = Math.floor(Math.random() * 56) + 210  // 210–265
     const newXp    = (u.xp || 0) + xpGained
     const oldLvl   = u.level || 1
     const xpNeeded = oldLvl * 5000   // very hard — 5000 XP per user level
@@ -563,7 +563,7 @@ module.exports = {
       `⚡ *Type:* ${poke.types.join(' / ')}\n` +
       `🎯 *Ball Used:* ${ballData.emoji} ${ballData.name}\n` +
       (inParty ? `📍 *Party Slot:* #${slot}\n` : `📦 *Sent to PC* (party full 6/6)\n`) + '\n' +
-      `⭐ *+${xpGained} XP gained!* _(Pokémon XP)_\n` +
+      `⭐ *+${xpGained} XP gained!*\n` +
       (levelUp ? `\n🆙 *LEVEL UP!* ${oldLvl} → ${newLvl} 🎊\n` : '') +
       `\n_Konosuba grows stronger._ 🖤`
 
@@ -634,11 +634,18 @@ module.exports = {
   async pc({ reply, sender }) {
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const stored  = (pokemon || []).filter(p => !p.in_party)
-    if (!stored.length) return reply(`📦 *PC STORAGE EMPTY*\n\nAll Pokémon are in your party.\n\n_Use *#topc <party slot>* to move one here._`)
-    const lines = stored.map((p, i) =>
-      `*PC-${i + 1}* 📦 ${p.name} — Lvl ${p.level || 1} (${Array.isArray(p.types) ? p.types.join('/') : p.types})`
-    ).join('\n')
-    await reply(`📦 *PC STORAGE* (${stored.length} Pokémon)\n\n${lines}\n\n_Use *#toparty <pc-slot>* to add one to your party._`)
+    if (!stored.length) return reply(`📦 *PC STORAGE EMPTY*\n\nAll Pokémon are in your party.\n\n_Use .topc <party slot> to move one here._`)
+    const lines = stored.map((p, i) => {
+      const types = Array.isArray(p.types) ? p.types.join('/') : (p.types || '?')
+      return `○ PC-${i + 1} 📦 ${p.name}\n└ \`Lvl ${p.level || 1} • ${types}\``
+    }).join('\n\n')
+    await reply(
+      `*📦 YOUR STORED POKÉMON (${stored.length})*\n\n` +
+      lines +
+      `\n\n⚙️ 𝗔𝗖𝗧𝗜𝗢𝗡𝗦\n` +
+      `> ○ .t2party <pc-slot>\n> └ Move Pokémon from PC to Party.\n\n` +
+      `> ○ .topc <party-slot>\n> └ Move Pokémon from Party to PC.`
+    )
   },
 
   // ── #topc ─────────────────────────────────────────────────────
@@ -966,7 +973,7 @@ module.exports = {
     }
 
     // ── Default ───────────────────────────────────────────────
-    return reply(`⚠️ Usage: *#battle @user* | *#battle accept / decline / fight / forfeit*`)
+    return reply('Please mention a user you want to battle.')
   },
 
   // ── #gym ──────────────────────────────────────────────────────
@@ -1186,7 +1193,7 @@ module.exports = {
   // ── #trade ────────────────────────────────────────────────────
   async trade({ sock, jid, msg, reply, sender, args }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply(`⚠️ Usage: *#trade @user*`)
+    if (!mentioned.length) return reply('Please mention a user to trade with.')
     await sock.sendMessage(jid, {
       text: `🔄 *TRADE REQUEST*\n\n*@${sender}* wants to trade with *@${mentioned[0].split('@')[0]}*!\n\n_Use *#gift* to send Pokémon directly._ 🖤`,
       mentions: [msg.key.participant || msg.key.remoteJid, mentioned[0]],
@@ -1197,7 +1204,7 @@ module.exports = {
   async gift({ sock, jid, msg, reply, sender, args }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     const slot = parseInt(args[0]) || 1
-    if (!mentioned.length) return reply(`⚠️ Usage: *#gift <slot> @user*`)
+    if (!mentioned.length) return reply('Please mention a user to gift your Pokémon to.')
     const targetPhone = mentioned[0].split('@')[0]
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party)

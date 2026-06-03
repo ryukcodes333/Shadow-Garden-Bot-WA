@@ -415,7 +415,7 @@ module.exports = {
       if (!sent) await sock.sendMessage(jid, { text: caption }, { quoted: msg })
     } catch (err) { await reply(`❌ Failed to spawn: ${err.message}`) }
   },
-  async spawncard(ctx) { return module.exports.spawnc(ctx) },
+  async spawncard_random(ctx) { return module.exports.spawnc(ctx) },
 
   async get({ sock, jid, msg, reply, react, sender, args }) {
     const pending = pendingCards[jid]
@@ -456,7 +456,7 @@ module.exports = {
 
     try {
       const matches = findAll(nameQuery, tierFilter)
-      if (!matches.length) return reply(`ℹ️ There's no card matching your search, please use a different search query.`)
+      if (!matches.length) return reply(`ℹ️ No cards match your search. Please try a different query.`)
 
       // Send ALL matching cards simultaneously — no list, just images
       const MAX_SEND = 6  // cap to avoid spam
@@ -483,12 +483,12 @@ module.exports = {
     const nameQuery = args.join(' ').trim()
     try {
       const matches = findAll(nameQuery, null)
-      if (!matches.length) return reply(`❌ No cards found: *${nameQuery}*`)
+      if (!matches.length) return reply(`ℹ️ No cards match your search. Please try a different query.`)
 
       const cardLines = matches.map((c, i) => {
-        const s   = c.series ? ` — _${c.series}_` : ''
+        const s   = c.series && c.series !== '-' ? `\n   📚 _${c.series}_` : ''
         const src = c.source === 'mazoku' ? ' _(mazoku)_' : ''
-        return `${i + 1}. ${TIERS[c.tier] || '🎴'} *${c.name}* (${c.tier})${s}${src}`
+        return `${i + 1}. ${TIERS[c.tier] || '🎴'} *${c.name}* (${c.tier})${src}${s}`
       }).join('\n')
 
       const header = `*🎴 "${nameQuery}" — ${matches.length} result(s)*\n\n`
@@ -588,7 +588,8 @@ module.exports = {
     if (!cards.length) return reply(`*🃏 Your collection:*\n\n_No cards yet._`)
     const lines = cards.map((uc, i) => {
       const c = uc.card_id || uc
-      return `${i + 1}. ${c?.name || 'Unknown'} [${c?.tier || '?'}]`
+      const series = c?.series && c.series !== '-' && c.series !== '' ? ` • _${c.series}_` : ''
+      return `${i + 1}. ${TIERS[c?.tier] || '🎴'} *${c?.name || 'Unknown'}* [${c?.tier || '?'}]${series}`
     }).join('\n')
     await reply(`*🃏 Your collection:*\n\n${lines}`)
   },
@@ -640,7 +641,8 @@ module.exports = {
       const c = uc.card_id || uc
       const t = c?.tier || '?'
       if (!byTier[t]) byTier[t] = []
-      byTier[t].push(c?.name || 'Unknown')
+      const _series = c?.series && c.series !== '-' && c.series !== '' ? ` • _${c.series}_` : ''
+      byTier[t].push(`${c?.name || 'Unknown'}${_series}`)
     }
     const sections = TIER_ORDER
       .filter(t => byTier[t])
@@ -662,7 +664,8 @@ module.exports = {
     try { ownerCounts = await db.getOwnerCountsBatch(deckExtIds) } catch {}
     const cardLines = deckSlice.map((uc, i) => {
       const c = uc.card_id || uc
-      return `\n🎴 *Name:* ${c?.name || 'Unknown'}\n⭐ *Tier:* ${c?.tier || '?'}\n🔷 *Index:* #${i + 1}\n#️⃣ *Owners:* ${ownerCounts[deckExtIds[i]] || 0}`
+      const _ser = c?.series && c.series !== '-' && c.series !== '' ? c.series : '—'
+      return `\n🎴 *Name:* ${c?.name || 'Unknown'}\n📚 *Series:* ${_ser}\n⭐ *Tier:* ${c?.tier || '?'}\n🔷 *Index:* #${i + 1}\n#️⃣ *Owners:* ${ownerCounts[deckExtIds[i]] || 0}`
     }).join('\n\n')
     const ZWLTR  = '\u200e'.repeat(800)
     const caption =
@@ -706,7 +709,7 @@ module.exports = {
 
   async tc({ reply, msg }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: *.tc @user <card_number>*')
+    if (!mentioned.length) return reply('Please mention a user to trade this card with.')
     await reply(`📤 *TRADE*\n\nTrade requests coming soon! 🖤`)
   },
 
@@ -797,49 +800,64 @@ module.exports = {
     )
   },
 
-  // ─── .spawncard {name} {tier} — owner-only: spawn specific card ──────────
+  // ─── .spawncard {name} [tier] — owner-only: spawn specific card ─────────
   async spawncard({ sock, jid, msg, reply, react, sender, isOwner, args }) {
     if (!isOwner) return reply('⚠️ Owner only.')
     await react('⏳')
-    if (args.length < 2) return reply('⚠️ Usage: *.spawncard <name> <tier>*\nExample: *.spawncard Rimuru T5*')
-    const tierArg = args[args.length - 1].toUpperCase()
-    if (!ALL_VALID_TIERS.includes(tierArg)) return reply(`⚠️ Invalid tier. Valid: ${ALL_VALID_TIERS.join(', ')}`)
-    const nameQuery = args.slice(0, -1).join(' ')
+    if (!args.length) return reply('⚠️ Usage: *.spawncard <name> [tier]*\nExample: *.spawncard Rimuru T5*')
 
-    // Search across all card sources
-    const matches = [
-      ...findOld(nameQuery, tierArg),
-      ...findNew(nameQuery, tierArg),
-      ...findMazoku(nameQuery, tierArg),
-    ]
-    if (!matches.length) {
-      // Try DB cards
-      try {
-        const dbCards = await db.getCards()
-        const found   = dbCards.find(c => {
-          return norm(c.name) === norm(nameQuery) && c.tier.toUpperCase() === tierArg
+    // Tier is optional — if last arg is a valid tier, use it
+    let tierArg = null
+    let nameParts = [...args]
+    const lastArg = args[args.length - 1]?.toUpperCase()
+    if (ALL_VALID_TIERS.includes(lastArg)) {
+      tierArg  = lastArg
+      nameParts = args.slice(0, -1)
+    }
+    const nameQuery = nameParts.join(' ').trim()
+    if (!nameQuery) return reply('⚠️ Please provide a card name.')
+
+    // Partial / fuzzy search across all sources
+    const q = norm(nameQuery)
+    function partialSearch(arr, nameField, tierField, toLabel, isMazoku) {
+      return arr
+        .filter(c => {
+          const n = norm(c[nameField] || '')
+          if (!n.includes(q)) return false
+          if (tierArg) {
+            const t = isMazoku ? c[tierField] : (toLabel[String(c[tierField])] || String(c[tierField]))
+            return t === tierArg
+          }
+          return true
         })
-        if (found) {
-          const uc = await db.assignCard(sender, found._id)
-          return reply(
-            `✅ *CARD SPAWNED*\n\n` +
-            `${TIERS[found.tier] || '🎴'} *${found.name}* (${found.tier})\n` +
-            `📚 Series: ${found.series || '—'}\n\n` +
-            `_Added directly to your collection._`
-          )
-        }
-      } catch {}
-      return reply(`❌ No card found matching *${nameQuery}* [${tierArg}]`)
+        .map(c => ({
+          name:   c[nameField],
+          tier:   isMazoku ? c[tierField] : (toLabel[String(c[tierField])] || String(c[tierField])),
+          url:    c.url,
+          series: c.series || '',
+          source: isMazoku ? 'mazoku' : 'shoob',
+        }))
+    }
+
+    const matches = [
+      ...partialSearch(cardIndex2,      'name',  'tier', LOCAL_TO_LABEL, false),
+      ...partialSearch(cardIndexMazoku, 'name',  'tier', {},             true),
+      ...partialSearch(cardIndex,       'title', 'tier', LOCAL_TO_LABEL, false),
+    ]
+
+    if (!matches.length) {
+      return reply(`ℹ️ No cards match your search. Please try a different query.`)
     }
 
     const card = matches[0]
     try {
-      const dbCard = await db.getOrCreateShoobCard(card.name, card.tier, card.series || '', card.url || null, sender)
+      const rawUrl = card.url || card.name
+      const dbCard = await db.getOrCreateShoobCard(rawUrl, card.name, card.tier, card.series || '', card.url || null, TIER_PRICES[card.tier] || 0)
       await db.assignCard(sender, dbCard._id)
       const caption =
         `✅ *CARD SPAWNED*\n\n` +
         `${TIERS[card.tier] || '🎴'} *${card.name}* (${card.tier})\n` +
-        `📚 Series: ${card.series || '—'}\n\n` +
+        `📚 *Series:* ${card.series || '—'}\n\n` +
         `_Added directly to your collection._ 🖤`
       if (card.url && sock) {
         const sent = await sendCardMedia(sock, jid, msg, card.url, caption).catch(() => false)

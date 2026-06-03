@@ -262,9 +262,12 @@ module.exports = {
     if (!isGroup) return reply('❌ Groups only.')
     const admin = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('*🚫 Access Denied*')
-    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('❌ Usage: `.promote @user`')
-    for (const target of mentioned) {
+    const ctx = msg.message?.extendedTextMessage?.contextInfo
+    const mentioned = ctx?.mentionedJid || []
+    const quotedParticipant = ctx?.participant ? [ctx.participant] : []
+    const targets = mentioned.length ? mentioned : quotedParticipant
+    if (!targets.length) return reply('Please specify a user to promote.')
+    for (const target of targets) {
       const targetPhone = target.split('@')[0]
       await sock.groupParticipantsUpdate(jid, [target], 'promote')
       await sock.sendMessage(jid, { text: `@${targetPhone} has been promoted to admin.`, mentions: [target] }, { quoted: msg })
@@ -275,9 +278,12 @@ module.exports = {
     if (!isGroup) return reply('❌ Groups only.')
     const admin = await isAdmin(sock, jid, senderJid)
     if (!admin && !isOwner) return reply('*🚫 Access Denied*')
-    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('❌ Usage: `.demote @user`')
-    for (const target of mentioned) {
+    const ctx = msg.message?.extendedTextMessage?.contextInfo
+    const mentioned = ctx?.mentionedJid || []
+    const quotedParticipant = ctx?.participant ? [ctx.participant] : []
+    const targets = mentioned.length ? mentioned : quotedParticipant
+    if (!targets.length) return reply('Please specify a user to demote.')
+    for (const target of targets) {
       const targetPhone = target.split('@')[0]
       await sock.groupParticipantsUpdate(jid, [target], 'demote')
       await sock.sendMessage(jid, { text: `@${targetPhone} is no longer an admin.`, mentions: [target] }, { quoted: msg })

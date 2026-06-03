@@ -435,7 +435,7 @@ module.exports = {
 
   async guildinvite({ sock, msg, jid, reply, sender }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('⚠️ Usage: .guildinvite @user')
+    if (!mentioned.length) return reply('Please mention a user to invite to your guild.')
     const myGuild = await db.getUserGuild(sender)
     if (!myGuild) return reply('❌ You are not in a guild.')
     if (!myGuild.is_leader) return reply('❌ Only leaders can invite members.')

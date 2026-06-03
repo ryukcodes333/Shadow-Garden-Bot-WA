@@ -51,6 +51,9 @@ async function saveGroupDisabled(groupJid) {
 
 module.exports = {
 
+  // Exported helper — used by index.js for gamble/pokemon group checks
+  loadGroupDisabled,
+
   // ── .mods - always use actual participant JIDs ─────────────────
   async mods({ sock, jid, msg, reply, isGroup, sender, pushName }) {
     const allStaff     = await db.getMods()
@@ -168,9 +171,22 @@ module.exports = {
     if (!amount || amount <= 0) return reply('❌ Enter a valid amount.')
     const phone  = mentioned[0].split('@')[0]
     const tu     = await db.getOrCreateUser(phone)
-    const deduct = Math.min(amount, tu.wallet || 0)
-    await db.updateUser(phone, { wallet: (tu.wallet || 0) - deduct })
-    await sock.sendMessage(jid, { text: `🚫 *CASH REMOVED*\n\n-$${deduct.toLocaleString()} from @${phone}\n💵 Balance: $${((tu.wallet || 0) - deduct).toLocaleString()}`, mentions: [mentioned[0]] }, { quoted: msg })
+    // Remove from wallet first, then bank for the remainder
+    let remaining   = amount
+    const fromWallet = Math.min(remaining, tu.wallet || 0)
+    remaining -= fromWallet
+    const fromBank   = Math.min(remaining, tu.bank || 0)
+    const totalRemoved = fromWallet + fromBank
+    await db.updateUser(phone, {
+      wallet: (tu.wallet || 0) - fromWallet,
+      bank:   (tu.bank   || 0) - fromBank,
+    })
+    const newWallet = (tu.wallet || 0) - fromWallet
+    const newBank   = (tu.bank   || 0) - fromBank
+    await sock.sendMessage(jid, {
+      text: `🚫 *CASH REMOVED*\n\n-$${totalRemoved.toLocaleString()} from @${phone}\n💵 Wallet: $${newWallet.toLocaleString()}\n🏦 Bank: $${newBank.toLocaleString()}`,
+      mentions: [mentioned[0]],
+    }, { quoted: msg })
   },
 
   async resetbal({ reply, msg, isOwner, isMod }) {
@@ -522,6 +538,42 @@ module.exports = {
     if (disabled.size === 0) return reply('✅ No commands are disabled in this group.')
     const list = [...disabled].map(c => `• *.${c}*`).join('\n')
     return reply(`🔒 *Disabled commands in this group:*\n\n${list}\n\nUse *.genable <cmd>* to re-enable any.`)
+  },
+
+  // ── .gamble on/off — toggle gambling in this group ──────────────
+  async gamble({ reply, isOwner, isMod, isGuardian, isGroup, jid, args }) {
+    if (!isGroup) return reply('❌ Groups only.')
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
+    const sub = (args[0] || '').toLowerCase()
+    if (sub !== 'on' && sub !== 'off') return reply('Usage: *.gamble on* or *.gamble off*')
+    const disabled = await loadGroupDisabled(jid)
+    if (sub === 'off') {
+      disabled.add('__GAMBLE_OFF__')
+      await saveGroupDisabled(jid)
+      return reply('🎰 Gambling has been *disabled* in this group.')
+    } else {
+      disabled.delete('__GAMBLE_OFF__')
+      await saveGroupDisabled(jid)
+      return reply('🎰 Gambling has been *enabled* in this group.')
+    }
+  },
+
+  // ── .pokemon on/off — toggle Pokémon in this group ──────────────
+  async pokemon({ reply, isOwner, isMod, isGuardian, isGroup, jid, args }) {
+    if (!isGroup) return reply('❌ Groups only.')
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
+    const sub = (args[0] || '').toLowerCase()
+    if (sub !== 'on' && sub !== 'off') return reply('Usage: *.pokemon on* or *.pokemon off*')
+    const disabled = await loadGroupDisabled(jid)
+    if (sub === 'off') {
+      disabled.add('__POKEMON_OFF__')
+      await saveGroupDisabled(jid)
+      return reply('🎮 Pokémon has been *disabled* in this group.')
+    } else {
+      disabled.delete('__POKEMON_OFF__')
+      await saveGroupDisabled(jid)
+      return reply('🎮 Pokémon has been *enabled* in this group.')
+    }
   },
 
   async gambleoff({ reply, isOwner, isMod, isGuardian, isGroup, jid }) {

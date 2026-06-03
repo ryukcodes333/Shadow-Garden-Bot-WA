@@ -1,7 +1,7 @@
 const axios = require('axios')
 const { downloadMediaMessage } = require('@whiskeysockets/baileys')
 
-const GROQ_KEY = process.env.GROQ_KEY || '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'
+const GROQ_KEY = process.env.GROQ_KEY || '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'
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
 const SYSTEM_PROMPT = `You are Alpha, the AI assistant for Konosuba WhatsApp Bot. Be helpful, concise, and friendly. Don't be overly formal. Keep responses short and readable on WhatsApp.`
@@ -75,7 +75,7 @@ async function handleAI(ctx, model) {
   await reply('⏳ Thinking...')
   try {
     const answer = await askGroq(prompt, model)
-    await sock.sendMessage(jid, { text: answer }, { quoted: msg })
+    await sock.sendMessage(jid, { text: answer + '\n\n *Konosuba* ' }, { quoted: msg })
   } catch (e) {
     await reply(`❌ AI error: ${e.message}`)
   }

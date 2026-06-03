@@ -98,7 +98,7 @@ module.exports = {
     )
   },
 
-  async slots({ reply, sender, user, args }) {
+  async slots({ sock, jid, msg, reply, sender, user, args }) {
     const u      = user || await db.getOrCreateUser(sender)
     const amount = parseInt(args[0])
     if (!amount || amount <= 0) return reply('❌ Usage: `.slots <amount>`')
@@ -106,15 +106,24 @@ module.exports = {
     if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
 
     const symbols = ['🍒', '🍋', '🍇', '⭐', '💎', '🔔', '🃏']
-    const win     = Math.random() < winChance(amount)
+    const randSym = () => symbols[Math.floor(Math.random() * symbols.length)]
+
+    // ── Step 1: Send spinning animation ─────────────────────────────
+    const spinGrid = () => {
+      const rows = [0, 1, 2].map(() => `│ ${randSym()} │ ${randSym()} │ ${randSym()} │`)
+      return rows.join('\n')
+    }
+    await sock.sendMessage(jid, { text: `🎰 *Spinning...*\n\n${spinGrid()}` }, { quoted: msg })
+
+    // ── Calculate outcome ────────────────────────────────────────────
+    const win = Math.random() < winChance(amount)
     let reels, multiplier, label
 
     if (win) {
-      // Rigged win: pick a matching triple or a pair
-      const sym = symbols[Math.floor(Math.random() * symbols.length)]
+      const sym = randSym()
       const pairWin = Math.random() < 0.5
       if (pairWin) {
-        const third = symbols[Math.floor(Math.random() * symbols.length)]
+        const third = randSym()
         reels = [sym, sym, third]
         reels.sort(() => Math.random() - 0.5)
         multiplier = 1.5; label = '✨ Two of a Kind!'
@@ -125,9 +134,9 @@ module.exports = {
         else                   { multiplier = 2; label = '🎉 Three of a Kind!' }
       }
     } else {
-      reels = [0, 1, 2].map(() => symbols[Math.floor(Math.random() * symbols.length)])
+      reels = [randSym(), randSym(), randSym()]
       while (reels[0] === reels[1] || reels[1] === reels[2] || reels[0] === reels[2]) {
-        reels = [0, 1, 2].map(() => symbols[Math.floor(Math.random() * symbols.length)])
+        reels = [randSym(), randSym(), randSym()]
       }
       multiplier = 0; label = 'No Match'
     }
@@ -135,11 +144,15 @@ module.exports = {
     const net = multiplier > 0 ? Math.floor(amount * multiplier) - amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     const remaining = getRemainingGambles(sender)
-    return reply(
-      `🎰 *Slots!*\n\n│ ${reels[0]} │ ${reels[1]} │ ${reels[2]} │\n\n` +
-      `${multiplier > 0 ? `🏆 ${label} - +$${Math.floor(amount * multiplier)}` : `❌ Miss - -$${amount}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${remaining} gambles left today._`
-    )
+
+    // ── Step 2: Send stopping result ─────────────────────────────────
+    await new Promise(r => setTimeout(r, 700))
+    return sock.sendMessage(jid, {
+      text:
+        `⏳ *Stopping...*\n\n│ ${reels[0]} │ ${reels[1]} │ ${reels[2]} │\n\n` +
+        `${multiplier > 0 ? `🏆 ${label}\n> +$${Math.floor(amount * multiplier)}` : `❌ ${label}\n> -$${amount}`}\n\n` +
+        `💵 $${((u.wallet || 0) + net).toLocaleString()}\n_${remaining} gambles left today._`,
+    }, { quoted: msg })
   },
   async sl(ctx) { return module.exports.slots(ctx) },
 

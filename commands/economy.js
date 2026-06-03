@@ -62,13 +62,18 @@ module.exports = {
   async bal({ sock, msg, jid, reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
     const total = (u.wallet || 0) + (u.bank || 0)
-    const text =
+    const caption =
       `💰 𝗔𝗖𝗖𝗢𝗨𝗡𝗧 𝗕𝗔𝗟𝗔𝗡𝗖𝗘 💰\n\n` +
       `🏦 𝗕𝗮𝗻𝗸: \`\`\`${(u.bank || 0).toLocaleString()}\`\`\`\n` +
       `👛 𝗪𝗮𝗹𝗹𝗲𝘁: \`\`\`${(u.wallet || 0).toLocaleString()}\`\`\`\n\n` +
       `💫 𝗧𝗼𝘁𝗮𝗹: \`\`\`${total.toLocaleString()}\`\`\`\n\n` +
       `> Buy a *💵 Bank Note* to increase your bank capacity.`
-    await sock.sendMessage(jid, { text, mentions: [`${sender}@s.whatsapp.net`] }, { quoted: msg })
+    try {
+      const imgBuf = fs.readFileSync(BANK_CARD_IMG)
+      await sock.sendMessage(jid, { image: imgBuf, caption, mentions: [`${sender}@s.whatsapp.net`] }, { quoted: msg })
+    } catch {
+      await sock.sendMessage(jid, { text: caption, mentions: [`${sender}@s.whatsapp.net`] }, { quoted: msg })
+    }
   },
   async balance(ctx) { return module.exports.bal(ctx) },
   async wallet(ctx)  { return module.exports.bal(ctx) },
@@ -167,7 +172,7 @@ module.exports = {
       targetPhone = quotedParticipant.split('@')[0].split(':')[0]
     }
 
-    if (!targetPhone) return reply('❌ Usage: `.pay @user <amount>` or quote someone\'s message with `.pay <amount>`')
+    if (!targetPhone) return reply('Please mention a user or quote their message to pay.')
     if (targetPhone === sender) return reply('❌ You cannot pay yourself.')
 
     const amount = parseInt(args.find(a => !isNaN(parseInt(a))))
@@ -578,7 +583,7 @@ module.exports = {
 
   async rob({ sock, msg, jid, reply, sender, user, args }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('❌ Usage: *.rob @user*')
+    if (!mentioned.length) return reply('Please mention a user to rob.')
     const u = user || await db.getOrCreateUser(sender)
     const remaining = await db.getCooldown(sender, 'rob')
     if (remaining > 0) {
