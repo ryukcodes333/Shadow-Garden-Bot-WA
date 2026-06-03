@@ -1,6 +1,6 @@
 const db = require('../database')
 const { downloadMediaMessage } = require('@whiskeysockets/baileys')
-const { generateProfileCard, generateFrameCatalog, fetchBuffer, getFrame, FRAMES } = require('../profileHelper')
+const { generateProfileCard, generateAnimatedProfileCard, generateFrameCatalog, fetchBuffer, getFrame, FRAMES } = require('../profileHelper')
 const { execFile } = require('child_process')
 const os = require('os')
 const path = require('path')
@@ -118,6 +118,39 @@ async function extractVideoFrame(videoBuf) {
   }
 }
 
+// Convert a video buffer to an animated GIF (high-quality, max 5 s, 12 fps, 500px wide)
+async function videoToAnimatedGif(videoBuf) {
+  const tmpDir = os.tmpdir()
+  const tmpIn  = path.join(tmpDir, `sgbot_v2g_in_${Date.now()}.mp4`)
+  const tmpOut = path.join(tmpDir, `sgbot_v2g_out_${Date.now()}.gif`)
+  try {
+    fs.writeFileSync(tmpIn, videoBuf)
+    await new Promise((resolve, reject) => {
+      execFile('ffmpeg', [
+        '-y', '-i', tmpIn,
+        '-t', '5',
+        '-vf', [
+          'fps=12',
+          'scale=500:-2:flags=lanczos',
+          'split[s0][s1]',
+          '[s0]palettegen=max_colors=256[p]',
+          '[s1][p]paletteuse=dither=sierra2_4a',
+        ].join(','),
+        tmpOut,
+      ], { timeout: 90000 }, (err, _o, stderr) => {
+        if (err) reject(new Error('GIF convert error: ' + (stderr || err.message).slice(0, 200)))
+        else resolve()
+      })
+    })
+    const gifBuf = fs.readFileSync(tmpOut)
+    if (gifBuf.length < 200) throw new Error('GIF output empty')
+    return gifBuf
+  } finally {
+    try { fs.unlinkSync(tmpIn)  } catch {}
+    try { fs.unlinkSync(tmpOut) } catch {}
+  }
+}
+
 // Store image buffer as base64 data URL (saved directly in MongoDB user document)
 async function uploadToStorage(buffer, storagePath, mime = 'image/jpeg') {
   const base64 = buffer.toString('base64')
@@ -141,8 +174,9 @@ module.exports = {
     const displayUser = { ...u, role: effectiveRole }
 
     // Fetch custom bg + pp if set
-    let ppBuffer  = null
-    let bgBuffer  = null
+    let ppBuffer         = null
+    let bgBuffer         = null
+    let animatedGifBgBuf = null   // full GIF buffer → triggers animated card
 
     try {
       if (u.profile_pp) {
@@ -154,9 +188,14 @@ module.exports = {
 
     try {
       if (u.profile_bg) {
-        const raw = await fetchBuffer(u.profile_bg)
+        const raw     = await fetchBuffer(u.profile_bg)
         const isVideo = u.profile_bg.startsWith('data:video/') || u.profile_bg.endsWith('.mp4')
-        bgBuffer = isVideo ? await extractVideoFrame(raw) : raw
+        const isGif   = u.profile_bg.startsWith('data:image/gif')
+        if (isGif) {
+          animatedGifBgBuf = raw   // keep full GIF; card will be animated
+        } else {
+          bgBuffer = isVideo ? await extractVideoFrame(raw) : raw
+        }
       }
     } catch { bgBuffer = null }
 
@@ -168,14 +207,6 @@ module.exports = {
       rankNum = idx >= 0 ? idx + 1 : lb.length + 1
     } catch {}
     const displayUserWithRank = { ...displayUser, rank: rankNum }
-
-    let cardBuffer
-    try {
-      cardBuffer = await generateProfileCard(displayUserWithRank, ppBuffer, bgBuffer)
-    } catch (err) {
-      console.error('[profile] Card gen error:', err)
-      return reply(`❌ Failed to generate profile card: ${err.message}`)
-    }
 
     const frameId   = u.profile_frame || 1
     const frameName = getFrame(frameId).name
@@ -199,34 +230,70 @@ module.exports = {
       battleLosses = u.battle_losses || 0
     } catch {}
 
-    await sock.sendMessage(
-      jid,
-      {
-        image: cardBuffer,
-        caption:
-          `✦ ${u.name || sender}'s Profile ✦\n\n` +
-          `*👤 Rank:* ${rank} | 🏷️ Title: ${title}  \n` +
-          `*⭐ Level:* ${u.level || 1}\n` +
-          `*🔥 Streak:* ${u.streak || 0} days  \n` +
-          `*📊 XP:* ${u.xp || 0} / ${xpNeeded}  \n` +
-          `\`[${xpBar}]\`\n\n` +
-          `*💰 Wallet:* ${Number(u.wallet || 0).toLocaleString()}  \n` +
-          `*🏦 Bank:* ${Number(u.bank || 0).toLocaleString()}  \n` +
-          `*💎 Gems:* ${Number(u.gems || 0).toLocaleString()}  \n` +
-          `*💵 Net Worth:* ${netWorth.toLocaleString()}\n\n` +
-          `*🃏 Cards Owned:* ${cardCount}  \n` +
-          `*🖼️ Frame:* ${frameName}\n\n` +
-          `\`🎮 Trainer Stats\` \n` +
-          `*🐾 Pokémon Owned:* ${pokemonOwned}\n` +
-          `*🎒 In Party:* ${partyCount}  \n` +
-          `*🏆 Gym Badges:* ${gymBadges}  \n` +
-          `*⚔️ Battle Wins:* ${battleWins}\n` +
-          `*💥 Losses:* ${battleLosses}\n\n` +
-          `*📅 Joined:* ${joinDate}  \n\n` +
-          `> Type .frames to browse all 30 frames`,
-      },
-      { quoted: msg }
-    )
+    const caption =
+      `✦ ${u.name || sender}'s Profile ✦\n\n` +
+      `*👤 Rank:* ${rank} | 🏷️ Title: ${title}  \n` +
+      `*⭐ Level:* ${u.level || 1}\n` +
+      `*🔥 Streak:* ${u.streak || 0} days  \n` +
+      `*📊 XP:* ${u.xp || 0} / ${xpNeeded}  \n` +
+      `\`[${xpBar}]\`\n\n` +
+      `*💰 Wallet:* ${Number(u.wallet || 0).toLocaleString()}  \n` +
+      `*🏦 Bank:* ${Number(u.bank || 0).toLocaleString()}  \n` +
+      `*💎 Gems:* ${Number(u.gems || 0).toLocaleString()}  \n` +
+      `*💵 Net Worth:* ${netWorth.toLocaleString()}\n\n` +
+      `*🃏 Cards Owned:* ${cardCount}  \n` +
+      `*🖼️ Frame:* ${frameName}\n\n` +
+      `\`🎮 Trainer Stats\` \n` +
+      `*🐾 Pokémon Owned:* ${pokemonOwned}\n` +
+      `*🎒 In Party:* ${partyCount}  \n` +
+      `*🏆 Gym Badges:* ${gymBadges}  \n` +
+      `*⚔️ Battle Wins:* ${battleWins}\n` +
+      `*💥 Losses:* ${battleLosses}\n\n` +
+      `*📅 Joined:* ${joinDate}  \n\n` +
+      `> Type .frames to browse all 30 frames`
+
+    // ── Animated bg path ──────────────────────────────────────────────────────
+    if (animatedGifBgBuf) {
+      await reply('⏳ Rendering animated profile card…')
+      try {
+        const mp4Buf = await generateAnimatedProfileCard(displayUserWithRank, ppBuffer, animatedGifBgBuf)
+        await sock.sendMessage(
+          jid,
+          { video: mp4Buf, gifPlayback: true, caption },
+          { quoted: msg }
+        )
+      } catch (err) {
+        console.error('[profile] Animated card error:', err)
+        // Fallback: render static card with first GIF frame
+        try {
+          const { execFile: ef } = require('child_process')
+          const os2 = require('os'), path2 = require('path'), fs2 = require('fs')
+          const tmpGif = path2.join(os2.tmpdir(), `sgbot_gframe_${Date.now()}.gif`)
+          const tmpPng = path2.join(os2.tmpdir(), `sgbot_gframe_${Date.now()}.png`)
+          fs2.writeFileSync(tmpGif, animatedGifBgBuf)
+          await new Promise((res, rej) => ef('ffmpeg', ['-y','-i',tmpGif,'-frames:v','1',tmpPng], {timeout:15000}, (e,_,se) => e ? rej(new Error(se||e.message)) : res()))
+          const firstFrame = fs2.readFileSync(tmpPng)
+          try { fs2.unlinkSync(tmpGif) } catch {}
+          try { fs2.unlinkSync(tmpPng) } catch {}
+          const cardBuffer = await generateProfileCard(displayUserWithRank, ppBuffer, firstFrame)
+          await sock.sendMessage(jid, { image: cardBuffer, caption }, { quoted: msg })
+        } catch (err2) {
+          return reply(`❌ Failed to generate profile card: ${err2.message}`)
+        }
+      }
+      return
+    }
+
+    // ── Static card path ──────────────────────────────────────────────────────
+    let cardBuffer
+    try {
+      cardBuffer = await generateProfileCard(displayUserWithRank, ppBuffer, bgBuffer)
+    } catch (err) {
+      console.error('[profile] Card gen error:', err)
+      return reply(`❌ Failed to generate profile card: ${err.message}`)
+    }
+
+    await sock.sendMessage(jid, { image: cardBuffer, caption }, { quoted: msg })
   },
 
   // ─── .profile - text profile ─────────────────────────────────────────────
@@ -272,7 +339,7 @@ module.exports = {
       !!msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage
 
     if (isVideoMsg && isStaff) {
-      await reply('⏳ Saving your video profile picture…')
+      await reply('⏳ Converting video to animated GIF for your profile picture…')
       let videoBuf
       try {
         videoBuf = await getRawVideoBuffer(sock, msg)
@@ -283,23 +350,23 @@ module.exports = {
         return reply('❌ Could not read the video. Make sure you\'re sending or quoting a video.')
       }
       try {
-        const storagePath = `profiles/pp/${sender}.mp4`
-        const url = await uploadToStorage(videoBuf, storagePath, 'video/mp4')
+        const gifBuf = await videoToAnimatedGif(videoBuf)
+        const url = await uploadToStorage(gifBuf, `profiles/pp/${sender}.gif`, 'image/gif')
         await db.updateUser(sender, { profile_pp: url })
         await sock.sendMessage(
           jid,
           {
-            video: videoBuf,
+            image: gifBuf,
             caption:
               `✅ *PROFILE PICTURE UPDATED*\n\n` +
-              `Your video PP has been saved! 🎬\n\n` +
+              `Your animated PP has been saved! 🎬\n\n` +
               `📸 Type *.p* to see your updated card.\n\n` +
               `_You carry the spirit of Konosuba._ 🖤`,
           },
           { quoted: msg }
         )
       } catch (err) {
-        await reply(`❌ Failed to upload video: ${err.message}`)
+        await reply(`❌ Failed to save animated profile picture: ${err.message}`)
       }
       return
     }
@@ -353,7 +420,7 @@ module.exports = {
       !!msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage
 
     if (isVideoMsg && isStaff) {
-      await reply('⏳ Saving your video background…')
+      await reply('⏳ Converting video to animated GIF for your background… (may take ~15s)')
       let videoBuf
       try {
         videoBuf = await getRawVideoBuffer(sock, msg)
@@ -364,23 +431,23 @@ module.exports = {
         return reply('❌ Could not read the video. Make sure you\'re sending or quoting a video.')
       }
       try {
-        const storagePath = `profiles/bg/${sender}.mp4`
-        const url = await uploadToStorage(videoBuf, storagePath, 'video/mp4')
+        const gifBuf = await videoToAnimatedGif(videoBuf)
+        const url = await uploadToStorage(gifBuf, `profiles/bg/${sender}.gif`, 'image/gif')
         await db.updateUser(sender, { profile_bg: url })
         await sock.sendMessage(
           jid,
           {
-            video: videoBuf,
+            image: gifBuf,
             caption:
               `✅ *PROFILE BACKGROUND UPDATED*\n\n` +
-              `Your video background has been saved! 🎬\n\n` +
-              `📸 Type *.p* to see your card (uses first frame).\n\n` +
+              `Your animated background has been saved! 🎬\n\n` +
+              `📸 Type *.p* to see your *animated* profile card.\n\n` +
               `_A new backdrop for your legend._ 🖤`,
           },
           { quoted: msg }
         )
       } catch (err) {
-        await reply(`❌ Failed to upload video: ${err.message}`)
+        await reply(`❌ Failed to save animated background: ${err.message}`)
       }
       return
     }
