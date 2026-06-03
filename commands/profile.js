@@ -120,30 +120,34 @@ async function extractVideoFrame(videoBuf) {
 
 // Convert a video buffer to an animated GIF (high-quality, max 5 s, 12 fps, 500px wide)
 async function videoToAnimatedGif(videoBuf) {
+  const sid    = Date.now()
   const tmpDir = os.tmpdir()
-  const tmpIn  = path.join(tmpDir, `sgbot_v2g_in_${Date.now()}.mp4`)
-  const tmpOut = path.join(tmpDir, `sgbot_v2g_out_${Date.now()}.gif`)
+  const tmpIn  = path.join(tmpDir, `sgbot_v2g_in_${sid}.mp4`)
+  const tmpOut = path.join(tmpDir, `sgbot_v2g_out_${sid}.gif`)
   try {
     fs.writeFileSync(tmpIn, videoBuf)
+    // 280px wide, 6 fps, max 3 s — keeps GIF well under MongoDB's 16 MB BSON limit
     await new Promise((resolve, reject) => {
       execFile('ffmpeg', [
         '-y', '-i', tmpIn,
-        '-t', '5',
-        '-vf', [
-          'fps=12',
-          'scale=500:-2:flags=lanczos',
-          'split[s0][s1]',
-          '[s0]palettegen=max_colors=256[p]',
-          '[s1][p]paletteuse=dither=sierra2_4a',
-        ].join(','),
+        '-t', '3',
+        '-vf', 'fps=6,scale=280:-2:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer',
         tmpOut,
-      ], { timeout: 90000 }, (err, _o, stderr) => {
+      ], { timeout: 60000 }, (err, _o, stderr) => {
         if (err) reject(new Error('GIF convert error: ' + (stderr || err.message).slice(0, 200)))
         else resolve()
       })
     })
     const gifBuf = fs.readFileSync(tmpOut)
     if (gifBuf.length < 200) throw new Error('GIF output empty')
+    // Guard: base64 in MongoDB must stay under 16 MB BSON limit
+    const estimatedBase64 = Math.ceil(gifBuf.length * 4 / 3)
+    if (estimatedBase64 > 9 * 1024 * 1024) {
+      throw new Error(
+        `Animated GIF is too large to store (${(gifBuf.length / 1024 / 1024).toFixed(1)} MB). ` +
+        `Please use a shorter clip (≤ 3s) or a video with less motion.`
+      )
+    }
     return gifBuf
   } finally {
     try { fs.unlinkSync(tmpIn)  } catch {}
