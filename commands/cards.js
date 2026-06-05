@@ -54,27 +54,56 @@ function toShortId(input) {
 }
 function extractCardId(url) { return toShortId(String(url || '').trim()) }
 
+// ─── LID RESOLUTION ───────────────────────────────────────────────────────────
+async function resolveLidMention(lid, sock, groupJid) {
+  const lidJid = lid.includes('@lid') ? lid : `${lid}@lid`
+  try {
+    const groupMeta = await sock.groupMetadata(groupJid)
+    const members   = groupMeta.participants
+    for (const member of members) {
+      try {
+        const memberLid = await sock.getLidFromJid(member.id)
+        if (memberLid === lidJid) {
+          const number    = member.id.split('@')[0]
+          const formatted = number.replace(/(\d{3})(\d{3})(\d{3})(\d{4})/, '$1 $2 $3 $4')
+          return { tag: `@${formatted}`, jid: member.id }
+        }
+      } catch {}
+    }
+  } catch {}
+  const numPart = lidJid.split('@')[0]
+  return { tag: `@${numPart}`, jid: lidJid }
+}
+
+// Resolve an owners list to [{tag, jid}], handling @lid entries via group lookup
+async function resolveOwnersList(owners, sock, groupJid) {
+  if (!owners || !owners.length) return []
+  return Promise.all(owners.slice(0, 10).map(async o => {
+    const raw = (typeof o === 'object' ? (o?.phone || '') : String(o || ''))
+    const num = raw.split('@')[0].split(':')[0] || ''
+    if (!num) return { tag: '👤 _Unknown_', jid: null }
+    const isLid = raw.includes('@lid') || !/^\d{7,15}$/.test(num)
+    if (isLid && sock && groupJid) {
+      const resolved = await resolveLidMention(raw, sock, groupJid).catch(() => ({ tag: `@${num}`, jid: `${num}@lid` }))
+      return { tag: `👤 ${resolved.tag}`, jid: resolved.jid }
+    }
+    return { tag: `👤 @${num}`, jid: `${num}@s.whatsapp.net` }
+  }))
+}
+
 // ─── CARD BLOCK LAYOUT ────────────────────────────────────────────────────────
-function cardBlock(name, tier, series, ownerCount, cardId, ownersList) {
+// resolvedOwners: [{tag, jid}] produced by resolveOwnersList()
+function cardBlock(name, tier, series, ownerCount, cardId, resolvedOwners) {
   const seriesLine = series && series !== '-' && series !== '' ? series : '—'
   const tierLine   = tier  // just the tier code, no name label
 
   let holdersSection
-  if (!ownersList || ownersList.length === 0) {
+  if (!resolvedOwners || resolvedOwners.length === 0) {
     holdersSection = '\n> No owners found for this card yet.'
   } else {
     const roman = ['Ⅰ','Ⅱ','Ⅲ','Ⅳ','Ⅴ','Ⅵ','Ⅶ','Ⅷ','Ⅸ','Ⅹ']
-    // Show stored phone/JID cleanly — strip @domain and :resource
-    // LID numbers look like hex strings (not pure digits), skip @mention for those
-    const toNum = o => {
-      const raw = (typeof o === 'object' ? (o?.phone || '') : String(o || ''))
-      return raw.split('@')[0].split(':')[0] || ''
-    }
-    const isLid = num => !num || !/^\d{7,15}$/.test(num)
-    const lines  = ownersList.slice(0, 10).map((o, i) => {
-      const num = toNum(o)
-      const tag = isLid(num) ? '👤 _Unknown_' : `👤 @${num}`
-      return `⟡ 𝗖𝗼𝗽𝘆 ${roman[i] || i + 1} | \`${cardId}\`\n   ${tag}`
+    const lines  = resolvedOwners.map((o, i) => {
+      return `⟡ 𝗖𝗼𝗽𝘆 ${roman[i] || i + 1} | \`${cardId}\`\n   ${o.tag}`
     }).join('\n')
     holdersSection = '\n' + lines
   }
@@ -168,13 +197,18 @@ async function gifBufToMp4(gifBuf) {
 }
 
 // Send a card image — always fetches buffer (needed for CDNs like mazoku.cc)
-// Build @s.whatsapp.net mention JIDs from an owners list (for card captions)
+// Extract mentionable @s.whatsapp.net JIDs from pre-resolved owners list
+function ownerMentionJids(resolvedOwners) {
+  if (!resolvedOwners || !resolvedOwners.length) return []
+  return resolvedOwners.map(o => o.jid).filter(j => j && j.endsWith('@s.whatsapp.net'))
+}
+
+// Legacy alias used by .card command (non-group, no sock/groupJid available)
 function ownerMentions(ownersList) {
   if (!ownersList || !ownersList.length) return []
   return ownersList.slice(0, 10).map(o => {
     const raw = (typeof o === 'object' ? (o?.phone || '') : String(o || ''))
     const num = raw.split('@')[0].split(':')[0]
-    // Skip LID numbers (hex-like, not pure digits 7-15 chars) — they aren't real WA JIDs
     if (!num || !/^\d{7,15}$/.test(num)) return null
     return num + '@s.whatsapp.net'
   }).filter(Boolean)
@@ -481,8 +515,9 @@ module.exports = {
       await Promise.all(toSend.map(async (m) => {
         const cardId = extractCardId(m.url)
         const owners = await db.getCardOwners(m.url).catch(() => [])
-        const caption = cardBlock(m.name, m.tier, m.series, owners.length, cardId, owners)
-        const sent = await sendCardMedia(sock, jid, msg, m.url, caption, ownerMentions(owners))
+        const resolvedOwners = await resolveOwnersList(owners, sock, isGroup ? jid : null)
+        const caption = cardBlock(m.name, m.tier, m.series, owners.length, cardId, resolvedOwners)
+        const sent = await sendCardMedia(sock, jid, msg, m.url, caption, ownerMentionJids(resolvedOwners))
         if (!sent) await reply(caption)
       }))
 
