@@ -467,7 +467,7 @@ module.exports = {
   },
   async spawncard_random(ctx) { return module.exports.spawnc(ctx) },
 
-  async get({ sock, jid, msg, reply, react, sender, args }) {
+  async get({ sock, jid, msg, reply, react, sender, senderJid, isGroup, args }) {
     const pending = pendingCards[jid]
     if (!pending || Date.now() > pending.expiresAt) return reply('❌ No card spawned right now!')
     const cardIdArg = args[0]
@@ -475,10 +475,24 @@ module.exports = {
     await react('⏳')
     const { card } = pending
     delete pendingCards[jid]
+
+    // ── Resolve LID to real phone before storing ownership ──────────────────
+    // If index.js LID resolution failed, senderJid is still @lid.
+    // Try harder here using getLidFromJid so we always store a real phone number.
+    let realPhone = sender
+    if (senderJid?.endsWith('@lid') && isGroup) {
+      try {
+        const resolved = await resolveLidMention(senderJid, sock, jid)
+        if (resolved.jid && resolved.jid.endsWith('@s.whatsapp.net')) {
+          realPhone = resolved.jid.split('@')[0]
+        }
+      } catch {}
+    }
+
     const rawUrl    = card._rawUrl || card.imageUrl || card.id
     const localCard = await db.getOrCreateShoobCard(rawUrl, card.name, card.tier, card.series, card.imageUrl || null, TIER_PRICES[card.tier] || 0).catch(() => null)
     if (!localCard) return reply('❌ Failed to save card.')
-    await db.addUserCard(sender, localCard._id)
+    await db.addUserCard(realPhone, localCard._id)
     await reply(
       `🎊 Congratulations! You have successfully claimed this card\n\n` +
       `*🎴 Name:* ${card.name}\n` +
