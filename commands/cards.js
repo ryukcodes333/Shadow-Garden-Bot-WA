@@ -487,7 +487,7 @@ module.exports = {
   },
 
   // ─── .ci — send ALL matching cards at once ────────────────────────────────
-  async ci({ sock, jid, msg, reply, react, args }) {
+  async ci({ sock, jid, msg, reply, react, args, isGroup }) {
     if (!args.length) return reply(`Usage: *.ci <name> [tier]*\nShoob tiers: T1-T6 TS | Mazoku tiers: C R SR SSR UR`)
     await react('⏳')
     let rawArgs = [...args]
