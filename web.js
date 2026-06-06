@@ -717,6 +717,29 @@ app.post('/request-pairing-code', async (req, res) => {
 app.get('/ping',     (req, res) => res.json({ status: 'alive', ts: Date.now() }))
 app.get('/bot.ping', (req, res) => res.json({ status: 'alive', ts: Date.now() }))
 
+// OTP sender — called by the web app's /api/auth/request-otp route
+app.post('/send-otp', async (req, res) => {
+  const { phone, otp } = req.body || {}
+  if (!phone || !otp) {
+    return res.status(400).json({ ok: false, error: 'Missing phone or otp' })
+  }
+
+  if (!global.botConnected || !global.sock) {
+    return res.status(503).json({ ok: false, error: 'Bot not connected' })
+  }
+
+  try {
+    const jid = `${String(phone).replace(/\D/g, '')}@s.whatsapp.net`
+    const message = `🔐 *Konosuba Community — Login Code*\n\nYour OTP is: *${otp}*\n\nThis code expires in 5 minutes. Do not share it with anyone.`
+    await global.sock.sendMessage(jid, { text: message })
+    console.log(`[OTP] Sent to ${phone}`)
+    return res.json({ ok: true })
+  } catch (err) {
+    console.error('[OTP] Failed to send:', err.message)
+    return res.status(500).json({ ok: false, error: 'Failed to send message' })
+  }
+})
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`\\n🌐 Konosuba Web Panel → http://localhost:\${PORT}\\n`)
 })
