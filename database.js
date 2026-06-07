@@ -243,16 +243,31 @@ async function createUser(phone, name) {
   }
 }
 
-async function getOrCreateUser(phone, name) {
+async function getOrCreateUser(phone, name, jid) {
+  // ── JID-first lookup (post-WA↔web link) ──────────────────────────────────
+  // After a user links their WhatsApp to their web account via .link, the master
+  // record stores the web phone. The bot's sender phone (from the JID) may differ.
+  // Look up by JID first so the bot always reads/writes the canonical master record.
+  if (jid) {
+    try {
+      const cleanedJid = String(jid).includes('@') ? jid : `${jid}@s.whatsapp.net`
+      const byJid = await User.findOne({ jid: cleanedJid }).lean()
+      if (byJid) {
+        console.log(`[getOrCreateUser] found by JID: phone=${byJid.phone} jid=${cleanedJid}`)
+        return byJid
+      }
+    } catch {}
+  }
+  // ── Phone-based lookup / create ───────────────────────────────────────────
   phone = cleanPhone(phone)
   try {
     let user = await getUser(phone)
     if (!user) user = await createUser(phone, name)
-    if (!user) return { phone, name: name || phone, wallet: 0, bank: 0, gems: 0, xp: 0, level: 1, streak: 0, role: 'member', banned: false }
+    if (!user) return { phone, name: name || phone, wallet: 0, bank: 500, gems: 0, xp: 0, level: 1, streak: 0, role: 'member', banned: false }
     return user
   } catch (err) {
     console.error('getOrCreateUser error:', err.message)
-    return { phone, name: name || phone, wallet: 0, bank: 0, gems: 0, xp: 0, level: 1, streak: 0, role: 'member', banned: false }
+    return { phone, name: name || phone, wallet: 0, bank: 500, gems: 0, xp: 0, level: 1, streak: 0, role: 'member', banned: false }
   }
 }
 
@@ -900,23 +915,37 @@ async function verifyAndLinkJid(senderJid, otp) {
     console.log('[verifyAndLinkJid] Linked jid to existing master _id:', master._id)
   }
 
-  // Merge duplicate bot record into master
+  // Merge duplicate bot record into master + migrate all linked collections
   if (duplicate && String(duplicate._id) !== String(master._id)) {
     const merge = {}
-    if ((duplicate.xp || 0) > (master.xp || 0))         merge.xp = duplicate.xp
-    if ((duplicate.level || 1) > (master.level || 1))   merge.level = duplicate.level
-    if ((duplicate.wallet || 0) > (master.wallet || 0)) merge.wallet = duplicate.wallet
-    if ((duplicate.bank || 0) > (master.bank || 0))     merge.bank = duplicate.bank
-    if ((duplicate.gems || 0) > (master.gems || 0))     merge.gems = duplicate.gems
+    // Take the higher stat from each account (bot is where most activity happens)
+    if ((duplicate.xp || 0) > (master.xp || 0))         merge.xp      = duplicate.xp
+    if ((duplicate.level || 1) > (master.level || 1))   merge.level   = duplicate.level
+    if ((duplicate.wallet || 0) > (master.wallet || 0)) merge.wallet  = duplicate.wallet
+    if ((duplicate.bank || 0) > (master.bank || 0))     merge.bank    = duplicate.bank
+    if ((duplicate.gems || 0) > (master.gems || 0))     merge.gems    = duplicate.gems
+    if ((duplicate.streak || 0) > (master.streak || 0)) merge.streak  = duplicate.streak
+    if ((duplicate.pokemon_wins || 0) > (master.pokemon_wins || 0)) merge.pokemon_wins = duplicate.pokemon_wins
+    if ((duplicate.pokemon_losses || 0) > (master.pokemon_losses || 0)) merge.pokemon_losses = duplicate.pokemon_losses
     if (duplicate.name && duplicate.name !== duplicate.phone && (!master.name || master.name === master.phone)) {
       merge.name = duplicate.name
     }
     console.log('[verifyAndLinkJid] Merging duplicate _id:', duplicate._id, '→ merge fields:', JSON.stringify(merge))
     if (Object.keys(merge).length) await User.updateOne({ phone }, { $set: merge })
+
+    // ── Migrate all phone-keyed data from duplicate → master ─────────────
+    const dupPhone = duplicate.phone
+    const [ucRes, upRes, invRes] = await Promise.all([
+      UserCard.updateMany({ phone: dupPhone }, { $set: { phone } }),
+      UserPokemon.updateMany({ phone: dupPhone }, { $set: { phone } }),
+      Inventory.updateMany({ phone: dupPhone }, { $set: { phone } }),
+    ])
+    console.log(`[verifyAndLinkJid] Migrated: UserCards=${ucRes.modifiedCount} Pokemon=${upRes.modifiedCount} Inventory=${invRes.modifiedCount}`)
+
     await User.deleteOne({ _id: duplicate._id })
     console.log('[verifyAndLinkJid] Duplicate row DELETED ✓')
   } else {
-    console.log('[verifyAndLinkJid] No duplicate to merge.')
+    console.log('[verifyAndLinkJid] No duplicate to merge (same phone — just JID linked).')
   }
 
   const final = await User.findOne({ phone }).lean()
