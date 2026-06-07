@@ -252,7 +252,16 @@ async function handleMessage(sock, msg) {
   const args  = body.split(/\s+/)
   const cmd   = args.shift().toLowerCase()
 
-  const user = await db.getOrCreateUser(sender, msg.pushName || sender).catch(() => null)
+  // ── Look up user — JID-first so post-link lookups find the master account ─
+  // After .link, the master record (web phone) has jid set.
+  // getOrCreateUser(phone, name, jid) checks jid first → returns master.
+  // We then use user.phone as the canonical sender so all updateUser() calls
+  // in command files write to the correct record, not a freshly-created empty one.
+  const user = await db.getOrCreateUser(sender, msg.pushName || sender, senderJid).catch(() => null)
+
+  // Canonical phone: after a WA↔web link, user.phone is the master (web) phone.
+  // Use it as `sender` in ctx so every db.updateUser(sender, ...) hits the right row.
+  const canonicalSender = user?.phone || sender
 
   // ── Banned: silently ignore ───────────────────────────────────
   if (user?.banned && !isOwner) return
@@ -340,11 +349,17 @@ async function handleMessage(sock, msg) {
 
   // If DB is ready but user wasn't fetched (race condition on startup), retry once
   if (isDbReady && !user) {
-    try { user = await db.getOrCreateUser(sender, msg.pushName || sender) } catch {}
+    try { user = await db.getOrCreateUser(sender, msg.pushName || sender, senderJid) } catch {}
   }
 
   const ctx = {
-    sock, msg, jid, senderJid, sender, args, cmd, user, isGroup, isOwner, isMod, isGuardian, PREFIX,
+    sock, msg, jid, senderJid,
+    // sender in ctx is the CANONICAL phone (master record's phone after WA↔web link).
+    // Command files use ctx.sender for db.updateUser() — this ensures writes go to the
+    // correct unified account, not a newly-created empty one for the JID phone.
+    sender: canonicalSender,
+    rawSender: sender,  // original JID-derived phone, for auth/group checks if needed
+    args, cmd, user, isGroup, isOwner, isMod, isGuardian, PREFIX,
     pushName: msg.pushName || sender, msgType, textRaw,
     reply,
     replyImage: (image, caption) => sock.sendMessage(jid, { image, caption }, { quoted: msg }),
