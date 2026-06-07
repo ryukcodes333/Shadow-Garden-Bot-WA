@@ -594,19 +594,37 @@ module.exports = {
     )
   },
 
-  // ── .reg <name> | <password> ────────────────────────────────────────────
-  async reg({ reply, sender, pushName, args, textRaw }) {
+  // ── .reg <phone> | .reg <name> | <password> ────────────────────────────
+  async reg({ reply, sender, senderJid, pushName, args, textRaw }) {
     const rawInput = textRaw.replace(/^\.\s*reg\s*/i, '').trim()
+    const db = require('../database')
 
+    // Phone-link flow: .reg 60123456789
+    if (/^\d{7,15}$/.test(rawInput)) {
+      const phone = rawInput
+      try {
+        const otp = await db.requestWaLink(senderJid || `${sender}@s.whatsapp.net`, phone)
+        return reply(
+          `🔐 *Web Account Linking*\n\n` +
+          `OTP: *${otp}*\n\n` +
+          `Reply with:\n*.link ${otp}*\n\nto link your WhatsApp to web account *${phone}*.\n\n` +
+          `_Expires in 5 minutes. Do not share this code._`
+        )
+      } catch (err) {
+        return reply(`❌ ${err.message}`)
+      }
+    }
+
+    // Original name | password flow
     if (!rawInput.includes('|')) {
       return reply(
-        `📝 *REGISTER*\n\n` +
-        `To create your account, use:\n` +
-        `*.reg <name> | <password>*\n\n` +
-        `*Example:*\n` +
+        `📝 *REGISTER / LINK*\n\n` +
+        `*Link your web account:*\n` +
+        `*.reg <phone>* — e.g. _.reg 60123456789_\n\n` +
+        `*Create a new account:*\n` +
+        `*.reg <name> | <password>*\n` +
         `_.reg Shadow | mypassword123_\n\n` +
-        `> Your name is displayed on leaderboards and your profile card.\n` +
-        `> Keep your password safe — it's used to log in to the website.`
+        `> Use your full phone number with country code, no + or spaces.`
       )
     }
 
@@ -614,45 +632,53 @@ module.exports = {
     const name      = rawInput.slice(0, pipeIndex).trim()
     const password  = rawInput.slice(pipeIndex + 1).trim()
 
-    if (!name || name.length < 2) {
-      return reply('❌ Name must be at least 2 characters.\n\nUsage: *.reg <name> | <password>*')
-    }
-    if (name.length > 24) {
-      return reply('❌ Name must be 24 characters or fewer.\n\nUsage: *.reg <name> | <password>*')
-    }
-    if (!password || password.length < 4) {
-      return reply('❌ Password must be at least 4 characters.\n\nUsage: *.reg <name> | <password>*')
-    }
-
-    const db = require('../database')
+    if (!name || name.length < 2) return reply('❌ Name must be at least 2 characters.')
+    if (name.length > 24)         return reply('❌ Name must be 24 characters or fewer.')
+    if (!password || password.length < 4) return reply('❌ Password must be at least 4 characters.')
 
     const existing = await db.getUser(sender).catch(() => null)
     if (existing?.registered && existing?.password) {
       return reply(
         `⚠️ *Already Registered*\n\n` +
-        `You already have an account, *${existing.name || existing.username || 'Adventurer'}*.\n` +
+        `You already have an account, *${existing.name || 'Adventurer'}*.\n` +
         `Use *.profile* to view your stats.\n\n` +
-        `> Contact a mod if you need to reset your account.`
+        `> To link your web account use *.reg <phone>*`
       )
     }
 
-    await db.updateUser(sender, {
-      name,
-      username: name,
-      password,
-      registered: true,
-    })
+    await db.updateUser(sender, { name, username: name, password, registered: true })
 
-    await reply(
+    return reply(
       `🌑 *REGISTRATION COMPLETE*\n\n` +
       `*👤 Name:* ${name}\n` +
       `*🔐 Password:* ${'*'.repeat(password.length)}\n\n` +
       `Welcome to Konosuba, *${name}*! 🖤\n\n` +
-      `You can now use:\n` +
       `• *.profile* — view your profile\n` +
       `• *.bal* — check your balance\n` +
       `• *.daily* — claim daily coins\n\n` +
-      `_Every journey begins with a single step._`
+      `_To link your web account, use *.reg <your phone number>*_`
     )
+  },
+
+  // ── .link <otp> — verify and link WhatsApp to web account ───────────────
+  async link({ reply, sender, senderJid, args }) {
+    const otp = args[0]
+    if (!otp) {
+      return reply(
+        `Usage: *.link <OTP>*\n\nFirst run *.reg <phone>* to get your OTP.`
+      )
+    }
+    const db = require('../database')
+    try {
+      const user = await db.verifyAndLinkJid(senderJid || `${sender}@s.whatsapp.net`, otp)
+      return reply(
+        `✅ *Account Linked!*\n\n` +
+        `Your WhatsApp is now connected to *${user.name || user.phone}*.\n\n` +
+        `Your web and WhatsApp data are now unified! 🎉\n` +
+        `Any duplicate account has been merged.`
+      )
+    } catch (err) {
+      return reply(`❌ ${err.message}`)
+    }
   },
 }

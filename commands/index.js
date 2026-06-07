@@ -411,6 +411,7 @@ async function handleMessage(sock, msg) {
 
     // Registration
     if (cmd === 'reg' || cmd === 'register') return await profileCmds['reg'](ctx)
+    if (cmd === 'link')                      return await profileCmds['link'](ctx)
 
     // Profile commands
     if (profileCmds[cmd])       return await profileCmds[cmd](ctx)
