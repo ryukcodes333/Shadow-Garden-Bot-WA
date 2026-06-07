@@ -584,6 +584,32 @@ module.exports = {
     return module.exports.genable({ reply, isOwner, isMod, isGuardian, isGroup, jid, args: ['gamble'] })
   },
 
+  // ── .seedcards — bulk import all 85k cards from JSON into MongoDB ─────────
+  async seedcards({ reply, isOwner }) {
+    if (!isOwner) return reply('*🚫 Owner only.*')
+    await reply('⏳ Seeding cards from all three sources into MongoDB... this may take a minute.')
+    try {
+      const cardIndex     = require('./card.json')
+      let cardIndex2      = []
+      let cardIndexMazoku = []
+      try { cardIndex2      = require('./cards_shoob2.json') } catch {}
+      try { cardIndexMazoku = require('./cards_mazoku.json') } catch {}
+
+      const totalInput = cardIndex.length + cardIndex2.length + cardIndexMazoku.length
+      const { inserted, total } = await db.seedAllCards(cardIndex, cardIndex2, cardIndexMazoku)
+      return reply(
+        `✅ *Card Seed Complete*\n\n` +
+        `📦 Input cards:   ${totalInput.toLocaleString()}\n` +
+        `✨ New inserts:   ${inserted.toLocaleString()}\n` +
+        `🗄️ Total in DB:   ${total.toLocaleString()}\n\n` +
+        `_All cards are now visible on the web._`
+      )
+    } catch (err) {
+      console.error('[.seedcards] ERROR:', err)
+      return reply(`❌ Seed failed: ${err.message}`)
+    }
+  },
+
 }
 
 // Export for index.js per-group check

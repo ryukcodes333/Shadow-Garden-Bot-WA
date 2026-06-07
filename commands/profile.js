@@ -602,8 +602,20 @@ module.exports = {
     // Phone-link flow: .reg 60123456789
     if (/^\d{7,15}$/.test(rawInput)) {
       const phone = rawInput
+      const effectiveJid = senderJid || `${sender}@s.whatsapp.net`
+      // ── DEBUG LOG ────────────────────────────────────────────────────────
+      const senderRow = await db.getUser(sender).catch(() => null)
+      console.log('[.REG] ── DEBUG ──────────────────────────')
+      console.log('[.REG] effectiveJid:', effectiveJid)
+      console.log('[.REG] sender phone (from JID):', sender)
+      console.log('[.REG] target phone (user typed):', phone)
+      console.log('[.REG] DB row jid field:', senderRow?.jid ?? 'NOT SET')
+      console.log('[.REG] DB row whatsapp_verified:', senderRow?.whatsapp_verified ?? 'N/A')
+      console.log('[.REG] Full DB row:', JSON.stringify(senderRow, null, 2))
+      console.log('[.REG] ─────────────────────────────────────')
+      // ── END DEBUG ────────────────────────────────────────────────────────
       try {
-        const otp = await db.requestWaLink(senderJid || `${sender}@s.whatsapp.net`, phone)
+        const otp = await db.requestWaLink(effectiveJid, phone)
         return reply(
           `🔐 *Web Account Linking*\n\n` +
           `OTP: *${otp}*\n\n` +
@@ -669,8 +681,23 @@ module.exports = {
       )
     }
     const db = require('../database')
+    const effectiveJid = senderJid || `${sender}@s.whatsapp.net`
+    // ── DEBUG LOG ────────────────────────────────────────────────────────
+    console.log('[.LINK] ── DEBUG ──────────────────────────')
+    console.log('[.LINK] effectiveJid:', effectiveJid)
+    console.log('[.LINK] OTP submitted:', otp)
+    console.log('[.LINK] Will query WaLinkOtp WHERE jid =', effectiveJid)
+    console.log('[.LINK] ─────────────────────────────────────')
+    // ── END DEBUG ────────────────────────────────────────────────────────
     try {
-      const user = await db.verifyAndLinkJid(senderJid || `${sender}@s.whatsapp.net`, otp)
+      const user = await db.verifyAndLinkJid(effectiveJid, otp)
+      // ── DEBUG LOG — post-link ─────────────────────────────────────────
+      console.log('[.LINK] ── SUCCESS ────────────────────────')
+      console.log('[.LINK] Final DB row jid:', user?.jid)
+      console.log('[.LINK] Final DB row phone:', user?.phone)
+      console.log('[.LINK] Full merged row:', JSON.stringify(user, null, 2))
+      console.log('[.LINK] ─────────────────────────────────────')
+      // ── END DEBUG ────────────────────────────────────────────────────
       return reply(
         `✅ *Account Linked!*\n\n` +
         `Your WhatsApp is now connected to *${user.name || user.phone}*.\n\n` +
@@ -678,6 +705,7 @@ module.exports = {
         `Any duplicate account has been merged.`
       )
     } catch (err) {
+      console.error('[.LINK] ERROR:', err.message)
       return reply(`❌ ${err.message}`)
     }
   },
