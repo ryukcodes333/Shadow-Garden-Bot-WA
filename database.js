@@ -61,6 +61,7 @@ const userSchema = new mongoose.Schema({
   profile_pp:     { type: String, default: null },
   profile_bg:     { type: String, default: null },
   profile_frame:  { type: Number, default: 1 },
+  jid:            { type: String, unique: true, sparse: true },
 }, { timestamps: true })
 
 const groupSchema = new mongoose.Schema({
@@ -832,6 +833,75 @@ async function getAllStaff() {
   return User.find({ role: { $nin: ['member', null, ''] } }).lean()
 }
 
+// ── WA ↔ Web linking ──────────────────────────────────────────────────────
+
+const waLinkOtpSchema = new mongoose.Schema({
+  jid:       { type: String, required: true, unique: true },
+  phone:     { type: String, required: true },
+  otp:       { type: String, required: true },
+  expiresAt: { type: Date, required: true },
+})
+waLinkOtpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+const WaLinkOtp = mongoose.model('WaLinkOtp', waLinkOtpSchema)
+
+async function requestWaLink(senderJid, phone) {
+  const cleanedPhone = cleanPhone(phone)
+  if (!cleanedPhone || cleanedPhone.length < 7) throw new Error('Invalid phone number. Include country code, no + or spaces.')
+  const otp = Math.floor(100000 + Math.random() * 900000).toString()
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000)
+  await WaLinkOtp.findOneAndUpdate(
+    { jid: senderJid },
+    { phone: cleanedPhone, otp, expiresAt },
+    { upsert: true, new: true }
+  )
+  return otp
+}
+
+async function verifyAndLinkJid(senderJid, otp) {
+  const record = await WaLinkOtp.findOne({ jid: senderJid }).lean()
+  if (!record) throw new Error('No pending link request. Use .reg <phone> first.')
+  if (new Date() > record.expiresAt) throw new Error('OTP expired. Use .reg <phone> again.')
+  if (record.otp !== String(otp).trim()) throw new Error('Incorrect OTP. Try again.')
+
+  const phone = record.phone
+  await WaLinkOtp.deleteOne({ jid: senderJid })
+
+  // Find master record (by phone = web-registered user)
+  let master = await User.findOne({ phone }).lean()
+
+  // Find duplicate (bot-created record for this WA number, different phone stored)
+  const senderPhone = cleanPhone(senderJid)
+  let duplicate = null
+  if (senderPhone && senderPhone !== phone) {
+    duplicate = await User.findOne({ phone: senderPhone }).lean()
+  }
+
+  if (!master) {
+    // No web account yet — create one and link JID
+    const created = await User.create({ phone, jid: senderJid, name: duplicate?.name || phone })
+    master = created.toObject()
+  } else {
+    // Link JID to existing web account
+    await User.updateOne({ phone }, { $set: { jid: senderJid } })
+  }
+
+  // Merge duplicate bot record into master
+  if (duplicate && String(duplicate._id) !== String(master._id)) {
+    const merge = {}
+    if ((duplicate.xp || 0) > (master.xp || 0))         merge.xp = duplicate.xp
+    if ((duplicate.level || 1) > (master.level || 1))   merge.level = duplicate.level
+    if ((duplicate.wallet || 0) > (master.wallet || 0)) merge.wallet = duplicate.wallet
+    if ((duplicate.bank || 0) > (master.bank || 0))     merge.bank = duplicate.bank
+    if ((duplicate.gems || 0) > (master.gems || 0))     merge.gems = duplicate.gems
+    if (duplicate.name && duplicate.name !== duplicate.phone && (!master.name || master.name === master.phone)) {
+      merge.name = duplicate.name
+    }
+    if (Object.keys(merge).length) await User.updateOne({ phone }, { $set: merge })
+    await User.deleteOne({ _id: duplicate._id })
+  }
+
+  return User.findOne({ phone }).lean()
+}
 
 module.exports = {
   supabase,
@@ -879,6 +949,8 @@ module.exports = {
   getGroupDisabledCmds, setGroupDisabledCmds,
   // All staff
   getAllStaff,
+  // WA ↔ Web linking
+  requestWaLink, verifyAndLinkJid,
   // Mongoose instance
   mongoose,
 }
