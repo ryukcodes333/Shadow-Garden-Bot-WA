@@ -858,31 +858,46 @@ async function requestWaLink(senderJid, phone) {
 }
 
 async function verifyAndLinkJid(senderJid, otp) {
+  console.log('[verifyAndLinkJid] ── START ─────────────────────')
+  console.log('[verifyAndLinkJid] senderJid:', senderJid, '| otp:', otp)
+  console.log('[verifyAndLinkJid] Querying WaLinkOtp WHERE jid =', senderJid)
+
   const record = await WaLinkOtp.findOne({ jid: senderJid }).lean()
+  console.log('[verifyAndLinkJid] OTP record found:', record ? JSON.stringify(record) : 'NULL — no pending request')
+
   if (!record) throw new Error('No pending link request. Use .reg <phone> first.')
   if (new Date() > record.expiresAt) throw new Error('OTP expired. Use .reg <phone> again.')
-  if (record.otp !== String(otp).trim()) throw new Error('Incorrect OTP. Try again.')
+  if (record.otp !== String(otp).trim()) {
+    console.log('[verifyAndLinkJid] OTP MISMATCH: expected', record.otp, 'got', String(otp).trim())
+    throw new Error('Incorrect OTP. Try again.')
+  }
 
   const phone = record.phone
   await WaLinkOtp.deleteOne({ jid: senderJid })
+  console.log('[verifyAndLinkJid] OTP verified. Target phone:', phone)
 
   // Find master record (by phone = web-registered user)
   let master = await User.findOne({ phone }).lean()
+  console.log('[verifyAndLinkJid] Querying User WHERE phone =', phone)
+  console.log('[verifyAndLinkJid] master record:', master ? `_id=${master._id} name=${master.name}` : 'NULL')
 
   // Find duplicate (bot-created record for this WA number, different phone stored)
   const senderPhone = cleanPhone(senderJid)
   let duplicate = null
   if (senderPhone && senderPhone !== phone) {
     duplicate = await User.findOne({ phone: senderPhone }).lean()
+    console.log('[verifyAndLinkJid] Querying duplicate WHERE phone =', senderPhone, '→', duplicate ? `_id=${duplicate._id}` : 'NULL')
+  } else {
+    console.log('[verifyAndLinkJid] senderPhone === target phone, no duplicate lookup needed')
   }
 
   if (!master) {
-    // No web account yet — create one and link JID
     const created = await User.create({ phone, jid: senderJid, name: duplicate?.name || phone })
     master = created.toObject()
+    console.log('[verifyAndLinkJid] Created new master row _id:', master._id)
   } else {
-    // Link JID to existing web account
     await User.updateOne({ phone }, { $set: { jid: senderJid } })
+    console.log('[verifyAndLinkJid] Linked jid to existing master _id:', master._id)
   }
 
   // Merge duplicate bot record into master
@@ -896,11 +911,80 @@ async function verifyAndLinkJid(senderJid, otp) {
     if (duplicate.name && duplicate.name !== duplicate.phone && (!master.name || master.name === master.phone)) {
       merge.name = duplicate.name
     }
+    console.log('[verifyAndLinkJid] Merging duplicate _id:', duplicate._id, '→ merge fields:', JSON.stringify(merge))
     if (Object.keys(merge).length) await User.updateOne({ phone }, { $set: merge })
     await User.deleteOne({ _id: duplicate._id })
+    console.log('[verifyAndLinkJid] Duplicate row DELETED ✓')
+  } else {
+    console.log('[verifyAndLinkJid] No duplicate to merge.')
   }
 
-  return User.findOne({ phone }).lean()
+  const final = await User.findOne({ phone }).lean()
+  console.log('[verifyAndLinkJid] ── FINAL ROW ─────────────────')
+  console.log('[verifyAndLinkJid] phone:', final?.phone, '| jid:', final?.jid)
+  console.log('[verifyAndLinkJid] ─────────────────────────────────')
+  return final
+}
+
+// ── Bulk seed all cards from JSON files into MongoDB ──────────────────────────
+// Usage: await db.seedAllCards(cardIndex, cardIndex2, cardIndexMazoku)
+// cardIndex:    [{tier, title, url}]       — old shoob (numeric tier)
+// cardIndex2:   [{name, tier, url, series}] — new shoob (numeric tier)
+// cardIndexMazoku: [{id, name, tier, series, url}] — mazoku (C/R/SR/SSR/UR)
+async function seedAllCards(cardIndex, cardIndex2, cardIndexMazoku) {
+  const LOCAL_TO_LABEL = { '1':'T1','2':'T2','3':'T3','4':'T4','5':'T5','6':'T6','S':'TS','Z':'TZ' }
+  const MAZOKU_PRICES  = { C:17500, R:27500, SR:37500, SSR:50000, UR:62500 }
+  const TIER_PRICES_S  = { T1:17500, T2:27500, T3:37500, T4:50000, T5:62500, T6:72500, TS:90000, TZ:0 }
+
+  const ops = []
+
+  const pushOp = (imageUrl, name, tier, series, price) => {
+    if (!imageUrl) return
+    ops.push({
+      updateOne: {
+        filter: { image_url: imageUrl },
+        update: {
+          $setOnInsert: {
+            name:        name || 'Unknown',
+            tier:        tier || 'T1',
+            series:      series || '',
+            price:       price || 17500,
+            image_url:   imageUrl,
+            rarity:      RARITY_BY_TIER[tier] || 'Common',
+            uploaded_by: 'system',
+            external_id: imageUrl,
+          },
+        },
+        upsert: true,
+      },
+    })
+  }
+
+  for (const c of (cardIndex || [])) {
+    const tier = LOCAL_TO_LABEL[String(c.tier)] || String(c.tier)
+    pushOp(c.url, c.title, tier, '', TIER_PRICES_S[tier] || 17500)
+  }
+  for (const c of (cardIndex2 || [])) {
+    const tier = LOCAL_TO_LABEL[String(c.tier)] || String(c.tier)
+    pushOp(c.url, c.name, tier, c.series || '', TIER_PRICES_S[tier] || 17500)
+  }
+  for (const c of (cardIndexMazoku || [])) {
+    pushOp(c.url, c.name, c.tier, c.series || '', MAZOKU_PRICES[c.tier] || 17500)
+  }
+
+  if (!ops.length) return { inserted: 0, total: 0 }
+
+  const BATCH = 1000
+  let inserted = 0
+  for (let i = 0; i < ops.length; i += BATCH) {
+    const result = await Card.bulkWrite(ops.slice(i, i + BATCH), { ordered: false })
+    inserted += result.upsertedCount || 0
+    console.log(`[seedAllCards] batch ${Math.floor(i/BATCH)+1}/${Math.ceil(ops.length/BATCH)} — upserted so far: ${inserted}`)
+  }
+
+  const total = await Card.countDocuments()
+  console.log(`[seedAllCards] DONE. new inserts: ${inserted}, total cards in DB: ${total}`)
+  return { inserted, total }
 }
 
 module.exports = {
@@ -951,6 +1035,8 @@ module.exports = {
   getAllStaff,
   // WA ↔ Web linking
   requestWaLink, verifyAndLinkJid,
+  // Card seeding
+  seedAllCards,
   // Mongoose instance
   mongoose,
 }
