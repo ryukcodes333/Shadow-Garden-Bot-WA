@@ -1,5 +1,6 @@
 const {
   makeWASocket,
+  useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
   isJidBroadcast,
@@ -7,25 +8,19 @@ const {
 } = require('@whiskeysockets/baileys')
 const { Boom } = require('@hapi/boom')
 const pino = require('pino')
+const path = require('path')
+const fs = require('fs')
 const readline = require('readline')
 
 require('./web')
 
 const handleMessage = require('./commands/index')
-const { useMongoAuthState, clearMongoAuth } = require('./mongoAuth')
-
-// ── Global safety net: never let an unhandled rejection kill the process ──
-process.on('unhandledRejection', (reason) => {
-  console.error('[unhandledRejection]', reason?.message || reason)
-})
-process.on('uncaughtException', (err) => {
-  console.error('[uncaughtException]', err?.message || err)
-})
 
 const PREFIX = '.'
-const OWNER_LID = '12232838631673@lid'
+const OWNER_LID = process.env.OWNER_LID || '259683117985842@lid'
 const BOT_NAME = 'Alpha'
 const START_TIME = Date.now()
+const AUTH_DIR = path.join(__dirname, `auth_info_${process.env.PORT || '5000'}`)
 
 global.botStartTime = START_TIME
 global.botName = BOT_NAME
@@ -42,10 +37,22 @@ global.latestBaileysIsLatest = false
 let reconnectAttempts = 0
 let isRestarting = false
 
-async function clearSession() {
+function hasExistingSession() {
   try {
-    await clearMongoAuth()
-    console.log('🗑️  Session cleared from MongoDB.')
+    if (!fs.existsSync(AUTH_DIR)) return false
+    const files = fs.readdirSync(AUTH_DIR)
+    return files.some(f => f.includes('creds') || f.endsWith('.json'))
+  } catch {
+    return false
+  }
+}
+
+function clearSession() {
+  try {
+    if (fs.existsSync(AUTH_DIR)) {
+      fs.rmSync(AUTH_DIR, { recursive: true, force: true })
+      console.log('🗑️  Session cleared.')
+    }
   } catch (e) {
     console.error('Error clearing session:', e.message)
   }
@@ -58,7 +65,7 @@ async function clearSession() {
 function scheduleRestart(delayMs, label) {
   if (isRestarting) return
   isRestarting = true
-  console.log(`🔄 ${label} - restarting in ${delayMs / 1000}s…`)
+  console.log(`🔄 ${label} — restarting in ${delayMs / 1000}s…`)
   setTimeout(() => {
     isRestarting = false
     startBot().catch(err => {
@@ -71,11 +78,12 @@ function scheduleRestart(delayMs, label) {
 
 function askForPhoneNumber() {
   return new Promise((resolve) => {
+    // Auto-resolve after 90s (Render / non-interactive environments)
     const timeout = setTimeout(() => { try { rl.close() } catch {} resolve('') }, 90000)
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
     rl.on('close', () => { clearTimeout(timeout); resolve('') })
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('📱  KONOSUBA BOT - PAIR A NEW DEVICE')
+    console.log('📱  SHADOW GARDEN BOT — PAIR A NEW DEVICE')
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     console.log('Enter your WhatsApp number with country code.')
     console.log('Example: 27821234567  (no + sign, no spaces)')
@@ -90,24 +98,28 @@ function askForPhoneNumber() {
 
 async function startBot() {
   reconnectAttempts++
+  global.pairingCodeRequested = false
 
-  const { state, saveCreds } = await useMongoAuthState()
+  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR)
 
+  // Only ask for phone number if there is no existing session
   if (!state.creds.registered) {
+    // Use env var if set (fastest option — set PHONE_NUMBER on Render)
     const envPhone = (process.env.PHONE_NUMBER || '').replace(/\D/g, '')
     if (envPhone) {
       global.pendingPairingPhone = envPhone
       console.log('📱 Using PHONE_NUMBER from environment:', envPhone)
     } else {
+      // Ask in console (works locally); on Render use the web panel instead
       const phone = await askForPhoneNumber()
       if (phone) {
         global.pendingPairingPhone = phone
       } else {
-        console.log('\n📱 No number entered - use the web panel at your service URL to pair.\n')
+        console.log('\n📱 No number entered — use the web panel at your service URL to pair.\n')
       }
     }
   } else {
-    console.log('🔐 Session found in MongoDB - reconnecting to', state.creds.me?.id || 'WhatsApp', '…')
+    console.log('🔐 Session found — reconnecting to', state.creds.me?.id || 'WhatsApp', '…')
   }
 
   const { version, isLatest } = await fetchLatestBaileysVersion()
@@ -169,14 +181,9 @@ async function startBot() {
       global.pendingPairingPhone = null
       global.botConnected = true
       const botNum = sock.user?.id?.split(':')[0] || sock.user?.id || 'Unknown'
-      console.log(`\n✅ KonoBot (${BOT_NAME}) is ONLINE! 🌑`)
+      console.log(`\n✅ Shadow Garden Bot (${BOT_NAME}) is ONLINE! 🌑`)
       console.log(`📱 Bot Number: ${botNum}`)
       console.log(`💡 If this number is admin in a group, the bot can kick/manage members.\n`)
-      try {
-        const { autoStartLottery } = require('./commands/lottery')
-        autoStartLottery('$100,000 Cash', 10)
-        console.log('🎰 Auto-lottery started! Prize: $100,000 Cash — first 10 participants.')
-      } catch (e) { console.error('Auto-lottery error:', e.message) }
     }
 
     if (connection === 'connecting') {
@@ -187,9 +194,10 @@ async function startBot() {
     if (connection === 'close') {
       global.botConnected = false
       global.pairingCode = null
+      global.pairingCodeRequested = false
 
       const statusCode = (new Boom(lastDisconnect?.error))?.output?.statusCode
-      console.log(`⚠️  Connection closed - status: ${statusCode}`)
+      console.log(`⚠️  Connection closed — status: ${statusCode}`)
 
       const loggedOut = statusCode === DisconnectReason.loggedOut
       const forbidden = statusCode === 401 || statusCode === 403
@@ -200,7 +208,7 @@ async function startBot() {
 
       if (loggedOut || forbidden) {
         console.log('🔴 Logged out / rejected. Clearing session…')
-        await clearSession()
+        clearSession()
         scheduleRestart(3000, 'Fresh session after logout')
       } else if (replaced) {
         console.log('⚠️  Session replaced by another device.')
@@ -241,12 +249,12 @@ async function startBot() {
         const pushName = participant.split('@')[0]
         if (action === 'add' && groupSettings.welcome) {
           const text = (groupSettings.welcome_msg ||
-            `Hello there @${pushName} we are happy to have you in our group. Don't forget to introduce yourself too thank you.`)
+            `Welcome @${pushName} to *${groupMeta.subject}*! 🌑\n\nType *.menu* to see what Shadow Garden can do.`)
             .replace('<user>', `@${pushName}`).replace('<group>', groupMeta.subject)
           await sock.sendMessage(id, { text, mentions: [participant] })
         } else if (action === 'remove' && groupSettings.leave) {
-          const text = (groupSettings.leave_msg || `Sayonara @${pushName} we will miss you`).replace('<user>', pushName)
-          await sock.sendMessage(id, { text, mentions: [participant] })
+          const text = (groupSettings.leave_msg || `*${pushName}* has left the group. 👋`).replace('<user>', pushName)
+          await sock.sendMessage(id, { text })
         }
       }
     } catch (e) {
@@ -255,7 +263,15 @@ async function startBot() {
   })
 }
 
-console.log('🌑 KonoBot starting… (auth stored in MongoDB)')
+console.log('🌑 Shadow Garden Bot starting…')
+
+if (hasExistingSession()) {
+  console.log('🔐 Existing session found — resuming without clearing.')
+  console.log('💡 Session is preserved across restarts.')
+  console.log('   To re-pair, delete the auth_info folder manually.\n')
+} else {
+  console.log('📱 No session found — will ask for phone number to pair.\n')
+}
 
 startBot().catch(err => {
   console.error('Fatal startup error:', err.message)
