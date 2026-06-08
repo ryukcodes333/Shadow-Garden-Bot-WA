@@ -280,34 +280,34 @@ module.exports = {
       `┃ ⤷ .collection / .coll\n` +
       `┃ ⤷ .deck\n` +
       `┃ ⤷ .card\n` +
-      `┃ ⤷ .ci <name> [tier] — card info (all matches)\n` +
-      `┃ ⤷ .ss <name> — search by name\n` +
-      `┃ ⤷ .fs <series> [tier] — search by series\n` +
+      `┃ ⤷ .ci <name> [tier]\n` +
+      `┃ ⤷ .ss <name>\n` +
+      `┃ ⤷ .fs <series> [tier]\n` +
       `┃ ⤷ .cardlb\n` +
       `┃ ⤷ .get <card_id>\n` +
       `┃ ⤷ .stardust\n` +
       `┃ ⤷ .tc @user\n` +
-      `┃ ⤷ .dc <number> — discard card\n` +
+      `┃ ⤷ .dc <number>\n` +
       `┃\n` +
       `╰━━━━━━━━━━━━━━━━\n\n` +
 
       `*📱 MEDIA 📱*\n` +
       `┃\n` +
-      `┃ ⤷ .upscale — upscale image or video 2×\n` +
-      `┃ ⤷ .enhance — enhance image\n` +
-      `┃ ⤷ .remini — restore image\n` +
-      `┃ ⤷ .removebg — remove background\n` +
-      `┃ ⤷ .night — night filter\n` +
-      `┃ ⤷ .sunset — sunset filter\n` +
-      `┃ ⤷ .rain — rain filter\n` +
+      `┃ ⤷ .upscale\n` +
+      `┃ ⤷ .enhance\n` +
+      `┃ ⤷ .remini\n` +
+      `┃ ⤷ .removebg\n` +
+      `┃ ⤷ .night\n` +
+      `┃ ⤷ .sunset\n` +
+      `┃ ⤷ .rain\n` +
       `┃\n` +
       `╰━━━━━━━━━━━━━━━━\n\n` +
 
       `*💸 PAYMENTS 💸*\n` +
       `┃\n` +
       `┃ ⤷ .pay @user <amount>\n` +
-      `┃ ⤷ .confirmpy — confirm pending payment\n` +
-      `┃ ⤷ .cooldowns / .cds — show active cooldowns\n` +
+      `┃ ⤷ .confirmpy —\n` +
+      `┃ ⤷ .cooldowns / .cds\n` +
       `┃\n` +
       `╰━━━━━━━━━━━━━━━━`
 
