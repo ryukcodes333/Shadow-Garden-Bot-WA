@@ -9,7 +9,7 @@ let _db = null
 
 async function _getDB() {
     if (_db) return _db
-    _mongoClient = new MongoClient(process.env.MONGODB_URI)
+    _mongoClient = new MongoClient(process.env.MONGODB_URI || process.env.MONGO_URI)
     await _mongoClient.connect()
     _db = _mongoClient.db().collection('bot_auth')
     console.log('🔐 MongoDB auth DB connected.')
