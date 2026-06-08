@@ -1,363 +1,318 @@
 const db = require('../database')
 const fs = require('fs')
 const path = require('path')
+const { makeSticker, makeStickerFromVideo } = require('../stickerHelper')
 const { downloadMediaMessage } = require('@whiskeysockets/baileys')
-const { makeSticker } = require('../stickerHelper')
 
 const MENU_IMAGE = path.join(__dirname, '../assets/menu.jpg')
-const BOT_VERSION = '1.0.0'
+const BOT_VERSION = '3.0'
 
 function uptime() {
-  const ms = Date.now() - global.botStartTime
-  const s = Math.floor(ms / 1000)
-  const m = Math.floor(s / 60)
-  const h = Math.floor(m / 60)
-  const d = Math.floor(h / 24)
+  const ms = Date.now() - (global.botStartTime || Date.now())
+  const s  = Math.floor(ms / 1000)
+  const m  = Math.floor(s / 60)
+  const h  = Math.floor(m / 60)
+  const d  = Math.floor(h / 24)
   if (d > 0) return `${d}d ${h % 24}h ${m % 60}m`
   if (h > 0) return `${h}h ${m % 60}m ${s % 60}s`
   return `${m}m ${s % 60}s`
 }
 
+function uptimeWAT() {
+  const ms = Date.now() - (global.botStartTime || Date.now())
+  const s  = Math.floor(ms / 1000)
+  const m  = Math.floor(s / 60)
+  const h  = Math.floor(m / 60)
+  const pad = n => String(n).padStart(2, '0')
+  return `${pad(h)}:${pad(m % 60)}:${pad(s % 60)} WAT`
+}
+
+function dateStr() {
+  return new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+async function buildPhoneMap(sock, jid) {
+  try {
+    const meta = await sock.groupMetadata(jid)
+    const map  = {}
+    for (const p of meta.participants) {
+      const num = p.id.split('@')[0].split(':')[0]
+      map[num] = p.id
+    }
+    return map
+  } catch { return {} }
+}
+
 module.exports = {
-  async menu({ sock, msg, jid, sender }) {
-    const menuText = `╔『 🌑 𝐒𝐇𝚫𝐃𝐎𝐖 𝐆𝚫𝐑𝐃𝚵𝐍 🌑 』╗
-┃ 𖤐 Prefix : .
-┃ 𖤐 Name : Alpha
-┃ 𖤐 Core : Alpha
-┃ 𖤐 Dev : Ryuk
-╚═══════════════════╝
 
-✦ *.support* → Join the Shadow Garden Community.
-✦ *.addbot* → Request to add a Shadow Garden Bot to your group.
+  async menu({ sock, msg, jid, sender, pushName }) {
+    const userName = pushName || sender || 'Traveller'
+    const menuText =
+      `Hᴇʏʏʏʏʏ ${userName}... ɪ'ᴍ Aǫᴜᴀ ꜰʀᴏᴍ ᴛʜᴇ 𝐊𝚯𝐍𝚯𝐒𝐔𝐁𝚫 ᴄᴏᴍᴜɴɪᴛʏ ɴɪᴄᴇ ᴛᴏ ᴍᴇᴇᴛ ʏᴏᴜ!\n\n` +
+      `Cʜᴇᴄᴋ ʙᴇʟᴏᴡ ғᴏʀ ᴀᴠᴀɪʟᴀʙʟᴇ ᴄᴏᴍᴍᴀɴᴅs ✦\n\n` +
 
-━━━━━━━━━━━━━━━━━
+      `*⚙️ ADMIN ⚙️*\n` +
+      `┃\n` +
+      `┃ ⤷ .kick @user\n` +
+      `┃ ⤷ .mute @user\n` +
+      `┃ ⤷ .unmute @user\n` +
+      `┃ ⤷ .warn @user\n` +
+      `┃ ⤷ .warnings @user\n` +
+      `┃ ⤷ .clearwarns @user\n` +
+      `┃ ⤷ .promote @user\n` +
+      `┃ ⤷ .demote @user\n` +
+      `┃ ⤷ .ban @user\n` +
+      `┃ ⤷ .unban @user\n` +
+      `┃ ⤷ .addmod @user\n` +
+      `┃ ⤷ .removemod @user\n` +
+      `┃ ⤷ .lockgroup\n` +
+      `┃ ⤷ .unlockgroup\n` +
+      `┃ ⤷ .setname <name>\n` +
+      `┃ ⤷ .setdesc <description>\n` +
+      `┃ ⤷ .setpp (reply image)\n` +
+      `┃ ⤷ .tagall\n` +
+      `┃ ⤷ .hidetag <message>\n` +
+      `┃ ⤷ .delete (reply msg)\n` +
+      `┃ ⤷ .antilink on/off\n` +
+      `┃ ⤷ .antispam on/off\n` +
+      `┃ ⤷ .welcome on/off\n` +
+      `┃ ⤷ .goodbye on/off\n` +
+      `┃ ⤷ .autoreply on/off\n` +
+      `┃ ⤷ .active\n` +
+      `┃ ⤷ .resetlink\n` +
+      `┃ ⤷ .revoke\n` +
+      `┃ ⤷ .invitelink\n` +
+      `┃ ⤷ .stafflist\n` +
+      `┃ ⤷ .myrole\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-📋 『 𝗠𝗔𝗜𝗡 』
-✦ .menu
-✦ .ping
-✦ .website
-✦ .community
-✦ .afk
-✦ .help
-✦ .info
-✦ .uptime
+      `*💰 ECONOMY 💰*\n` +
+      `┃\n` +
+      `┃ ⤷ .balance / .bal\n` +
+      `┃ ⤷ .wallet\n` +
+      `┃ ⤷ .bank\n` +
+      `┃ ⤷ .deposit <amount>\n` +
+      `┃ ⤷ .withdraw <amount>\n` +
+      `┃ ⤷ .pay @user <amount>\n` +
+      `┃ ⤷ .loan <amount>\n` +
+      `┃ ⤷ .repay <amount>\n` +
+      `┃ ⤷ .daily\n` +
+      `┃ ⤷ .fish\n` +
+      `┃ ⤷ .dig\n` +
+      `┃ ⤷ .weekly\n` +
+      `┃ ⤷ .monthly\n` +
+      `┃ ⤷ .work\n` +
+      `┃ ⤷ .beg\n` +
+      `┃ ⤷ .crime\n` +
+      `┃ ⤷ .rob @user\n` +
+      `┃ ⤷ .heist\n` +
+      `┃ ⤷ .market\n` +
+      `┃ ⤷ .buy <item>\n` +
+      `┃ ⤷ .sell <item>\n` +
+      `┃ ⤷ .inventory / .inv\n` +
+      `┃ ⤷ .use <item>\n` +
+      `┃ ⤷ .gift @user <item>\n` +
+      `┃ ⤷ .topmoney\n` +
+      `┃ ⤷ .topbank\n` +
+      `┃ ⤷ .cooldowns / .cds\n` +
+      `┃ ⤷ .profile / .p\n` +
+      `┃ ⤷ .rank\n` +
+      `┃ ⤷ .xp\n` +
+      `┃ ⤷ .achievements\n` +
+      `┃ ⤷ .quests\n` +
+      `┃ ⤷ .claim\n` +
+      `┃ ⤷ .bonus\n` +
+      `┃ ⤷ .upgrade\n` +
+      `┃ ⤷ .prestige\n` +
+      `┃ ⤷ .bankupgrade\n` +
+      `┃ ⤷ .withdrawall\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-━━━━━━━━━━━━━━━━━
+      `*🎲 GAMBLING 🎲*\n` +
+      `┃\n` +
+      `┃ ⤷ .coinflip <amount>\n` +
+      `┃ ⤷ .slots <amount>\n` +
+      `┃ ⤷ .blackjack <amount>\n` +
+      `┃ ⤷ .roulette <amount>\n` +
+      `┃ ⤷ .dice <amount>\n` +
+      `┃ ⤷ .lottery\n` +
+      `┃ ⤷ .bet <amount>\n` +
+      `┃ ⤷ .highlow <amount>\n` +
+      `┃ ⤷ .crash <amount>\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-⚙️ 『 𝗔𝗗𝗠𝗜𝗡 』
-✦ .kick
-✦ .delete
-✦ .antilink
-✦ .antilink set [action]
-✦ .warn @user [reason]
-✦ .resetwarn
-✦ .groupinfo / .gi
-✦ .groupstats / .gs
-✦ .welcome on/off
-✦ .setwelcome
-✦ .leave on/off
-✦ .setleave
-✦ .promote
-✦ .demote
-✦ .mute
-✦ .unmute
-✦ .hidetag
-✦ .tagall
-✦ .activity
-✦ .active
-✦ .inactive
-✦ .open
-✦ .close
-✦ .antism on/off
-✦ .blacklist add/remove/list
+      `*🎉 FUN 🎉*\n` +
+      `┃\n` +
+      `┃ ⤷ .joke\n` +
+      `┃ ⤷ .meme\n` +
+      `┃ ⤷ .quote\n` +
+      `┃ ⤷ .fact\n` +
+      `┃ ⤷ .8ball <question>\n` +
+      `┃ ⤷ .truth\n` +
+      `┃ ⤷ .dare\n` +
+      `┃ ⤷ .ship @user @user\n` +
+      `┃ ⤷ .rate @user\n` +
+      `┃ ⤷ .roast @user\n` +
+      `┃ ⤷ .compliment @user\n` +
+      `┃ ⤷ .pick <option1/option2>\n` +
+      `┃ ⤷ .reverse <text>\n` +
+      `┃ ⤷ .fliptext <text>\n` +
+      `┃ ⤷ .emojify <text>\n` +
+      `┃ ⤷ .rps <rock/paper/scissors>\n` +
+      `┃ ⤷ .wouldyourather\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-━━━━━━━━━━━━━━━━━
+      `*💞 INTERACTIONS 💞*\n` +
+      `┃\n` +
+      `┃ ⤷ .hug @user\n` +
+      `┃ ⤷ .kiss @user\n` +
+      `┃ ⤷ .pat @user\n` +
+      `┃ ⤷ .slap @user\n` +
+      `┃ ⤷ .punch @user\n` +
+      `┃ ⤷ .bite @user\n` +
+      `┃ ⤷ .cuddle @user\n` +
+      `┃ ⤷ .poke @user\n` +
+      `┃ ⤷ .tickle @user\n` +
+      `┃ ⤷ .wave @user\n` +
+      `┃ ⤷ .highfive @user\n` +
+      `┃ ⤷ .stare @user\n` +
+      `┃ ⤷ .blush\n` +
+      `┃ ⤷ .smile\n` +
+      `┃ ⤷ .cry\n` +
+      `┃ ⤷ .laugh\n` +
+      `┃ ⤷ .dance\n` +
+      `┃ ⤷ .angry\n` +
+      `┃ ⤷ .sleep\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-💰 『 𝗘𝗖𝗢𝗡𝗢𝗠𝗬 』
-✦ .bal / .balance
-✦ .gems
-✦ .premium / .prem  ✦ .membership / .memb
-✦ .premiumbal / .pbal
-✦ .daily
-✦ .withdraw / .wid
-✦ .deposit / .dep
-✦ .donate
-✦ .lottery
-✦ .lp
-✦ .richlg
-✦ .richlist
+      `*🎮 GAMES 🎮*\n` +
+      `┃\n` +
+      `┃ ⤷ .tictactoe @user\n` +
+      `┃ ⤷ .hangman\n` +
+      `┃ ⤷ .quiz\n` +
+      `┃ ⤷ .trivia\n` +
+      `┃ ⤷ .mathquiz\n` +
+      `┃ ⤷ .wordgame\n` +
+      `┃ ⤷ .riddle\n` +
+      `┃ ⤷ .guessnumber\n` +
+      `┃ ⤷ .fasttype\n` +
+      `┃ ⤷ .minesweeper\n` +
+      `┃ ⤷ .snake\n` +
+      `┃ ⤷ .2048\n` +
+      `┃ ⤷ .duel @user\n` +
+      `┃ ⤷ .arcade\n` +
+      `┃ ⤷ .leaderboard\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-⧉ 𝗣𝗿𝗼𝗳𝗶𝗹𝗲
-✦ .register / .reg
-✦ .setname
-✦ .profile / .p
-✦ .bio
-✦ .setage
+      `*🐾 POKÉMONS 🐾*\n` +
+      `┃\n` +
+      `┃ ⤷ .pokemon\n` +
+      `┃ ⤷ .party\n` +
+      `┃ ⤷ .pc\n` +
+      `┃ ⤷ .starter\n` +
+      `┃ ⤷ .catch\n` +
+      `┃ ⤷ .hunt\n` +
+      `┃ ⤷ .battle @user\n` +
+      `┃ ⤷ .heal\n` +
+      `┃ ⤷ .evolve <pokemon>\n` +
+      `┃ ⤷ .release <pokemon>\n` +
+      `┃ ⤷ .rename <pokemon> <name>\n` +
+      `┃ ⤷ .buddy <pokemon>\n` +
+      `┃ ⤷ .feed <pokemon>\n` +
+      `┃ ⤷ .train <pokemon>\n` +
+      `┃ ⤷ .moves <pokemon>\n` +
+      `┃ ⤷ .pokeshop\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-⧉ 𝗜𝗻𝘃𝗲𝗻𝘁𝗼𝗿𝘆
-✦ .inv
-✦ .use
-✦ .sell
-✦ .buy
+      `*⬇️ DOWNLOADER ⬇️*\n` +
+      `┃\n` +
+      `┃ ⤷ .play <song>\n` +
+      `┃ ⤷ .ytmp3 <link>\n` +
+      `┃ ⤷ .ytmp4 <link>\n` +
+      `┃ ⤷ .tiktok <link>\n` +
+      `┃ ⤷ .instagram <link>\n` +
+      `┃ ⤷ .facebook <link>\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-⧉ 𝗚𝗿𝗶𝗻𝗱𝗶𝗻𝗴
-✦ .work
-✦ .dig
-✦ .fish
-✦ .beg
-✦ .roast
+      `*⚔️ RPG ⚔️*\n` +
+      `┃\n` +
+      `┃ ⤷ .rpg\n` +
+      `┃ ⤷ .stats\n` +
+      `┃ ⤷ .hunt\n` +
+      `┃ ⤷ .boss\n` +
+      `┃ ⤷ .raid\n` +
+      `┃ ⤷ .dungeon\n` +
+      `┃ ⤷ .quest\n` +
+      `┃ ⤷ .equip <item>\n` +
+      `┃ ⤷ .unequip <item>\n` +
+      `┃ ⤷ .skills\n` +
+      `┃ ⤷ .craft <item>\n` +
+      `┃ ⤷ .forge\n` +
+      `┃ ⤷ .shop\n` +
+      `┃ ⤷ .prestige\n` +
+      `┃ ⤷ .rparty\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-⧉ 𝗦𝘁𝗮𝘁𝘀
-✦ .leaderboard / .lb
-✦ .stats
-✦ .cds
-✦ .bc
-✦ .lc
+      `*🏰 GUILD 🏰*\n` +
+      `┃\n` +
+      `┃ ⤷ .createguild <name>\n` +
+      `┃ ⤷ .guild\n` +
+      `┃ ⤷ .guildinfo\n` +
+      `┃ ⤷ .joinguild <name>\n` +
+      `┃ ⤷ .leaveguild\n` +
+      `┃ ⤷ .invite @user\n` +
+      `┃ ⤷ .kickmember @user\n` +
+      `┃ ⤷ .guildtop\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-━━━━━━━━━━━━━━━━━
+      `*🎴 CARDS 🎴*\n` +
+      `┃\n` +
+      `┃ ⤷ .collection / .coll\n` +
+      `┃ ⤷ .deck\n` +
+      `┃ ⤷ .card\n` +
+      `┃ ⤷ .ci <name> [tier] — card info (all matches)\n` +
+      `┃ ⤷ .ss <name> — search by name\n` +
+      `┃ ⤷ .fs <series> [tier] — search by series\n` +
+      `┃ ⤷ .cardlb\n` +
+      `┃ ⤷ .get <card_id>\n` +
+      `┃ ⤷ .stardust\n` +
+      `┃ ⤷ .tc @user\n` +
+      `┃ ⤷ .dc <number> — discard card\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-🎴 『 𝗖𝗔𝗥𝗗 𝗦𝗬𝗦𝗧𝗘𝗠 』
-✦ .collection / .coll
-✦ .deck
-✦ .sdi
-✦ .card
-✦ .ci <name> [tier]
-✦ .mycolls
-✦ .cardlb
-✦ .get
-✦ .stardust
+      `*📱 MEDIA 📱*\n` +
+      `┃\n` +
+      `┃ ⤷ .upscale — upscale image or video 2×\n` +
+      `┃ ⤷ .enhance — enhance image\n` +
+      `┃ ⤷ .remini — restore image\n` +
+      `┃ ⤷ .removebg — remove background\n` +
+      `┃ ⤷ .night — night filter\n` +
+      `┃ ⤷ .sunset — sunset filter\n` +
+      `┃ ⤷ .rain — rain filter\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
 
-⧉ 𝗖𝗼𝗺𝗯𝗮𝘁
-✦ .vs
-
-⧉ 𝗧𝗿𝗮𝗱𝗶𝗻𝗴
-✦ .cg
-✦ .sellc
-✦ .tc
-✦ .accept / .decline
-
-⧉ 𝗗𝗲𝗰𝗸 𝗖𝗼𝗻𝘁𝗿𝗼𝗹
-✦ .ctd
-✦ .ctd remove / clear
-
-⧉ 𝗟𝗲𝗻𝗱𝗶𝗻𝗴
-✦ .lc
-✦ .lcd
-✦ .retrieve
-
-⧉ 𝗔𝘂𝗰𝘁𝗶𝗼𝗻
-✦ .auction
-✦ .myauc
-✦ .listauc
-
-━━━━━━━━━━━━━━━━━
-
-🎮 『 𝗚𝗔𝗠𝗘𝗦 』
-✦ .ttt
-✦ .c4
-✦ .wcg
-✦ .wordchain
-✦ .startbattle
-✦ .stopgame
-
-━━━━━━━━━━━━━━━━━
-
-🃏 『 𝗨𝗡𝗢 』
-✦ .uno
-✦ .startuno
-✦ .unoplay
-✦ .unodraw
-✦ .unohand
-
-━━━━━━━━━━━━━━━━━
-
-🎲 『 𝗚𝗔𝗠𝗕𝗟𝗘 』
-✦ .slots
-✦ .dice
-✦ .casino
-✦ .cf
-✦ .db
-✦ .dp
-✦ .roulette
-✦ .horse
-✦ .spin
-
-━━━━━━━━━━━━━━━━━
-
-👤 『 𝗜𝗡𝗧𝗘𝗥𝗔𝗖𝗧𝗜𝗢𝗡𝗦 』
-✦ .hug
-✦ .kiss
-✦ .slap
-✦ .wave
-✦ .pat
-✦ .dance
-✦ .sad
-✦ .smile
-✦ .laugh
-
-⧉ 𝗖𝗼𝗺𝗯𝗮𝘁
-✦ .punch
-✦ .hit
-✦ .kill
-✦ .kidnap
-
-⧉ 𝗘𝘅𝘁𝗿𝗮𝘀
-✦ .lick
-✦ .bonk
-✦ .tickle
-✦ .shrug
-
-━━━━━━━━━━━━━━━━━
-
-🎉 『 𝗙𝗨𝗡 』
-✦ .gay
-✦ .lesbian
-✦ .simp
-✦ .match
-✦ .ship
-✦ .character
-✦ .pp
-✦ .skill
-✦ .duality
-✦ .gen
-✦ .pov
-✦ .social
-✦ .relation
-✦ .compliment
-✦ .roast
-
-⧉ 𝗚𝗮𝗺𝗲𝘀
-✦ .wyr
-✦ .truth
-✦ .dare
-✦ .td
-✦ .joke
-✦ .8ball <question>
-✦ .roll [sides] [count]
-✦ .choose a | b | c
-✦ .flip
-✦ .reverse <text>
-
-⧉ 𝗨𝘁𝗶𝗹𝗶𝘁𝘆
-✦ .fancy → 40 numbered styles
-✦ .fancy <n> <text>
-✦ .password / .pass [length]
-✦ .qr <text>
-✦ .fact
-
-⧉ 𝗦𝘁𝗮𝘁𝘂𝘀
-✦ .status
-✦ .memory
-✦ .ll
-
-━━━━━━━━━━━━━━━━━
-
-👤 『 𝗣𝗥𝗢𝗙𝗜𝗟𝗘 』
-✦ .profile / .p
-✦ .setpp
-✦ .setbg
-✦ .frames
-✦ .setframe <1–30>
-
-━━━━━━━━━━━━━━━━━
-
-⚔️ 『 𝗥𝗣𝗚 』
-✦ .rpg
-✦ .selectclass — Choose your class
-✦ .skillinfo — View skill evolution
-✦ .dungeon — Enter dungeon
-✦ .attack / .heavy / .defend / .special / .heal / .flee
-⧉ 𝗖𝗹𝗮𝘀𝘀 𝗔𝗯𝗶𝗹𝗶𝘁𝗶𝗲𝘀
-✦ .slash / .darkslash / .voidrend (Warrior)
-✦ .darknova / .voidcascade (Mage)
-✦ .shadowshot / .voidpiercer (Archer)
-✦ .backstab / .smokebomb (Assassin)
-✦ .shieldwall / .deathblow (Knight)
-✦ .berserk (Warrior)
-✦ .adventure / .quest / .raid
-
-━━━━━━━━━━━━━━━━━
-
-📜 『 𝗣𝗢𝗞𝗘́𝗠𝗢𝗡 𝗦𝗬𝗦𝗧𝗘𝗠 』
-✦ .wb
-✦ .spawnp (staff only)
-✦ .pokemon
-
-⧉ 𝗧𝗲𝗮𝗺 𝗖𝗼𝗻𝘁𝗿𝗼𝗹
-✦ .party
-✦ .pc
-✦ .pswap
-✦ .t2pc
-✦ .t2party
-
-⧉ 𝗕𝗮𝘁𝘁𝗹𝗲
-✦ .pbattle
-✦ .atk
-✦ .moves
-✦ .moveinfo
-✦ .pheal
-
-⧉ 𝗧𝗿𝗮𝗱𝗲 / 𝗜𝗻𝘁𝗲𝗿𝗮𝗰𝘁
-✦ .pgive
-✦ .ptrade
-✦ .ptrade accept / reject
-
-⧉ 𝗚𝗿𝗼𝘄𝘁𝗵
-✦ .evolve
-✦ .learn
-✦ .puse
-
-━━━━━━━━━━━━━━━━━
-
-🤖 『 𝗔𝗜 』
-✦ .ai / .gpt
-✦ .translate / .tt
-✦ .chat on/off
-
-━━━━━━━━━━━━━━━━━
-
-🔄 『 𝗖𝗢𝗡𝗩𝗘𝗥𝗧𝗘𝗥 』
-✦ .sticker / .s
-✦ .take
-✦ .toimg
-✦ .play
-✦ .speech
-✦ .mood
-✦ .pintimg
-
-━━━━━━━━━━━━━━━━━
-
-☀️ 『 𝗦𝗨𝗠𝗠𝗘𝗥 𝗘𝗩𝗘𝗡𝗧 』
-✦ .summer
-✦ .token check
-✦ .token shop
-✦ .token buy
-✦ .token top
-
-━━━━━━━━━━━━━━━━━
-
-🏰 『 𝗚𝗨𝗜𝗟𝗗𝗦 』
-✦ .guild create / join / leave / info / list
-✦ .guild disband
-✦ .guildbattle <name>
-✦ .guildleaderboard / .glb
-✦ .guilddonation <amount>
-✦ .guildinvite @user
-
-⧉ 𝗚𝘂𝗶𝗹𝗱 𝗥𝗮𝗶𝗱
-✦ .guildraid — Leader starts 5-floor raid
-✦ .raidjoin — Members join (60s window)
-✦ .raidattack — Attack during raid
-
-
-╚═════════════════╝
-  「 Rule from the Shadows. 🖤 」`
+      `*💸 PAYMENTS 💸*\n` +
+      `┃\n` +
+      `┃ ⤷ .pay @user <amount>\n` +
+      `┃ ⤷ .confirmpy — confirm pending payment\n` +
+      `┃ ⤷ .cooldowns / .cds — show active cooldowns\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━`
 
     if (fs.existsSync(MENU_IMAGE)) {
-      await sock.sendMessage(jid, {
-        image: { url: MENU_IMAGE },
-        caption: menuText
-      }, { quoted: msg })
+      await sock.sendMessage(jid, { image: { url: MENU_IMAGE }, caption: menuText }, { quoted: msg })
     } else {
       await sock.sendMessage(jid, { text: menuText }, { quoted: msg })
     }
@@ -365,220 +320,460 @@ module.exports = {
 
   async ping({ sock, msg, jid }) {
     const start = Date.now()
-    await sock.sendMessage(jid, { text: '🏓' }, { quoted: msg })
-    const ping = Date.now() - start
-    await sock.sendMessage(jid, { text: `Alpha's here!\n> ${ping}Ms` }, { quoted: msg })
+    await sock.sendMessage(jid, { text: `Aqua's here!\n> ${Date.now() - start}ms` }, { quoted: msg })
+  },
+
+  async speed({ sock, msg, jid }) {
+    const start = Date.now()
+    await sock.sendMessage(jid, { text: '⚡ Testing...' }, { quoted: msg })
+    await sock.sendMessage(jid, { text: `⚡ Done in ${Date.now() - start}ms` }, { quoted: msg })
+  },
+
+  async runtime({ reply }) {
+    await reply(`⏱️ Runtime: ${uptime()}`)
   },
 
   async uptime({ reply }) {
-    await reply(`⏱️ *UPTIME*\n\n🤖 Bot has been running for:\n*${uptime()}*\n\n_The system never sleeps…_ 🖤`)
+    await reply(`⏱️ Uptime: ${uptime()}`)
   },
 
-  async info({ sock, msg, jid, user }) {
-    const start = Date.now()
-    const userCount = await db.getUserCount()
-    const groupCount = await db.getGroupCount()
-    const ping = Date.now() - start
-    const mem = process.memoryUsage()
-    const ramUsed = (mem.heapUsed / 1024 / 1024).toFixed(1)
-    const ramTotal = (mem.heapTotal / 1024 / 1024).toFixed(1)
+  async repo({ reply }) {
+    await reply(`📦 *Repo*\n\nGitHub: Coming soon`)
+  },
 
+  async script({ reply }) {
+    await reply(`📜 Konosuba Community Bot v${BOT_VERSION}`)
+  },
+
+  async vv({ sock, msg, jid, reply }) {
+    const ctx = msg.message?.extendedTextMessage?.contextInfo
+    const quoted = ctx?.quotedMessage
+    if (!quoted) return reply('↩️ Reply to a view-once message with .vv')
+    const inner = quoted?.viewOnceMessageV2?.message || quoted?.viewOnceMessage?.message || quoted
+    const imgMsg = inner?.imageMessage || quoted?.imageMessage
+    const vidMsg = inner?.videoMessage || quoted?.videoMessage
+    if (!imgMsg && !vidMsg) return reply('❌ No view-once media found.')
+    try {
+      const targetMsg = {
+        message: inner || quoted,
+        key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant },
+      }
+      const buffer = await downloadMediaMessage(targetMsg, 'buffer', {}, {
+        logger: { level: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+        reuploadRequest: sock.updateMediaMessage,
+      })
+      if (imgMsg) {
+        await sock.sendMessage(jid, { image: buffer, caption: '🔓 Unlocked' }, { quoted: msg })
+      } else {
+        await sock.sendMessage(jid, { video: buffer, caption: '🔓 Unlocked' }, { quoted: msg })
+      }
+    } catch (e) {
+      await reply(`❌ Failed: ${e.message}`)
+    }
+  },
+  async vv2(ctx) { return module.exports.vv(ctx) },
+
+  async enc({ sock, msg, jid, reply }) {
+    const ctx    = msg.message?.extendedTextMessage?.contextInfo
+    const quoted = ctx?.quotedMessage
+    if (!quoted?.imageMessage) return reply('↩️ Reply to an image with .enc')
+    try {
+      const targetMsg = {
+        message: quoted,
+        key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant },
+      }
+      const buffer = await downloadMediaMessage(targetMsg, 'buffer', {}, {
+        logger: { level: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+        reuploadRequest: sock.updateMediaMessage,
+      })
+      await sock.sendMessage(jid, { image: buffer, viewOnce: true, caption: '🔒' }, { quoted: msg })
+    } catch (e) {
+      await reply(`❌ Failed: ${e.message}`)
+    }
+  },
+
+  async info({ sock, msg, jid }) {
+    const start      = Date.now()
+    const userCount  = await db.getUserCount().catch(() => '?')
+    const groupCount = await db.getGroupCount().catch(() => '?')
+    const ping       = Date.now() - start
+    const mem        = process.memoryUsage()
     await sock.sendMessage(jid, {
-      text: `📌 *BOT INFORMATION*\n\n🤖 *Name:* ${global.botName}\n🌑 *Theme:* Shadow Garden\n⚙️ *Prefix:* ${global.prefix}\n🧠 *Mode:* Public\n📡 *Status:* Online\n\n👤 *Developer:* Ryuk\n🧩 *Version:* ${BOT_VERSION}\n\n📊 *Uptime:* ${uptime()}\n⚡ *Speed:* ${ping} ms\n\n💾 *Database:* Supabase (Connected)\n🛡️ *Security:* Active\n\n📱 *Platform:* WhatsApp MD (Baileys)\n\n⏰ *Runtime:* ${Math.floor((Date.now() - global.botStartTime) / 3600000)} hours\n\n👥 *Users:* ${userCount}\n🏠 *Groups:* ${groupCount}\n\n_The system runs silently in the shadows… always active, always watching._ 🖤`
+      text:
+        `📌 *BOT INFORMATION*\n\n🤖 *Name:* ${global.botName || 'Konosuba Bot'}\n⚙️ *Version:* ${BOT_VERSION}\n` +
+        `📡 *Status:* Online\n⚡ *Speed:* ${ping} ms\n\n` +
+        `👥 *Users:* ${userCount}\n🏠 *Groups:* ${groupCount}\n` +
+        `🧠 *RAM:* ${(mem.heapUsed / 1024 / 1024).toFixed(1)} MB\n\n` +
+        `📊 *Uptime:* ${uptime()}`
     }, { quoted: msg })
   },
 
   async status({ sock, msg, jid }) {
     const start = Date.now()
-    const userCount = await db.getUserCount()
-    const groupCount = await db.getGroupCount()
-    const ping = Date.now() - start
-    const mem = process.memoryUsage()
-    const ramUsed = (mem.heapUsed / 1024 / 1024).toFixed(1)
-
+    const ping  = Date.now() - start
+    const mem   = process.memoryUsage()
     await sock.sendMessage(jid, {
-      text: `🤖 *BOT STATUS*\n\n🌑 *Name:* ${global.botName}\n⚙️ *Mode:* Public\n📡 *Status:* Online\n\n⚡ *Ping:* ${ping} ms\n⏱️ *Uptime:* ${uptime()}\n🧠 *RAM Usage:* ${ramUsed} MB\n💾 *Database:* Supabase Connected\n\n👥 *Active Chats:* ${groupCount}\n👤 *Users:* ${userCount}\n🏠 *Groups:* ${groupCount}\n\n🔐 *Security:* Active\n🚫 *Errors Today:* 0\n\n📅 *Last Restart:* ${new Date(global.botStartTime).toLocaleString()}\n\n_The system runs silently… but it never sleeps._ 🖤`
+      text:
+        `🤖 *BOT STATUS*\n\n📡 *Status:* Online\n⚡ *Ping:* ${ping} ms\n⏱️ *Uptime:* ${uptime()}\n` +
+        `🧠 *RAM:* ${(mem.heapUsed / 1024 / 1024).toFixed(1)} MB`
     }, { quoted: msg })
   },
 
-  async afk({ reply, args, sender, senderJid }) {
-    const reason = args.join(' ') || 'No reason given'
+  async botstatus({ sock, msg, jid }) { return module.exports.status({ sock, msg, jid }) },
+
+  async afk({ reply, args, sender }) {
+    const reason = args.join(' ') || 'No reason'
     await db.setAFK(sender, reason)
-    const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-    await reply(`💤 *AFK MODE ACTIVATED*\n\n👤 *User:* @${sender}\n\n📌 *Reason:* ${reason}\n⏰ *Time:* ${now}\n\n⚡ You are now marked as AFK.\n\n💬 Anyone who mentions you will be notified.\n\n_The shadows will hold your presence until you return…_ 🖤`)
+    await reply(`You are now AFK`)
+  },
+
+  async unafk({ reply, sender, args, isOwner, isMod, isGuardian, msg }) {
+    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    if (!isOwner && !isMod && !isGuardian) {
+      return reply('⚠️ Staff only.')
+    }
+    const targetPhone = mentioned.length
+      ? mentioned[0].split('@')[0].split(':')[0]
+      : (args[0] ? args[0].replace(/[^0-9]/g, '') : null)
+    if (!targetPhone) return reply('❌ Usage: *.unafk @user*')
+    await db.removeAFK(targetPhone)
+    await reply(`✅ AFK removed for *${targetPhone}*.`)
   },
 
   async website({ reply }) {
-    await reply(`🌐 *SHADOW GARDEN WEBSITE*\n\n🔗 Coming Soon…\n\n_The shadows are building something great._ 🖤`)
+    await reply(`🌐 Website coming soon`)
   },
 
   async community({ reply }) {
-    await reply(`🌑 *SHADOW GARDEN COMMUNITY*\n\n👥 Join our group for support, updates, and more.\n\n_Type .support for the link._ 🖤`)
+    await reply(`🌑 Use *.support* to get the group link.`)
   },
 
   async support({ reply }) {
-    await reply(`💬 *SHADOW GARDEN SUPPORT*\n\nhttps://chat.whatsapp.com/invite\n\n_The shadows welcome you._ 🖤`)
+    await reply(`💬 DM a mod via *.mods* to get the invite link.`)
   },
 
   async addbot({ reply }) {
-    await reply(`🤖 *ADD BOT REQUEST*\n\nTo add Shadow Garden Bot to your group, contact @developer with your group link.\n\n_The shadows expand their reach._ 🖤`)
+    await reply(`🤖 Contact staff with your group link.\nUse *.mods* to find staff.`)
   },
 
   async help({ reply, args }) {
-    const cmd = args[0]
-    if (cmd) {
-      await reply(`📖 *HELP: .${cmd}*\n\nFor detailed help on *.${cmd}*, check the menu or ask in support.\n\n_The system provides guidance to those who seek it._ 🖤`)
-    } else {
-      await reply(`📖 *HELP MENU*\n\nType *.menu* to see all commands.\n\nFor specific command help: *.help <command>*\n\n_The system guides those willing to learn._ 🖤`)
-    }
+    if (args[0]) return reply(`📖 .${args[0]} - check *.menu* for details`)
+    await reply(`📖 *Help*\n\n• *.menu* - all commands\n• *#phelp* - pokémon help\n• *.law* - rules\n• *.pbenefits* - premium info`)
   },
 
   async memory({ reply }) {
     const mem = process.memoryUsage()
-    const toMB = (b) => (b / 1024 / 1024).toFixed(2)
-    await reply(`💾 *MEMORY USAGE*\n\nHeap Used: ${toMB(mem.heapUsed)} MB\nHeap Total: ${toMB(mem.heapTotal)} MB\nRSS: ${toMB(mem.rss)} MB\nExternal: ${toMB(mem.external)} MB\n\n_Monitoring system resources…_ 🖤`)
+    const toMB = b => (b / 1024 / 1024).toFixed(2)
+    await reply(`💾 Heap: ${toMB(mem.heapUsed)} MB | RSS: ${toMB(mem.rss)} MB`)
   },
 
-  async lastlogs({ reply }) {
-    await reply(`📋 *LAST LOGS*\n\nNo recent errors.\n\n_The system runs cleanly._ 🖤`)
+  async report({ reply, args }) {
+    const reason = args.join(' ')
+    if (!reason) return reply('⚠️ Usage: .report <reason>')
+    await reply(`✅ Report received! Staff will review it.`)
   },
 
-  async dbstatus({ reply, isOwner }) {
-    if (!isOwner) return reply('⚠️ Owner only.')
-
-    const tables = [
-      'users', 'groups', 'warnings', 'afk', 'messages', 'cooldowns',
-      'inventory', 'cards', 'user_cards', 'user_pokemon', 'games',
-      'summer_tokens', 'guilds', 'guild_members', 'blacklist', 'disabled_commands',
-    ]
-
-    const results = await Promise.all(tables.map(async (table) => {
-      try {
-        const { count, error } = await db.supabase.from(table).select('*', { count: 'exact', head: true })
-        if (error) return { table, ok: false, count: 0 }
-        return { table, ok: true, count: count || 0 }
-      } catch {
-        return { table, ok: false, count: 0 }
-      }
-    }))
-
-    let storageBucket = false
-    try {
-      const { data: buckets } = await db.supabase.storage.listBuckets()
-      storageBucket = (buckets || []).some(b => b.name === 'card-images')
-    } catch {}
-
-    const ready = results.filter(r => r.ok)
-    const missing = results.filter(r => !r.ok)
-
-    const lines = results.map(r =>
-      `${r.ok ? '✅' : '❌'} ${r.table}${r.ok ? ` (${r.count})` : ' — MISSING'}`
-    ).join('\n')
-
+  async law({ reply }) {
     await reply(
-      `🗄️ *DATABASE STATUS*\n\n` +
-      `━━━━━━━━━━━━━━━━━━━\n\n` +
-      `${lines}\n\n` +
-      `🗂️ ${storageBucket ? '✅' : '❌'} Storage: card-images bucket\n\n` +
-      `━━━━━━━━━━━━━━━━━━━\n\n` +
-      `📊 Tables: ${ready.length}/16 ready\n` +
-      (missing.length === 0
-        ? `🟢 All tables online! Bot fully operational.`
-        : `🔴 ${missing.length} table(s) missing — run setup.sql in Supabase.`
-      ) +
-      (storageBucket ? `` : `\n⚠️ Storage bucket missing — card images need it.`) +
-      `\n\n_Checked at ${new Date().toLocaleTimeString()} 🖤_`
+      `📜 *KONOSUBA COMMUNITY LAWS AND REGULATIONS* 📜\n\n*(All members must comply with these rules at all times)*\n\n` +
+      `⚖️ *BASIC RULES*\n\n` +
+      `1. Respect all Moderators, Guardians, and Staff at all times.\n\n` +
+      `2. Maintain proper behavior in all community spaces.\n\n` +
+      `3. Impersonating staff is strictly prohibited.\n\n` +
+      `4. Follow instructions from staff when given.\n\n\n` +
+      `💰🎴 *ECONOMY, CARDS AND PLAY RULES*\n\n` +
+      `1. Multiple accounts (alts) are strictly prohibited.\n\n` +
+      `2. No scripts, cheats, macros, or bot automation.\n\n` +
+      `3. Fake card spawns are not allowed.\n\n` +
+      `4. Report bugs - don't exploit them.\n\n` +
+      `5. No fraud, scam trading, or card manipulation.\n\n\n` +
+      `🤖 *BOT RULES*\n\n` +
+      `1. Don't spam commands when the bot is offline.\n\n` +
+      `2. Don't attempt to crash or overload the bot.\n\n` +
+      `3. Don't DM staff asking why the bot is offline.\n\n` +
+      `4. Repeated command misuse = blacklist.\n\n\n` +
+      `🏠 *BOT ACCESS REQUIREMENTS*\n\n` +
+      `1. Min. 80 active members in group.\n\n` +
+      `2. At least one Mod or Guardian must be present.\n\n` +
+      `3. Bot and staff must have full admin permissions.\n\n` +
+      `4. Tampering with bot permissions = immediate removal.\n\n\n` +
+      `📩 *STAFF CONTACT RULES*\n\n` +
+      `1. Use *.modslist* to view staff.\n\n` +
+      `2. State your issue clearly - no empty "hi" messages.\n\n` +
+      `3. No spamming staff DMs.\n\n` +
+      `4. Contact only one staff member at a time.\n\n` +
+      `5. Don't beg for unbans.\n\n\n` +
+      `🚫 No one is exempt from these rules.\nViolations = warnings, restrictions, or bans.\n\n` +
+      `🔄 Rules may be updated at any time.`
     )
   },
 
-  async botstatus({ sock, msg, jid }) {
-    const start = Date.now()
-    const userCount = await db.getUserCount().catch(() => '?')
-    const groupCount = await db.getGroupCount().catch(() => '?')
-    const ping = Date.now() - start
-    const mem = process.memoryUsage()
-    const ramUsed = (mem.heapUsed / 1024 / 1024).toFixed(1)
-    const ramTotal = (mem.heapTotal / 1024 / 1024).toFixed(1)
-    const waVer = global.latestBaileysVersion ? global.latestBaileysVersion.join('.') : 'unknown'
-    const isLatest = global.latestBaileysIsLatest ? '✅ Latest' : '⚠️ Outdated'
-
-    await sock.sendMessage(jid, {
-      text:
-        `🌑 *SHADOW GARDEN — BOT STATUS*\n\n` +
-        `━━━━━━━━━━━━━━━━━━━━━\n` +
-        `🤖 *Name:* ${global.botName} (Alpha)\n` +
-        `⚙️ *Prefix:* ${global.prefix}\n` +
-        `📡 *Status:* ${global.botConnected ? '🟢 Online' : '🔴 Offline'}\n` +
-        `━━━━━━━━━━━━━━━━━━━━━\n\n` +
-        `⚡ *Ping:* ${ping} ms\n` +
-        `⏱️ *Uptime:* ${uptime()}\n` +
-        `🧠 *RAM:* ${ramUsed} / ${ramTotal} MB\n\n` +
-        `📱 *WA Version:* ${waVer}\n` +
-        `🔄 *Version Status:* ${isLatest}\n` +
-        `🖥️ *Platform:* Chrome on Ubuntu (Baileys)\n\n` +
-        `👥 *Users:* ${userCount}\n` +
-        `🏠 *Groups:* ${groupCount}\n\n` +
-        `📅 *Started:* ${new Date(global.botStartTime).toLocaleString()}\n` +
-        `👤 *Dev:* Ryuk\n\n` +
-        `_The system runs silently… always watching._ 🖤`,
-    }, { quoted: msg })
+  async pbenefits({ reply }) {
+    await reply(
+      `『 𝗞𝗢𝗡𝗢𝗦𝗨𝗕𝗔 𝗣𝗥𝗘𝗠𝗜𝗨𝗠 』 ◈════════════════════◈\n\n` +
+      `✨ *PREMIUM BENEFITS*\n\n` +
+      `💰 *Instant Reward*\n\nReceive 500,000 coins deposited into your bank upon activation.\n\n` +
+      `⚡ *Boosted Efficiency*\n\n75% cooldown reduction on all bot commands.\n(Excludes daily reward commands.)\n\n` +
+      `💎 *Exclusive Currency*\n\nAccess to premium currency: Obsidian Shards.\n\n` +
+      `🏷️ *Personalization Perks*\n\nCustom mention sticker for your profile.\n\nAnimated profile & background effects.\n\nAnimated card deck backgrounds.\n\n` +
+      `◈════════════════════◈\n\n` +
+      `🛒 *HOW TO PURCHASE PREMIUM*\n\n` +
+      `1. Use: *.mods* to contact staff.\n\n` +
+      `2. A moderator will respond with full purchase instructions.\n\n` +
+      `3. Follow the official steps to complete your purchase.\n\n` +
+      `◈════════════════════◈\n\n` +
+      `📌 All transactions must be handled only by official staff members.\n\n` +
+      `◈════════════════════◈`
+    )
   },
+
+  async restart({ sock, jid, msg, reply, isOwner, isMod }) {
+    if (!isOwner && !isMod) return reply('⚠️ Staff only.')
+    await sock.sendMessage(jid, { text: `🔄 Restarting...` }, { quoted: msg })
+    setTimeout(() => process.exit(0), 2000)
+  },
+
+  async setms(ctx) { return require('./pokemon').setms(ctx) },
+  async delms(ctx) { return require('./pokemon').delms(ctx) },
+
+  async tagall({ sock, msg, jid, senderJid, sender, isGroup, isOwner, args, reply }) {
+    if (!isGroup) return reply('❌ Groups only.')
+    const meta   = await sock.groupMetadata(jid)
+    const admins = meta.participants.filter(p => p.admin).map(p => p.id)
+    if (!admins.includes(senderJid) && !isOwner) return reply('⚠️ Admin only.')
+
+    const message    = args.join(' ') || 'Attention everyone!'
+    const actualJids = meta.participants.map(p => p.id)
+    const taggerNum  = senderJid.split('@')[0].split(':')[0]
+    const groupName  = meta.subject || 'Group'
+    const memberLines = actualJids.map(j => `💠 @${j.split('@')[0].split(':')[0]}`).join('\n')
+
+    const text =
+      `*🔖 Message:* ${message}\n` +
+      `*🎃 Group:* ${groupName}\n` +
+      `*👥 Members:* ${actualJids.length}\n` +
+      `*🗣️ Tagger:* @${taggerNum}\n\n` +
+      memberLines
+
+    await sock.sendMessage(jid, { text, mentions: [...actualJids, senderJid] })
+  },
+
+  async modlist({ sock, jid, msg, reply, isGroup }) {
+    const staffUsers = await db.getMods().catch(() => [])
+    const mods      = (staffUsers || []).filter(u => u.role === 'mod')
+    const guardians = (staffUsers || []).filter(u => u.role === 'guardian')
+
+    const phoneToJid = isGroup ? await buildPhoneMap(sock, jid) : {}
+
+    const allMentions = [
+      ...mods.map(u => phoneToJid[u.phone] || `${u.phone}@s.whatsapp.net`),
+      ...guardians.map(u => phoneToJid[u.phone] || `${u.phone}@s.whatsapp.net`),
+    ]
+
+    const modLines = mods.length
+      ? mods.map((u, i) => {
+          const resolved   = phoneToJid[u.phone] || `${u.phone}@s.whatsapp.net`
+          const displayNum = resolved.split('@')[0].split(':')[0]
+          return `│   ${i === mods.length - 1 ? '└──' : '├──'} @${displayNum}`
+        }).join('\n')
+      : '│   └── None'
+
+    const guardianLines = guardians.length
+      ? guardians.map((u, i) => {
+          const resolved   = phoneToJid[u.phone] || `${u.phone}@s.whatsapp.net`
+          const displayNum = resolved.split('@')[0].split(':')[0]
+          return `     ${i === guardians.length - 1 ? '└──' : '├──'} @${displayNum}`
+        }).join('\n')
+      : '     └── None'
+
+    const text =
+      `┌─「 𝗦𝗧𝗔𝗙𝗙𝗦 」─┐\n│\n` +
+      `├── 👑 𝗠𝗢𝗗𝗦 👑\n${modLines}\n│\n` +
+      `└── 🛡️ 𝗚𝗨𝗔𝗥𝗗𝗜𝗔𝗡𝗦 🛡️\n${guardianLines}\n\n` +
+      `> ⚠️ Inappropriate use of this command will lead to a *Konosuba Ban*.`
+
+    await sock.sendMessage(jid, { text, mentions: allMentions }, { quoted: msg })
+  },
+  async modslist(ctx) { return module.exports.modlist(ctx) },
 
   async sticker({ sock, msg, jid, reply }) {
-    // Determine the target message: quoted or the message itself
-    const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
-    const targetMsg = quoted
-      ? {
-          message: quoted,
-          key: {
-            remoteJid: jid,
-            id: msg.message.extendedTextMessage.contextInfo.stanzaId,
-            participant: msg.message.extendedTextMessage.contextInfo.participant,
-          },
-        }
+    const isImageMsg = !!msg.message?.imageMessage
+    const isVideoMsg = !!msg.message?.videoMessage
+    const ctx        = msg.message?.extendedTextMessage?.contextInfo
+    const quoted     = ctx?.quotedMessage
+    const quotedImg  = quoted?.imageMessage
+    const quotedVid  = quoted?.videoMessage
+
+    if (!isImageMsg && !isVideoMsg && !quotedImg && !quotedVid) {
+      return reply(`🖼️ Send or reply to an *image/video/gif* with *.s* to make a sticker`)
+    }
+
+    const isVideo   = isVideoMsg || !!quotedVid
+    const targetMsg = (quotedImg || quotedVid)
+      ? { message: quoted, key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant } }
       : msg
 
-    // Detect media type in the target message
-    const targetContent = quoted || msg.message
-    const imgMsg =
-      targetContent?.imageMessage ||
-      targetContent?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage
-
-    if (!imgMsg) {
-      return reply(
-        `🖼️ *STICKER MAKER*\n\n` +
-        `Send or quote a *JPG / PNG* image with *.s* to convert it.\n\n` +
-        `📦 *Pack:* Atomic\n✍️ *Author:* Shadow Garden\n📐 *Size:* 512 × 512\n\n` +
-        `_Only static images are accepted (no GIFs or videos)._ 🖤`
-      )
-    }
-
-    // Reject GIFs and videos
-    const mime = imgMsg.mimetype || ''
-    if (mime.includes('gif') || mime.includes('video')) {
-      return reply(`❌ GIFs and videos are not supported for stickers.\n\nSend a *JPG or PNG* image only.`)
-    }
-
     try {
-      const buffer = await downloadMediaMessage(
-        targetMsg,
-        'buffer',
-        {},
-        { logger: console, reuploadRequest: sock.updateMediaMessage }
-      )
-
-      const stickerBuffer = await makeSticker(buffer)
-
-      await sock.sendMessage(
-        jid,
-        { sticker: stickerBuffer },
-        { quoted: msg }
-      )
+      const buffer = await downloadMediaMessage(targetMsg, 'buffer', {}, {
+        logger: { level: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+        reuploadRequest: sock.updateMediaMessage,
+      })
+      const stickerBuf = isVideo
+        ? await makeStickerFromVideo(buffer)
+        : await makeSticker(buffer)
+      await sock.sendMessage(jid, { sticker: stickerBuf }, { quoted: msg })
     } catch (err) {
-      console.error('[sticker] Error:', err)
-      await reply(`❌ Failed to create sticker: ${err.message}\n\n_Make sure the image is a valid JPG or PNG._ 🖤`)
+      await reply(`❌ Sticker failed: ${err.message}`)
+    }
+  },
+  async s(ctx) { return module.exports.sticker(ctx) },
+
+  async take({ sock, msg, jid, reply }) {
+    const ctx    = msg.message?.extendedTextMessage?.contextInfo
+    const quoted = ctx?.quotedMessage
+    if (!quoted?.stickerMessage) return reply('↩️ Reply to a *sticker* with .take')
+    try {
+      const targetMsg = {
+        message: quoted,
+        key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant },
+      }
+      const buffer = await downloadMediaMessage(targetMsg, 'buffer', {}, {
+        logger: { level: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+        reuploadRequest: sock.updateMediaMessage,
+      })
+      const sharp  = require('sharp')
+      const png    = await sharp(buffer).png().toBuffer()
+      await sock.sendMessage(jid, { image: png, caption: '🖼️ Done' }, { quoted: msg })
+    } catch (err) {
+      await reply(`❌ Failed: ${err.message}`)
+    }
+  },
+  async steal(ctx) { return module.exports.take(ctx) },
+  async toimg(ctx)  { return module.exports.take(ctx) },
+
+  async dbstatus({ reply, isOwner }) {
+    if (!isOwner) return reply('⚠️ Owner only.')
+    const collections = ['users','groups','warnings','afk','messages','cooldowns','inventory','cards','usercards','userpokemons','games','guilds','guildmembers','blacklists','disabledcommands']
+    try {
+      const db_module = require('../database')
+      const mongoose  = db_module.mongoose
+      const counts = await Promise.all(collections.map(async c => {
+        try {
+          const col = mongoose.connection.db?.collection(c)
+          const n   = col ? await col.countDocuments() : '?'
+          return { c, ok: true, n }
+        } catch { return { c, ok: false } }
+      }))
+      const lines = counts.map(r => `${r.ok ? '✅' : '❌'} ${r.c}${r.ok ? ` (${r.n})` : ' - error'}`).join('\n')
+      await reply(`🗄️ *DB STATUS (MongoDB)*\n\n${lines}`)
+    } catch (e) {
+      await reply(`❌ DB error: ${e.message}`)
     }
   },
 
-  async s(ctx) { return module.exports.sticker(ctx) },
+  async checkdb({ reply, isOwner, isMod, isGuardian }) {
+    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Staff only.')
+
+    const db_module = require('../database')
+    const mongoose  = db_module.mongoose
+
+    const stateMap = { 0: '🔴 Disconnected', 1: '🟢 Connected', 2: '🟡 Connecting', 3: '🟠 Disconnecting' }
+    const connState = stateMap[mongoose.connection.readyState] || '❓ Unknown'
+
+    const uptimeSec = Math.floor(process.uptime())
+    const uptimeH   = Math.floor(uptimeSec / 3600)
+    const uptimeM   = Math.floor((uptimeSec % 3600) / 60)
+    const uptimeS   = uptimeSec % 60
+    const uptimeStr = `${uptimeH}h ${uptimeM}m ${uptimeS}s`
+
+    const collections = [
+      'users', 'groups', 'warnings', 'cooldowns',
+      'inventory', 'cards', 'usercards', 'userpokemons',
+      'guilds', 'guildmembers', 'suspensions', 'loans',
+    ]
+
+    let collectionLines = ''
+    let indexLines = ''
+    let problemFound = false
+
+    try {
+      const dbConn = mongoose.connection.db
+
+      const counts = await Promise.all(collections.map(async name => {
+        try {
+          const col = dbConn?.collection(name)
+          const n   = col ? await col.countDocuments() : null
+          return { name, ok: n !== null, n }
+        } catch { return { name, ok: false, n: null } }
+      }))
+      collectionLines = counts
+        .map(r => `${r.ok ? '✅' : '❌'} *${r.name}*${r.ok ? `: ${r.n.toLocaleString()} docs` : ': error'}`)
+        .join('\n')
+
+      const usersCol  = dbConn?.collection('users')
+      const indexes   = usersCol ? await usersCol.indexes() : []
+      const idxIssues = []
+      for (const idx of indexes) {
+        const isBadJid = idx.name === 'jid_1' && !idx.sparse
+        if (isBadJid) {
+          idxIssues.push(`⚠️ *jid_1* — non-sparse unique index (blocks new users)`)
+          problemFound = true
+        }
+      }
+      const goodIndexes = indexes.filter(i => !(i.name === 'jid_1' && !i.sparse))
+      const goodLines   = goodIndexes.map(i => `✅ *${i.name}*${i.unique ? ' (unique)' : ''}${i.sparse ? ' (sparse)' : ''}`).join('\n')
+      indexLines = [...idxIssues, goodLines].filter(Boolean).join('\n')
+
+    } catch (e) {
+      collectionLines = `❌ Could not fetch collection info: ${e.message}`
+      indexLines      = '❌ Could not fetch index info'
+    }
+
+    const memUsage = process.memoryUsage()
+    const heapMB   = (memUsage.heapUsed / 1024 / 1024).toFixed(1)
+    const rssMB    = (memUsage.rss       / 1024 / 1024).toFixed(1)
+
+    await reply(
+      `🔍 *DATABASE HEALTH CHECK*\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `*🔌 Connection*\n${connState}\n\n` +
+      `*⏱️ Bot Uptime*\n${uptimeStr}\n\n` +
+      `*🧠 Memory*\nHeap: ${heapMB} MB  |  RSS: ${rssMB} MB\n\n` +
+      `*📦 Collections*\n${collectionLines}\n\n` +
+      `*🗂️ users Indexes*\n${indexLines || '✅ No issues found'}\n\n` +
+      (problemFound
+        ? `⚠️ *Index issues detected!* Restart the bot to auto-fix them.`
+        : `✅ *All systems healthy.*`)
+    )
+  },
+
+  async myid({ sock, jid, sender, msg, reply }) {
+    const websiteUrl = process.env.WEBSITE_URL || 'https://konosuba-bot.vercel.app'
+    await reply(
+      `🆔 *Your Bot ID*\n` +
+      `━━━━━━━━━━━━━━━━━\n\n` +
+      `Your unique ID is:\n` +
+      `*${sender}*\n\n` +
+      `📋 _Copy the number above (no spaces)._\n\n` +
+      `🌐 *To login on the website:*\n` +
+      `1. Go to: ${websiteUrl}\n` +
+      `2. Tap *Login*\n` +
+      `3. Enter *${sender}* as your Phone / ID\n` +
+      `4. Enter the password you set with *.reg*\n\n` +
+      `❓ *Haven't registered yet?*\n` +
+      `Send: *.reg YourName | YourPassword*\n` +
+      `Example: _.reg Shadow | mypass123_\n\n` +
+      `> This ID is how the bot and website recognise you.`
+    )
+  },
+
+  async id({ sock, jid, sender, msg, reply }) {
+    return module.exports.myid({ sock, jid, sender, msg, reply })
+  },
+
+  async git({ sock, jid, msg, isOwner, reply }) {
+    if (!isOwner) return reply('*🚫 Access Denied*')
+    await sock.sendMessage(jid, { text: '♻️ Pulling latest upload from git...' }, { quoted: msg })
+      .then(() => process.exit(0))
+  },
 }
