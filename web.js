@@ -693,19 +693,22 @@ app.post('/request-pairing-code', async (req, res) => {
     return res.json({ ok: false, error: 'Bot not ready yet — wait a moment and try again' })
   }
 
+  if (global.pairingCodeRequested && global.pairingCode) {
+    return res.json({ ok: true, code: global.pairingCode })
+  }
+
   global.pendingPairingPhone = phone
-  global.pairingCodeRequested = false
   global.pairingCode = null
 
   try {
     await new Promise(r => setTimeout(r, 800))
-    console.log(`📱 Requesting pairing code for \${phone}…`)
+    console.log(`📱 Requesting pairing code for ${phone}…`)
     const code = await sock.requestPairingCode(phone)
     const fmt = code?.match(/.{1,4}/g)?.join('-') ?? code
     global.pairingCode = fmt
     global.pairingCodeRequested = true
-    console.log(`\\n🔑 PAIRING CODE : \${fmt}`)
-    console.log(`📲 WhatsApp → Linked Devices → Link a Device → Link with phone number → \${fmt}\\n`)
+    console.log(`\n🔑 PAIRING CODE : ${fmt}`)
+    console.log(`📲 WhatsApp → Linked Devices → Link a Device → Link with phone number → ${fmt}\n`)
     return res.json({ ok: true, code: fmt })
   } catch (err) {
     global.pairingCodeRequested = false
