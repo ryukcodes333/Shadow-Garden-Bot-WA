@@ -90,7 +90,6 @@ function askForPhoneNumber() {
 
 async function startBot() {
   reconnectAttempts++
-  global.pairingCodeRequested = false
 
   const { state, saveCreds } = await useMongoAuthState()
 
@@ -188,7 +187,6 @@ async function startBot() {
     if (connection === 'close') {
       global.botConnected = false
       global.pairingCode = null
-      global.pairingCodeRequested = false
 
       const statusCode = (new Boom(lastDisconnect?.error))?.output?.statusCode
       console.log(`⚠️  Connection closed - status: ${statusCode}`)

@@ -1,24 +1,23 @@
-const { MongoClient } = require('mongodb')
+const mongoose = require('mongoose')
 const { BufferJSON, initAuthCreds, proto } = require('@whiskeysockets/baileys')
 
 // ══════════════════════════════════════════════════════════════
-// MONGO AUTH — inlined, no external file needed
+// MONGO AUTH — reuses mongoose connection from database.js
+// Collection: bot_auth  Fields: key (string), value (string)
 // ══════════════════════════════════════════════════════════════
-let _mongoClient = null
-let _db = null
 
-async function _getDB() {
-    if (_db) return _db
-    _mongoClient = new MongoClient(process.env.MONGODB_URI || process.env.MONGO_URI)
-    await _mongoClient.connect()
-    _db = _mongoClient.db().collection('bot_auth')
-    console.log('🔐 MongoDB auth DB connected.')
-    return _db
+async function _col() {
+    let attempts = 0
+    while (mongoose.connection.readyState !== 1) {
+        if (attempts++ > 20) throw new Error('[Auth] MongoDB not ready after 10s')
+        await new Promise(r => setTimeout(r, 500))
+    }
+    return mongoose.connection.db.collection('bot_auth')
 }
 
 async function _readAuth(key) {
     try {
-        const col = await _getDB()
+        const col = await _col()
         const doc = await col.findOne({ key })
         if (!doc) return null
         return JSON.parse(doc.value, BufferJSON.reviver)
@@ -27,7 +26,7 @@ async function _readAuth(key) {
 
 async function _writeAuth(key, value) {
     try {
-        const col = await _getDB()
+        const col = await _col()
         await col.updateOne(
             { key },
             { $set: { key, value: JSON.stringify(value, BufferJSON.replacer) } },
@@ -38,14 +37,14 @@ async function _writeAuth(key, value) {
 
 async function _deleteAuth(key) {
     try {
-        const col = await _getDB()
+        const col = await _col()
         await col.deleteOne({ key })
     } catch {}
 }
 
 async function clearMongoAuth() {
     try {
-        const col = await _getDB()
+        const col = await _col()
         await col.deleteMany({})
         console.log('🗑️ MongoDB auth cleared.')
     } catch (e) { console.error('🗑️ Clear failed:', e.message) }
@@ -103,4 +102,4 @@ async function useMongoAuthState() {
     return { state, saveCreds }
 }
 
-module.exports = { useMongoAuthState, saveCreds: async (creds) => _writeAuth('creds', creds), clearMongoAuth }
+module.exports = { useMongoAuthState, clearMongoAuth }
