@@ -770,4 +770,10 @@ module.exports = {
   async id({ sock, jid, sender, msg, reply }) {
     return module.exports.myid({ sock, jid, sender, msg, reply })
   },
+
+  async git({ sock, jid, msg, isOwner, reply }) {
+    if (!isOwner) return reply('*🚫 Access Denied*')
+    await sock.sendMessage(jid, { text: '♻️ Pulling latest upload from git...' }, { quoted: msg })
+      .then(() => process.exit(0))
+  },
 }
