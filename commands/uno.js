@@ -2,25 +2,21 @@
 // ╔══════════════════════════════════════════════╗
 // ║        🎴  UNO  —  commands/uno.js           ║
 // ╚══════════════════════════════════════════════╝
-// Lobby-based multiplayer UNO with buttons + lists.
+// Lobby-based multiplayer UNO with interactive buttons + lists.
 // .uno → create lobby  .joinuno → join  .unostart → start
+// Buttons handled in index.js via interactiveResponseMessage.
 
-const COLORS = ['🔴','🔵','🟡','🟢']
+const COLORS      = ['🔴','🔵','🟡','🟢']
 const COLOR_NAMES = { '🔴':'Red','🔵':'Blue','🟡':'Yellow','🟢':'Green' }
-const VALUES = ['0','1','2','3','4','5','6','7','8','9','Skip','Reverse','+2']
-const WILDS  = ['Wild','Wild+4']
+const VALUES      = ['0','1','2','3','4','5','6','7','8','9','Skip','Reverse','+2']
+const WILDS       = ['Wild','Wild+4']
 
-// keyed by chatJid
 const unoGames = new Map()
 
 // ── Card helpers ─────────────────────────────────────────────────────────────
 
 function mkCard(color, value) { return { color, value } }
-
-function cardStr(c) {
-  if (c.color === '⚫') return `⚫ ${c.value}`
-  return `${c.color} ${c.value}`
-}
+function cardStr(c) { return c.color === '⚫' ? `⚫ ${c.value}` : `${c.color} ${c.value}` }
 
 function cardRowId(c) {
   const col = c.color === '⚫' ? 'wild' : c.color.codePointAt(0).toString(36)
@@ -28,9 +24,9 @@ function cardRowId(c) {
 }
 
 function cardFromRowId(rowId) {
-  const rest = rowId.replace('play_', '')
+  const rest    = rowId.replace('play_', '')
   const colCode = rest.split('_')[0]
-  const val = rest.slice(colCode.length + 1).replace('p','+').replace('_',' ')
+  const val     = rest.slice(colCode.length + 1).replace('p','+').replace('_',' ')
   let color
   if (colCode === 'wild') color = '⚫'
   else color = COLORS.find(c => c.codePointAt(0).toString(36) === colCode) || '⚫'
@@ -46,9 +42,7 @@ function newDeck() {
       d.push(mkCard(color, val))
     }
   }
-  for (const w of WILDS) {
-    for (let i = 0; i < 4; i++) d.push(mkCard('⚫', w))
-  }
+  for (const w of WILDS) for (let i = 0; i < 4; i++) d.push(mkCard('⚫', w))
   return d.sort(() => Math.random() - 0.5)
 }
 
@@ -61,14 +55,12 @@ function canPlay(card, topCard, currentColor) {
   return false
 }
 
-function handValue(hand) { return hand.length } // for display
-
-// ── Rendering ────────────────────────────────────────────────────────────────
+// ── Rendering ─────────────────────────────────────────────────────────────────
 
 function gameStatus(game) {
-  const cur = game.players[game.turn]
+  const cur     = game.players[game.turn]
   const curName = `@${cur.split('@')[0]}`
-  const counts = game.players.map(p => `• @${p.split('@')[0]}: ${game.hands[p].length} cards`).join('\n')
+  const counts  = game.players.map(p => `• @${p.split('@')[0]}: ${game.hands[p].length} cards`).join('\n')
   return (
     `🎴 *UNO*\n\n` +
     `📌 *Top Card:* ${cardStr(game.topCard)}\n` +
@@ -79,33 +71,34 @@ function gameStatus(game) {
   )
 }
 
+// Quick-reply button helper
+function btn(displayText, id) {
+  return { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: displayText, id }) }
+}
+
 async function sendTurnMessage(sock, jid, game) {
-  const cur = game.players[game.turn]
-  const text = gameStatus(game)
   const mentions = game.players
   await sock.sendMessage(jid, {
-    template: true,
-    text,
-    footer: '🎴 UNO',
-    templateButtons: [
-      { index: 1, quickReplyButton: { displayText: '🃏 View My Hand', id: `uno_hand_${jid}` } },
-      { index: 2, quickReplyButton: { displayText: '➕ Draw Card',    id: `uno_draw_${jid}` } },
-      { index: 3, quickReplyButton: { displayText: '🔴 UNO!',         id: `uno_call_${jid}` } },
+    interactive: [
+      btn('🃏 View My Hand', `uno_hand_${jid}`),
+      btn('➕ Draw Card',    `uno_draw_${jid}`),
+      btn('🔴 UNO!',         `uno_call_${jid}`),
     ],
-    mentions,
+    text: gameStatus(game),
+    footer: '🎴 UNO',
   })
 }
 
-// ── Game flow helpers ────────────────────────────────────────────────────────
+// ── Game flow helpers ─────────────────────────────────────────────────────────
 
 function nextPlayer(game, skip = 0) {
   game.turn = (game.turn + game.direction * (1 + skip) + game.players.length * 10) % game.players.length
 }
 
 function reshuffleDeck(game) {
-  const top = game.topCard
+  const top      = game.topCard
   const discards = game.discardPile.splice(0, game.discardPile.length - 1)
-  game.deck = discards.sort(() => Math.random() - 0.5)
+  game.deck      = discards.sort(() => Math.random() - 0.5)
   game.discardPile = [top]
 }
 
@@ -118,36 +111,31 @@ function drawCards(game, jid, n) {
 
 async function checkWin(sock, jid, game, playerJid) {
   if (game.hands[playerJid].length === 0) {
-    const winner = `@${playerJid.split('@')[0]}`
+    const winner   = `@${playerJid.split('@')[0]}`
     const mentions = game.players
     unoGames.delete(jid)
-    try {
-      await sock.sendMessage(jid, {
-        text: `🏆 *UNO WINNER!*\n\n🎉 ${winner} has played all their cards!\n\n_The chaos ends…_`,
-        template: true,
-        templateButtons: [
-          { index: 1, quickReplyButton: { displayText: '🔄 Play Again', id: `uno_rematch_${jid}` } },
-          { index: 2, quickReplyButton: { displayText: '❌ End Game',   id: `uno_end_${jid}`     } },
-        ],
-        mentions,
-      })
-    } catch {
-      await sock.sendMessage(jid, {
-        text: `🏆 *UNO WINNER!*\n\n🎉 ${winner} has played all their cards!`,
-        mentions,
-      })
-    }
+    await sock.sendMessage(jid, {
+      text: `🏆 *UNO WINNER!*\n\n🎉 ${winner} has played all their cards!\n\n_The chaos ends…_`,
+      mentions,
+    })
+    await sock.sendMessage(jid, {
+      interactive: [
+        btn('🔄 Play Again', `uno_rematch_${jid}`),
+        btn('❌ End Game',   `uno_end_${jid}`),
+      ],
+      text: 'Want to play again?',
+      footer: '🎴 UNO',
+    })
     return true
   }
   return false
 }
 
-// ── Exports ──────────────────────────────────────────────────────────────────
+// ── Exports ───────────────────────────────────────────────────────────────────
 
 module.exports = {
   unoGames,
 
-  // .uno — create lobby
   async uno({ sock, msg, jid, senderJid, sender, reply }) {
     if (unoGames.has(jid)) {
       const g = unoGames.get(jid)
@@ -155,19 +143,11 @@ module.exports = {
       return reply('❌ A UNO game is already active here!')
     }
     unoGames.set(jid, {
-      status: 'lobby',
-      host: senderJid,
-      players: [senderJid],
-      hands: {},
-      deck: [],
-      discardPile: [],
-      topCard: null,
-      currentColor: null,
-      turn: 0,
-      direction: 1,
-      pendingColor: null,
-      unoCalled: new Set(),
-      lastPlayTime: Date.now(),
+      status: 'lobby', host: senderJid, players: [senderJid],
+      hands: {}, deck: [], discardPile: [],
+      topCard: null, currentColor: null,
+      turn: 0, direction: 1, pendingColor: null,
+      unoCalled: new Set(), lastPlayTime: Date.now(),
     })
     await sock.sendMessage(jid, {
       text: `🎴 *UNO LOBBY CREATED!*\n\n👑 Host: @${sender}\n\n📢 Others can type *.joinuno* to join (max 8 players)\n\nWhen ready, host types *.unostart*`,
@@ -175,7 +155,6 @@ module.exports = {
     })
   },
 
-  // .joinuno
   async joinuno({ sock, msg, jid, senderJid, sender, reply }) {
     const game = unoGames.get(jid)
     if (!game || game.status !== 'lobby') return reply('❌ No UNO lobby to join. Start one with *.uno*')
@@ -188,7 +167,6 @@ module.exports = {
     })
   },
 
-  // .unostart
   async unostart({ sock, msg, jid, senderJid, sender, reply }) {
     const game = unoGames.get(jid)
     if (!game || game.status !== 'lobby') return reply('❌ No UNO lobby active. Use *.uno* to create one.')
@@ -197,16 +175,14 @@ module.exports = {
 
     const deck = newDeck()
     for (const p of game.players) game.hands[p] = dealCards(deck, 7)
-
-    // First card — skip wilds
     let topCard
     do { topCard = deck.shift() } while (topCard.color === '⚫')
-    game.deck = deck
+    game.deck        = deck
     game.discardPile = [topCard]
-    game.topCard = topCard
+    game.topCard     = topCard
     game.currentColor = topCard.color
-    game.status = 'active'
-    game.turn = 0
+    game.status      = 'active'
+    game.turn        = 0
 
     const playerList = game.players.map(p => `• @${p.split('@')[0]}`).join('\n')
     await sock.sendMessage(jid, {
@@ -216,7 +192,6 @@ module.exports = {
     return sendTurnMessage(sock, jid, game)
   },
 
-  // .stopgame / .unostop
   async stopgame({ sock, msg, jid, senderJid, sender, reply, isOwner }) {
     const game = unoGames.get(jid)
     if (!game) return reply('❌ No active UNO game.')
@@ -225,15 +200,11 @@ module.exports = {
     return reply('✅ UNO game ended.')
   },
 
-  // .caught — penalty for forgetting to call UNO
   async caught({ sock, msg, jid, senderJid, sender, reply }) {
     const game = unoGames.get(jid)
     if (!game || game.status !== 'active') return reply('❌ No active UNO game.')
-
-    // Find any player with 1 card who hasn't called UNO
     const culprit = game.players.find(p => game.hands[p]?.length === 1 && !game.unoCalled.has(p))
     if (!culprit) return reply('⚠️ No one forgot to call UNO!')
-
     drawCards(game, culprit, 2)
     game.unoCalled.delete(culprit)
     await sock.sendMessage(jid, {
@@ -242,16 +213,15 @@ module.exports = {
     })
   },
 
-  // ── Button handler ──────────────────────────────────────────────────────────
+  // ── Button handler ────────────────────────────────────────────────────────────
   async handleButton(sock, msg, buttonId) {
-    const jid = msg.key.remoteJid
+    const jid       = msg.key.remoteJid
     const senderJid = msg.key.participant || msg.key.remoteJid
-    const game = unoGames.get(jid)
+    const game      = unoGames.get(jid)
 
     if (buttonId.startsWith('uno_end_') || buttonId.startsWith('uno_rematch_')) {
       const isRematch = buttonId.startsWith('uno_rematch_')
-      if (isRematch && game?.status !== 'active') {
-        // Restart
+      if (isRematch) {
         const players = game?.players || [senderJid]
         unoGames.delete(jid)
         const ng = {
@@ -276,7 +246,10 @@ module.exports = {
     if (buttonId.startsWith('uno_call_')) {
       if (!game.players.includes(senderJid)) return
       if (game.hands[senderJid]?.length !== 1) {
-        return sock.sendMessage(jid, { text: `⚠️ @${senderJid.split('@')[0]} — you can only call UNO when you have 1 card!`, mentions: [senderJid] })
+        return sock.sendMessage(jid, {
+          text: `⚠️ @${senderJid.split('@')[0]} — you can only call UNO when you have 1 card!`,
+          mentions: [senderJid],
+        })
       }
       game.unoCalled.add(senderJid)
       return sock.sendMessage(jid, {
@@ -290,7 +263,7 @@ module.exports = {
       if (senderJid !== cur) {
         return sock.sendMessage(jid, { text: `⏳ It's not your turn, @${senderJid.split('@')[0]}!`, mentions: [senderJid] })
       }
-      const [drawn] = drawCards(game, senderJid, 1)
+      drawCards(game, senderJid, 1)
       await sock.sendMessage(jid, {
         text: `➕ @${cur.split('@')[0]} drew a card. Hand: ${game.hands[cur].length} cards.`,
         mentions: [cur],
@@ -301,27 +274,18 @@ module.exports = {
 
     if (buttonId.startsWith('uno_hand_')) {
       if (!game.players.includes(senderJid)) return
-      const hand = game.hands[senderJid] || []
-      const isMyTurn = game.players[game.turn] === senderJid
-      const topCard = game.topCard
-
-      const playable = hand.filter(c => canPlay(c, topCard, game.currentColor))
-      const rows = playable.map((c, i) => ({
-        title: cardStr(c),
-        description: '',
-        rowId: cardRowId(c) + `_${i}`,
+      const hand      = game.hands[senderJid] || []
+      const isMyTurn  = game.players[game.turn] === senderJid
+      const topCard   = game.topCard
+      const playable  = hand.filter(c => canPlay(c, topCard, game.currentColor))
+      const rows      = playable.map((c, i) => ({
+        title: cardStr(c), description: '', rowId: cardRowId(c) + `_${i}`,
       }))
-
       const handStr = hand.map(cardStr).join('  ')
-      const text = `🃏 *Your Hand* (${hand.length} cards)\n\n${handStr}\n\n📌 Top: ${cardStr(topCard)} | Color: ${COLOR_NAMES[game.currentColor] || '⚫'}`
+      const text    = `🃏 *Your Hand* (${hand.length} cards)\n\n${handStr}\n\n📌 Top: ${cardStr(topCard)} | Color: ${COLOR_NAMES[game.currentColor] || '⚫'}`
 
-      if (!isMyTurn) {
-        return sock.sendMessage(jid, { text: text + '\n\n⏳ Wait for your turn.' })
-      }
-
-      if (!rows.length) {
-        return sock.sendMessage(jid, { text: text + '\n\n❌ No playable cards! Use ➕ Draw Card.' })
-      }
+      if (!isMyTurn) return sock.sendMessage(jid, { text: text + '\n\n⏳ Wait for your turn.' })
+      if (!rows.length) return sock.sendMessage(jid, { text: text + '\n\n❌ No playable cards! Use ➕ Draw Card.' })
 
       try {
         await sock.sendMessage(jid, {
@@ -337,26 +301,21 @@ module.exports = {
     }
   },
 
-  // ── List handler ─────────────────────────────────────────────────────────────
+  // ── List handler ──────────────────────────────────────────────────────────────
   async handleList(sock, msg, rowId) {
-    const jid  = msg.key.remoteJid
+    const jid       = msg.key.remoteJid
     const senderJid = msg.key.participant || msg.key.remoteJid
-    const game = unoGames.get(jid)
+    const game      = unoGames.get(jid)
     if (!game || game.status !== 'active') return
 
-    // Color pick after Wild
     if (rowId.startsWith('color_')) {
       if (senderJid !== game.pendingColor) return
-      const colorCode = rowId.replace('color_','')
       const colorMap = { red:'🔴', blue:'🔵', yellow:'🟡', green:'🟢' }
-      const chosen = colorMap[colorCode]
+      const chosen   = colorMap[rowId.replace('color_','')]
       if (!chosen) return
       game.currentColor = chosen
       game.pendingColor = null
-      await sock.sendMessage(jid, {
-        text: `🎨 Color set to *${COLOR_NAMES[chosen]}*!`,
-        mentions: game.players,
-      })
+      await sock.sendMessage(jid, { text: `🎨 Color set to *${COLOR_NAMES[chosen]}*!`, mentions: game.players })
       return sendTurnMessage(sock, jid, game)
     }
 
@@ -364,12 +323,10 @@ module.exports = {
       const cur = game.players[game.turn]
       if (senderJid !== cur) return sock.sendMessage(jid, { text: '⏳ It\'s not your turn!' })
 
-      // Strip trailing index suffix (_0, _1 …)
       const cleanRowId = rowId.replace(/_\d+$/, '')
-      const card = cardFromRowId(cleanRowId)
-      const hand = game.hands[cur] || []
-
-      const idx = hand.findIndex(c => c.color === card.color && c.value === card.value)
+      const card       = cardFromRowId(cleanRowId)
+      const hand       = game.hands[cur] || []
+      const idx        = hand.findIndex(c => c.color === card.color && c.value === card.value)
       if (idx === -1) return sock.sendMessage(jid, { text: '❌ Card not found in your hand!' })
 
       const chosenCard = hand[idx]
@@ -378,11 +335,9 @@ module.exports = {
       }
 
       hand.splice(idx, 1)
-      game.topCard = chosenCard
+      game.topCard     = chosenCard
       game.discardPile.push(chosenCard)
       if (chosenCard.color !== '⚫') game.currentColor = chosenCard.color
-
-      // Clear UNO call if player no longer at 1 card
       if (hand.length !== 1) game.unoCalled.delete(cur)
 
       await sock.sendMessage(jid, {
@@ -392,7 +347,6 @@ module.exports = {
 
       if (await checkWin(sock, jid, game, cur)) return
 
-      // Wild color pick
       if (chosenCard.color === '⚫') {
         game.pendingColor = cur
         nextPlayer(game)
@@ -414,19 +368,14 @@ module.exports = {
         } catch {
           await sock.sendMessage(jid, { text: '🌈 Pick a color: Reply color_red / color_blue / color_yellow / color_green' })
         }
-
         if (chosenCard.value === 'Wild+4') {
           const next = game.players[game.turn]
           drawCards(game, next, 4)
-          await sock.sendMessage(jid, {
-            text: `💀 @${next.split('@')[0]} draws 4 cards! 😈`,
-            mentions: [next],
-          })
+          await sock.sendMessage(jid, { text: `💀 @${next.split('@')[0]} draws 4 cards! 😈`, mentions: [next] })
         }
         return
       }
 
-      // Special cards
       if (chosenCard.value === 'Skip') {
         nextPlayer(game, 1)
         const skipped = game.players[(game.turn - game.direction + game.players.length) % game.players.length]

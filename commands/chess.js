@@ -2,16 +2,18 @@
 // ╔══════════════════════════════════════════════╗
 // ║        ♟️  CHESS  —  commands/chess.js        ║
 // ╚══════════════════════════════════════════════╝
-// Full legal-move chess with buttons + lists.
+// Full legal-move chess with image board + interactive buttons + lists.
 // Game state stored in chessGames Map keyed by chatJid.
-
-const W = { P:'♙', N:'♘', B:'♗', R:'♖', Q:'♕', K:'♔' }
-const B = { P:'♟', N:'♞', B:'♝', R:'♜', Q:'♛', K:'♚' }
+// Requires: npm install canvas  (graceful text fallback if missing)
 
 const FILES = ['a','b','c','d','e','f','g','h']
 const BACK  = ['R','N','B','Q','K','B','N','R']
 
-// keyed by chatJid
+const PIECE_UNICODE = {
+  wK:'♔', wQ:'♕', wR:'♖', wB:'♗', wN:'♘', wP:'♙',
+  bK:'♚', bQ:'♛', bR:'♜', bB:'♝', bN:'♞', bP:'♟',
+}
+
 const chessGames = new Map()
 
 // ── Board helpers ───────────────────────────────────────────────────────────
@@ -32,20 +34,95 @@ function cloneBoard(board) {
 }
 
 function sq(r, f) { return `${FILES[f]}${8 - r}` }
-function pieceEmoji(p) { return (p.c === 'w' ? W : B)[p.t] }
+function pieceEmoji(p) { return PIECE_UNICODE[p.c + p.t] || '?' }
 
-function renderBoard(board) {
-  let out = '  a  b  c  d  e  f  g  h\n'
-  for (let r = 0; r < 8; r++) {
-    out += `${8 - r} `
-    for (let f = 0; f < 8; f++) {
-      const p = board[r][f]
-      out += p ? pieceEmoji(p) + '  ' : '·  '
+// ── Canvas board image generator ─────────────────────────────────────────────
+
+function drawChessBoard(board) {
+  try {
+    const { createCanvas } = require('canvas')
+    const CELL   = 72
+    const MARGIN = 32
+    const SIZE   = CELL * 8 + MARGIN * 2
+
+    const canvas = createCanvas(SIZE, SIZE)
+    const ctx    = canvas.getContext('2d')
+
+    // Background
+    ctx.fillStyle = '#1e1e2e'
+    ctx.fillRect(0, 0, SIZE, SIZE)
+
+    // Board squares
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        ctx.fillStyle = (r + c) % 2 === 0 ? '#f0d9b5' : '#b58863'
+        ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL)
+      }
     }
-    out += `${8 - r}\n`
+
+    // File labels (a–h)
+    ctx.fillStyle = '#d4af7a'
+    ctx.font = 'bold 15px Arial'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    for (let c = 0; c < 8; c++) {
+      const x = MARGIN + c * CELL + CELL / 2
+      ctx.fillText(FILES[c], x, MARGIN / 2)
+      ctx.fillText(FILES[c], x, SIZE - MARGIN / 2)
+    }
+
+    // Rank labels (1–8)
+    for (let r = 0; r < 8; r++) {
+      const y = MARGIN + r * CELL + CELL / 2
+      ctx.fillText(String(8 - r), MARGIN / 2, y)
+      ctx.fillText(String(8 - r), SIZE - MARGIN / 2, y)
+    }
+
+    // Draw pieces
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const piece = board[r][c]
+        if (!piece) continue
+
+        const cx = MARGIN + c * CELL + CELL / 2
+        const cy = MARGIN + r * CELL + CELL / 2
+        const radius = CELL * 0.36
+
+        // Drop shadow
+        ctx.save()
+        ctx.shadowColor = 'rgba(0,0,0,0.5)'
+        ctx.shadowBlur = 6
+        ctx.shadowOffsetX = 2
+        ctx.shadowOffsetY = 3
+
+        // Piece circle
+        ctx.beginPath()
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+        if (piece.c === 'w') {
+          ctx.fillStyle = '#fffde7'
+          ctx.strokeStyle = '#5d4037'
+        } else {
+          ctx.fillStyle = '#1a1a2e'
+          ctx.strokeStyle = '#b0bec5'
+        }
+        ctx.lineWidth = 2.5
+        ctx.fill()
+        ctx.stroke()
+        ctx.restore()
+
+        // Piece letter
+        ctx.font = `bold ${Math.round(CELL * 0.4)}px Arial`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = piece.c === 'w' ? '#3e2723' : '#eceff1'
+        ctx.fillText(piece.t === 'N' ? 'N' : piece.t, cx, cy + 1)
+      }
+    }
+
+    return canvas.toBuffer('image/png')
+  } catch {
+    return null
   }
-  out += '  a  b  c  d  e  f  g  h'
-  return out
 }
 
 // ── Move generation ─────────────────────────────────────────────────────────
@@ -76,32 +153,28 @@ function pseudoMoves(board, r, f, ep, castling) {
   }
 
   if (p.t === 'P') {
-    const dir = p.c === 'w' ? -1 : 1
+    const dir    = p.c === 'w' ? -1 : 1
     const startR = p.c === 'w' ? 6 : 1
     const promoR = p.c === 'w' ? 0 : 7
     const nr = r + dir
     if (nr >= 0 && nr <= 7) {
       if (!board[nr][f]) {
         moves.push({ from: [r, f], to: [nr, f], promote: nr === promoR })
-        if (r === startR && !board[r + 2 * dir][f]) {
+        if (r === startR && !board[r + 2 * dir][f])
           moves.push({ from: [r, f], to: [r + 2 * dir, f], double: true })
-        }
       }
       for (const df of [-1, 1]) {
         const tf = f + df
         if (tf < 0 || tf > 7) continue
-        if (board[nr][tf] && board[nr][tf].c !== p.c) {
+        if (board[nr][tf] && board[nr][tf].c !== p.c)
           moves.push({ from: [r, f], to: [nr, tf], promote: nr === promoR })
-        }
-        if (ep && ep[0] === nr && ep[1] === tf) {
+        if (ep && ep[0] === nr && ep[1] === tf)
           moves.push({ from: [r, f], to: [nr, tf], ep: true })
-        }
       }
     }
   } else if (p.t === 'N') {
-    for (const [dr, df] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) {
+    for (const [dr, df] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]])
       addIfValid(r + dr, f + df)
-    }
   } else if (p.t === 'B') {
     for (const [dr,df] of [[-1,-1],[-1,1],[1,-1],[1,1]]) slide(dr, df)
   } else if (p.t === 'R') {
@@ -109,19 +182,14 @@ function pseudoMoves(board, r, f, ep, castling) {
   } else if (p.t === 'Q') {
     for (const [dr,df] of [[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]]) slide(dr, df)
   } else if (p.t === 'K') {
-    for (const [dr,df] of [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]) {
+    for (const [dr,df] of [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])
       addIfValid(r + dr, f + df)
-    }
     const rank = p.c === 'w' ? 7 : 0
     if (r === rank && f === 4) {
-      if (castling[p.c + 'K'] && !board[rank][5] && !board[rank][6] &&
-          board[rank][7]?.t === 'R' && board[rank][7]?.c === p.c) {
-        moves.push({ from: [r, f], to: [rank, 6], castle: 'K' })
-      }
-      if (castling[p.c + 'Q'] && !board[rank][3] && !board[rank][2] && !board[rank][1] &&
-          board[rank][0]?.t === 'R' && board[rank][0]?.c === p.c) {
-        moves.push({ from: [r, f], to: [rank, 2], castle: 'Q' })
-      }
+      if (castling[p.c+'K'] && !board[rank][5] && !board[rank][6] && board[rank][7]?.t==='R' && board[rank][7]?.c===p.c)
+        moves.push({ from: [r,f], to: [rank,6], castle: 'K' })
+      if (castling[p.c+'Q'] && !board[rank][3] && !board[rank][2] && !board[rank][1] && board[rank][0]?.t==='R' && board[rank][0]?.c===p.c)
+        moves.push({ from: [r,f], to: [rank,2], castle: 'Q' })
     }
   }
   return moves
@@ -135,13 +203,12 @@ function findKing(board, color) {
 }
 
 function isAttacked(board, r, f, byColor) {
-  for (let pr = 0; pr < 8; pr++) {
+  for (let pr = 0; pr < 8; pr++)
     for (let pf = 0; pf < 8; pf++) {
       if (board[pr][pf]?.c !== byColor) continue
       const moves = pseudoMoves(board, pr, pf, null, { wK:false, wQ:false, bK:false, bQ:false })
       if (moves.some(m => m.to[0] === r && m.to[1] === f)) return true
     }
-  }
   return false
 }
 
@@ -158,17 +225,10 @@ function applyMove(board, move) {
   const piece = nb[fr][ff]
   nb[tr][tf] = piece
   nb[fr][ff] = null
-  if (move.castle === 'K') {
-    nb[tr][5] = nb[tr][7]; nb[tr][7] = null
-  } else if (move.castle === 'Q') {
-    nb[tr][3] = nb[tr][0]; nb[tr][0] = null
-  }
-  if (move.ep) {
-    nb[fr][tf] = null // remove captured pawn
-  }
-  if (move.promote) {
-    nb[tr][tf] = { t: 'Q', c: piece.c }
-  }
+  if (move.castle === 'K') { nb[tr][5] = nb[tr][7]; nb[tr][7] = null }
+  else if (move.castle === 'Q') { nb[tr][3] = nb[tr][0]; nb[tr][0] = null }
+  if (move.ep) nb[fr][tf] = null
+  if (move.promote) nb[tr][tf] = { t: 'Q', c: piece.c }
   return nb
 }
 
@@ -201,57 +261,90 @@ function updateCastling(castling, move, board) {
   const [fr, ff] = move.from
   const p = board[fr][ff]
   if (!p) return c
-  if (p.t === 'K') { c[p.c + 'K'] = false; c[p.c + 'Q'] = false }
+  if (p.t === 'K') { c[p.c+'K'] = false; c[p.c+'Q'] = false }
   if (p.t === 'R') {
-    if (fr === 7 && ff === 0) c.wQ = false
-    if (fr === 7 && ff === 7) c.wK = false
-    if (fr === 0 && ff === 0) c.bQ = false
-    if (fr === 0 && ff === 7) c.bK = false
+    if (fr===7 && ff===0) c.wQ = false
+    if (fr===7 && ff===7) c.wK = false
+    if (fr===0 && ff===0) c.bQ = false
+    if (fr===0 && ff===7) c.bK = false
   }
   return c
 }
 
-// ── Display helpers ─────────────────────────────────────────────────────────
+// ── Display helpers ──────────────────────────────────────────────────────────
 
-function boardMessage(game) {
-  const { board, turn, lastMove, white, black } = game
-  const inCheck = isInCheck(board, turn)
-  const turnJid = turn === 'w' ? white : black
-  const turnLabel = turnJid === 'bot' ? '🤖 Bot' : `@${turnJid.split('@')[0]}`
-  let header = `♟️ *CHESS*\n\n`
-  header += `⬜ White: @${white.split('@')[0]}\n`
-  header += `⬛ Black: ${black === 'bot' ? '🤖 Bot' : '@' + black.split('@')[0]}\n`
-  header += `\n⚡ *Turn:* ${turnLabel} (${turn === 'w' ? '⬜' : '⬛'})\n`
-  if (lastMove) header += `📌 Last move: ${sq(...lastMove.from)} → ${sq(...lastMove.to)}\n`
-  if (inCheck) header += `\n⚠️ *CHECK!*\n`
-  header += `\n\`\`\`\n${renderBoard(board)}\n\`\`\``
-  return header
+function boardCaption(game) {
+  const { turn, lastMove, white, black } = game
+  const inCheck  = isInCheck(game.board, turn)
+  const turnLabel = (turn === 'w' ? white : black) === 'bot'
+    ? '🤖 Bot'
+    : `@${(turn === 'w' ? white : black).split('@')[0]}`
+  let text = `♟️ *CHESS*\n\n`
+  text += `⬜ White: @${white.split('@')[0]}\n`
+  text += `⬛ Black: ${black === 'bot' ? '🤖 Bot' : '@' + black.split('@')[0]}\n`
+  text += `\n⚡ *Turn:* ${turnLabel} (${turn === 'w' ? '⬜' : '⬛'})`
+  if (lastMove) text += `\n📌 Last: ${sq(...lastMove.from)} → ${sq(...lastMove.to)}`
+  if (inCheck)  text += `\n\n⚠️ *CHECK!*`
+  return text
 }
 
+// Quick-reply button helper
+function btn(displayText, id) {
+  return { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: displayText, id }) }
+}
+
+// ── Send helpers ─────────────────────────────────────────────────────────────
+
 async function sendBoardWithButtons(sock, jid, game, quoted) {
-  const text = boardMessage(game)
+  const mentions = [game.white, ...(game.black !== 'bot' ? [game.black] : [])]
+  const caption  = boardCaption(game)
+  const imgBuf   = drawChessBoard(game.board)
+
+  if (imgBuf) {
+    // Send the real chess board image
+    await sock.sendMessage(jid, {
+      image: imgBuf,
+      caption,
+      mentions,
+    }, quoted ? { quoted } : undefined)
+  } else {
+    // Fallback: emoji board in text
+    let board = '```\n  a b c d e f g h\n'
+    for (let r = 0; r < 8; r++) {
+      board += `${8-r} `
+      for (let f = 0; f < 8; f++) {
+        const p = game.board[r][f]
+        board += p ? pieceEmoji(p) : (r + f) % 2 === 0 ? '□' : '■'
+        board += ' '
+      }
+      board += `${8-r}\n`
+    }
+    board += '  a b c d e f g h\n```'
+    await sock.sendMessage(jid, { text: caption + '\n\n' + board, mentions })
+  }
+
+  // Interactive action buttons
   await sock.sendMessage(jid, {
-    template: true,
-    text,
-    footer: '♟️ Chess',
-    templateButtons: [
-      { index: 1, quickReplyButton: { displayText: '♟️ Select Piece', id: `chess_select_piece_${jid}` } },
-      { index: 2, quickReplyButton: { displayText: '🏳️ Resign',       id: `chess_resign_${jid}`       } },
+    interactive: [
+      btn('♟️ Select Piece', `chess_select_piece_${jid}`),
+      btn('🏳️ Resign',       `chess_resign_${jid}`),
     ],
-    mentions: [game.white, ...(game.black !== 'bot' ? [game.black] : [])],
-  }, quoted ? { quoted } : undefined)
+    text: 'Choose an action:',
+    footer: '♟️ Chess',
+  })
 }
 
 async function sendEndButtons(sock, jid, text, mentions) {
+  if (mentions?.length) {
+    await sock.sendMessage(jid, { text, mentions })
+  }
   await sock.sendMessage(jid, {
-    template: true,
-    text,
-    footer: '♟️ Chess',
-    templateButtons: [
-      { index: 1, quickReplyButton: { displayText: '🔄 Rematch', id: `chess_rematch_${jid}` } },
-      { index: 2, quickReplyButton: { displayText: '❌ Close',   id: `chess_close_${jid}`   } },
+    interactive: [
+      btn('🔄 Rematch', `chess_rematch_${jid}`),
+      btn('❌ Close',   `chess_close_${jid}`),
     ],
-    mentions,
+    text: 'Game over. What next?',
+    footer: '♟️ Chess',
   })
 }
 
@@ -264,21 +357,21 @@ async function doBotMove(sock, jid) {
   const moves = getLegalMoves(game.board, 'b', game.ep, game.castling)
   if (!moves.length) {
     const inCheck = isInCheck(game.board, 'b')
-    const result = inCheck ? '🤖 Bot is in *checkmate*! ⬜ White wins!' : '🤝 *Stalemate!* Draw.'
+    const result  = inCheck ? '🤖 Bot is in *checkmate*! ⬜ White wins!' : '🤝 *Stalemate!* Draw.'
     chessGames.delete(jid)
     return sendEndButtons(sock, jid, result, [game.white])
   }
   const move = moves[Math.floor(Math.random() * moves.length)]
   game.castling = updateCastling(game.castling, move, game.board)
-  game.board = applyMove(game.board, move)
-  game.ep = move.double ? [move.from[0] + (game.board[move.to[0]][move.to[1]]?.c === 'w' ? -1 : 1), move.from[1]] : null
+  game.board    = applyMove(game.board, move)
+  game.ep       = move.double ? [move.from[0] + (game.board[move.to[0]][move.to[1]]?.c === 'w' ? -1 : 1), move.from[1]] : null
   game.lastMove = move
-  game.turn = 'w'
+  game.turn     = 'w'
 
   const legalForWhite = getLegalMoves(game.board, 'w', game.ep, game.castling)
   if (!legalForWhite.length) {
     const inCheck = isInCheck(game.board, 'w')
-    const result = inCheck
+    const result  = inCheck
       ? `🤖 Bot played ${sq(...move.from)}→${sq(...move.to)}\n\n♚ *Checkmate!* ⬛ Black (Bot) wins!`
       : `🤖 Bot played ${sq(...move.from)}→${sq(...move.to)}\n\n🤝 *Stalemate!* Draw.`
     chessGames.delete(jid)
@@ -295,78 +388,66 @@ module.exports = {
   async chess({ sock, msg, jid, senderJid, sender, args, reply, isGroup }) {
     if (!isGroup) return reply('♟️ Chess must be played in a group!')
 
-    // .chess start bot
     if (args[0]?.toLowerCase() === 'start' && args[1]?.toLowerCase() === 'bot') {
       if (chessGames.has(jid)) return reply('❌ A chess game is already active here.')
       const game = {
-        board: initBoard(),
-        white: senderJid,
-        black: 'bot',
-        turn: 'w',
-        ep: null,
-        castling: { wK: true, wQ: true, bK: true, bQ: true },
-        lastMove: null,
-        pendingSelect: null,
-        status: 'active',
+        board: initBoard(), white: senderJid, black: 'bot',
+        turn: 'w', ep: null,
+        castling: { wK:true, wQ:true, bK:true, bQ:true },
+        lastMove: null, pendingSelect: null, status: 'active',
       }
       chessGames.set(jid, game)
-      await sock.sendMessage(jid, { text: `♟️ *Chess vs Bot*\n\n@${sender} is ⬜ White, Bot is ⬛ Black.`, mentions: [senderJid] })
+      await sock.sendMessage(jid, { text: `♟️ *Chess vs Bot*\n\n@${sender} is ⬜ White.\nBot is ⬛ Black.`, mentions: [senderJid] })
       return sendBoardWithButtons(sock, jid, game)
     }
 
-    // .chess @user
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid ||
                       (msg.message?.extendedTextMessage?.contextInfo?.quotedParticipant
-                        ? [msg.message.extendedTextMessage.contextInfo.quotedParticipant]
-                        : [])
+                        ? [msg.message.extendedTextMessage.contextInfo.quotedParticipant] : [])
     if (!mentioned.length) return reply('Usage:\n• .chess @user — challenge someone\n• .chess start bot — play vs bot')
     const opponent = mentioned[0]
     if (opponent === senderJid) return reply('❌ You cannot challenge yourself!')
-    if (chessGames.has(jid)) return reply('❌ A chess game is already active here. Wait for it to finish.')
+    if (chessGames.has(jid)) return reply('❌ A chess game is already active here.')
 
-    // Store pending challenge
-    chessGames.set(jid, {
-      status: 'pending',
-      challenger: senderJid,
-      opponent,
-      board: null,
-      turn: null,
-    })
-
+    chessGames.set(jid, { status: 'pending', challenger: senderJid, opponent, board: null, turn: null })
     await sock.sendMessage(jid, {
       text: `♟️ @${opponent.split('@')[0]}, you've been challenged to Chess by @${sender}!\n\nReply *.accept* to play as ⬛ Black.`,
       mentions: [opponent, senderJid],
     })
   },
 
-  async accept({ sock, msg, jid, senderJid, reply }) {
+  async endchess({ sock, msg, jid, senderJid, reply, isOwner }) {
+    const game = chessGames.get(jid)
+    if (!game) return reply('❌ No active chess game here.')
+    const isPlayer = senderJid === game.challenger || senderJid === game.opponent ||
+                     senderJid === game.white || senderJid === game.black
+    if (!isPlayer && !isOwner) return reply('⚠️ Only a player or admin can end the game.')
+    chessGames.delete(jid)
+    return reply('✅ Chess game ended.')
+  },
+
+  async accept({ sock, msg, jid, senderJid }) {
     const game = chessGames.get(jid)
     if (!game || game.status !== 'pending') return
     if (senderJid !== game.opponent) return
-    const newGame = {
-      board: initBoard(),
-      white: game.challenger,
-      black: game.opponent,
-      turn: 'w',
-      ep: null,
-      castling: { wK: true, wQ: true, bK: true, bQ: true },
-      lastMove: null,
-      pendingSelect: null,
-      status: 'active',
+    const ng = {
+      board: initBoard(), white: game.challenger, black: game.opponent,
+      turn: 'w', ep: null,
+      castling: { wK:true, wQ:true, bK:true, bQ:true },
+      lastMove: null, pendingSelect: null, status: 'active',
     }
-    chessGames.set(jid, newGame)
+    chessGames.set(jid, ng)
     await sock.sendMessage(jid, {
-      text: `♟️ *Chess Game Started!*\n\n⬜ White: @${newGame.white.split('@')[0]}\n⬛ Black: @${newGame.black.split('@')[0]}`,
-      mentions: [newGame.white, newGame.black],
+      text: `♟️ *Chess Game Started!*\n\n⬜ White: @${ng.white.split('@')[0]}\n⬛ Black: @${ng.black.split('@')[0]}`,
+      mentions: [ng.white, ng.black],
     })
-    await sendBoardWithButtons(sock, jid, newGame)
+    await sendBoardWithButtons(sock, jid, ng)
   },
 
-  // Button handler (called from index.js)
   async handleButton(sock, msg, buttonId) {
-    const jid = msg.key.remoteJid
+    const jid       = msg.key.remoteJid
     const senderJid = msg.key.participant || msg.key.remoteJid
-    const game = chessGames.get(jid)
+    const game      = chessGames.get(jid)
 
     if (buttonId.startsWith('chess_close_')) {
       if (game) chessGames.delete(jid)
@@ -375,20 +456,16 @@ module.exports = {
 
     if (buttonId.startsWith('chess_rematch_')) {
       if (!game) return
-      // Swap colors
-      const newGame = {
+      const ng = {
         board: initBoard(),
         white: game.black === 'bot' ? game.white : game.black,
         black: game.black === 'bot' ? 'bot' : game.white,
-        turn: 'w',
-        ep: null,
-        castling: { wK: true, wQ: true, bK: true, bQ: true },
-        lastMove: null,
-        pendingSelect: null,
-        status: 'active',
+        turn: 'w', ep: null,
+        castling: { wK:true, wQ:true, bK:true, bQ:true },
+        lastMove: null, pendingSelect: null, status: 'active',
       }
-      chessGames.set(jid, newGame)
-      return sendBoardWithButtons(sock, jid, newGame)
+      chessGames.set(jid, ng)
+      return sendBoardWithButtons(sock, jid, ng)
     }
 
     if (buttonId.startsWith('chess_resign_')) {
@@ -396,8 +473,8 @@ module.exports = {
       const isWhite = senderJid === game.white
       const isBlack = senderJid === game.black
       if (!isWhite && !isBlack) return
-      const winner = isWhite ? (game.black === 'bot' ? '🤖 Bot' : `@${game.black.split('@')[0]}`) : `@${game.white.split('@')[0]}`
-      const loser = isWhite ? `@${game.white.split('@')[0]}` : `@${game.black.split('@')[0]}`
+      const winner  = isWhite ? (game.black === 'bot' ? '🤖 Bot' : `@${game.black.split('@')[0]}`) : `@${game.white.split('@')[0]}`
+      const loser   = isWhite ? `@${game.white.split('@')[0]}` : `@${game.black.split('@')[0]}`
       const mentions = [game.white, ...(game.black !== 'bot' ? [game.black] : [])]
       chessGames.delete(jid)
       return sendEndButtons(sock, jid, `🏳️ ${loser} resigned!\n\n🏆 *${winner} wins!*`, mentions)
@@ -411,19 +488,12 @@ module.exports = {
 
       const legalMoves = getLegalMoves(game.board, game.turn, game.ep, game.castling)
       const movable = [...new Map(legalMoves.map(m => [m.from.toString(), m.from])).values()]
-
-      if (!movable.length) {
-        return sock.sendMessage(jid, { text: '❌ No legal moves available.' })
-      }
+      if (!movable.length) return sock.sendMessage(jid, { text: '❌ No legal moves available.' })
 
       const rows = movable.map(([r, f]) => {
-        const p = game.board[r][f]
+        const p    = game.board[r][f]
         const name = { P:'Pawn', N:'Knight', B:'Bishop', R:'Rook', Q:'Queen', K:'King' }[p.t]
-        return {
-          title: `${pieceEmoji(p)} ${name} on ${sq(r, f)}`,
-          description: '',
-          rowId: `select_${r}_${f}`,
-        }
+        return { title: `${pieceEmoji(p)} ${name} on ${sq(r, f)}`, description: '', rowId: `select_${r}_${f}` }
       })
 
       try {
@@ -434,17 +504,16 @@ module.exports = {
           sections: [{ title: 'Your Pieces', rows }],
         }, { quoted: msg })
       } catch {
-        const list = rows.map(r => `• ${r.title} (${r.rowId})`).join('\n')
+        const list = rows.map(r => `• ${r.title}`).join('\n')
         await sock.sendMessage(jid, { text: `♟️ *Select a piece:*\n${list}` })
       }
     }
   },
 
-  // List handler (called from index.js)
   async handleList(sock, msg, rowId) {
-    const jid = msg.key.remoteJid
+    const jid       = msg.key.remoteJid
     const senderJid = msg.key.participant || msg.key.remoteJid
-    const game = chessGames.get(jid)
+    const game      = chessGames.get(jid)
     if (!game || game.status !== 'active') return
 
     const isPlayerTurn = (game.turn === 'w' && senderJid === game.white) ||
@@ -453,22 +522,17 @@ module.exports = {
 
     if (rowId.startsWith('select_')) {
       const [, r, f] = rowId.split('_').map((v, i) => i === 0 ? v : Number(v))
-      const piece = game.board[r][f]
+      const piece    = game.board[r][f]
       if (!piece || piece.c !== game.turn) return
 
       const legalMoves = getLegalMoves(game.board, game.turn, game.ep, game.castling)
       const pieceMoves = legalMoves.filter(m => m.from[0] === r && m.from[1] === f)
+      if (!pieceMoves.length) return sock.sendMessage(jid, { text: '❌ No legal moves for that piece.' })
 
-      if (!pieceMoves.length) {
-        return sock.sendMessage(jid, { text: '❌ No legal moves for that piece.' })
-      }
-
-      const rows = pieceMoves.map(m => ({
+      const rows   = pieceMoves.map(m => ({
         title: `→ ${sq(...m.to)}${m.castle ? ' (castle)' : m.promote ? ' (promote→♕)' : m.ep ? ' (en passant)' : ''}`,
-        description: '',
-        rowId: `move_${r}_${f}_${m.to[0]}_${m.to[1]}`,
+        description: '', rowId: `move_${r}_${f}_${m.to[0]}_${m.to[1]}`,
       }))
-
       const pName = { P:'Pawn', N:'Knight', B:'Bishop', R:'Rook', Q:'Queen', K:'King' }[piece.t]
       try {
         await sock.sendMessage(jid, {
@@ -478,8 +542,7 @@ module.exports = {
           sections: [{ title: 'Valid Squares', rows }],
         }, { quoted: msg })
       } catch {
-        const list = rows.map(r => `• ${r.title}`).join('\n')
-        await sock.sendMessage(jid, { text: `*${pName} moves:*\n${list}` })
+        await sock.sendMessage(jid, { text: `*${pName} moves:*\n${rows.map(r => `• ${r.title}`).join('\n')}` })
       }
       return
     }
@@ -488,27 +551,22 @@ module.exports = {
       const parts = rowId.split('_')
       const [fr, ff, tr, tf] = [Number(parts[1]), Number(parts[2]), Number(parts[3]), Number(parts[4])]
       const legalMoves = getLegalMoves(game.board, game.turn, game.ep, game.castling)
-      const move = legalMoves.find(m =>
-        m.from[0] === fr && m.from[1] === ff && m.to[0] === tr && m.to[1] === tf
-      )
+      const move = legalMoves.find(m => m.from[0]===fr && m.from[1]===ff && m.to[0]===tr && m.to[1]===tf)
       if (!move) return sock.sendMessage(jid, { text: '❌ Invalid move.' })
 
       game.castling = updateCastling(game.castling, move, game.board)
-      game.board = applyMove(game.board, move)
-      game.ep = move.double ? [tr + (game.turn === 'w' ? 1 : -1), ff] : null
+      game.board    = applyMove(game.board, move)
+      game.ep       = move.double ? [tr + (game.turn === 'w' ? 1 : -1), ff] : null
       game.lastMove = move
 
       const nextTurn = game.turn === 'w' ? 'b' : 'w'
       game.turn = nextTurn
 
-      // Check for game end
       const nextMoves = getLegalMoves(game.board, nextTurn, game.ep, game.castling)
       if (!nextMoves.length) {
         const inCheck = isInCheck(game.board, nextTurn)
-        const winner = nextTurn === 'w' ? (game.black === 'bot' ? '🤖 Bot' : `@${game.black.split('@')[0]}`) : `@${game.white.split('@')[0]}`
-        const result = inCheck
-          ? `♚ *Checkmate!*\n\n🏆 ${winner} wins!`
-          : `🤝 *Stalemate!* The game is a draw.`
+        const winner  = nextTurn === 'w' ? (game.black === 'bot' ? '🤖 Bot' : `@${game.black.split('@')[0]}`) : `@${game.white.split('@')[0]}`
+        const result  = inCheck ? `♚ *Checkmate!*\n\n🏆 ${winner} wins!` : `🤝 *Stalemate!* Draw.`
         const mentions = [game.white, ...(game.black !== 'bot' ? [game.black] : [])]
         chessGames.delete(jid)
         return sendEndButtons(sock, jid, result, mentions)

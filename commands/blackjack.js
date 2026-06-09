@@ -3,7 +3,7 @@
 // ║     🃏  BLACKJACK  —  commands/blackjack.js  ║
 // ╚══════════════════════════════════════════════╝
 // .bj <amount> — start a game, bet deducted from wallet.
-// Buttons handled in index.js.
+// Buttons handled in index.js via interactiveResponseMessage.
 
 const db = require('../database')
 
@@ -43,63 +43,66 @@ function handValue(hand) {
 function renderHands(game, reveal = false) {
   const dealerHand = reveal
     ? game.dealer.map(cardStr).join(' ')
-    : `${cardStr(game.dealer[0])} ??`
-  const dealerVal = reveal ? ` = ${handValue(game.dealer)}` : ''
+    : `${cardStr(game.dealer[0])} [ ?? ]`
+  const dealerVal  = reveal ? ` = ${handValue(game.dealer)}` : ''
   const playerHand = game.player.map(cardStr).join(' ')
   const playerVal  = handValue(game.player)
   return `🃏 *Dealer:* ${dealerHand}${dealerVal}\n🎴 *You:*   ${playerHand} = ${playerVal}`
 }
 
+// Quick-reply button helper
+function btn(displayText, id) {
+  return { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: displayText, id }) }
+}
+
 async function sendGameButtons(sock, jid, game, text, quoted) {
-  const val = handValue(game.player)
-  const canDouble = game.player.length === 2 && game.bet * 2 <= game.walletSnapshot
-  const templateButtons = [
-    { index: 1, quickReplyButton: { displayText: '🃏 Hit',   id: `bj_hit_${game.key}`   } },
-    { index: 2, quickReplyButton: { displayText: '✋ Stand', id: `bj_stand_${game.key}` } },
+  const canDouble  = game.player.length === 2 && game.bet * 2 <= game.walletSnapshot
+  const buttons = [
+    btn('🃏 Hit',   `bj_hit_${game.key}`),
+    btn('✋ Stand', `bj_stand_${game.key}`),
   ]
-  if (canDouble) {
-    templateButtons.push({ index: 3, quickReplyButton: { displayText: '💰 Double Down', id: `bj_double_${game.key}` } })
-  }
-  await sock.sendMessage(jid, { template: true, text, footer: '🃏 Blackjack', templateButtons }, quoted ? { quoted } : undefined)
+  if (canDouble) buttons.push(btn('💰 Double Down', `bj_double_${game.key}`))
+
+  await sock.sendMessage(jid, {
+    interactive: buttons,
+    text,
+    footer: '🃏 Blackjack',
+  }, quoted ? { quoted } : undefined)
 }
 
 async function sendEndButtons(sock, jid, text, key) {
+  await sock.sendMessage(jid, { text })
   await sock.sendMessage(jid, {
-    template: true,
-    text,
-    footer: '🃏 Blackjack',
-    templateButtons: [
-      { index: 1, quickReplyButton: { displayText: '🔄 Play Again', id: `bj_again_${key}` } },
-      { index: 2, quickReplyButton: { displayText: '❌ Leave',      id: `bj_leave_${key}` } },
+    interactive: [
+      btn('🔄 Play Again', `bj_again_${key}`),
+      btn('❌ Leave',      `bj_leave_${key}`),
     ],
+    text: 'What would you like to do?',
+    footer: '🃏 Blackjack',
   })
 }
 
 async function resolveGame(sock, jid, game) {
-  // Dealer draws until 17+
-  while (handValue(game.dealer) < 17) {
-    game.dealer.push(game.deck.pop())
-  }
+  while (handValue(game.dealer) < 17) game.dealer.push(game.deck.pop())
 
-  const pVal = handValue(game.player)
-  const dVal = handValue(game.dealer)
+  const pVal  = handValue(game.player)
+  const dVal  = handValue(game.dealer)
   const hands = renderHands(game, true)
 
   let result, delta
   if (dVal > 21 || pVal > dVal) {
-    delta = game.bet
+    delta  = game.bet
     result = `✅ *YOU WIN!* +$${game.bet.toLocaleString()}`
   } else if (pVal === dVal) {
-    delta = 0
+    delta  = 0
     result = `🤝 *PUSH!* Bet returned.`
   } else {
-    delta = -game.bet
+    delta  = -game.bet
     result = `❌ *YOU LOSE!* -$${game.bet.toLocaleString()}`
   }
 
-  // Update wallet: we already deducted bet at start; add winnings/refund now
-  const user = await db.getOrCreateUser(game.phone)
-  const newWallet = (user.wallet || 0) + game.bet + delta // refund bet + delta
+  const user      = await db.getOrCreateUser(game.phone)
+  const newWallet = (user.wallet || 0) + game.bet + delta
   await db.updateUser(game.phone, { wallet: Math.max(0, newWallet) })
 
   bjGames.delete(game.key)
@@ -131,7 +134,6 @@ module.exports = {
     if (bet > wallet) return reply(`❌ Insufficient funds.\n💰 Your wallet: $${wallet.toLocaleString()}`)
     if (bet < 10) return reply('❌ Minimum bet is $10.')
 
-    // Deduct bet immediately
     await db.updateUser(phone, { wallet: wallet - bet })
 
     const deck   = newDeck()
@@ -144,7 +146,6 @@ module.exports = {
     const pVal = handValue(player)
     const hands = renderHands(game)
 
-    // Instant blackjack
     if (pVal === 21) {
       const prize = Math.floor(bet * 1.5)
       const user2 = await db.getOrCreateUser(phone)
@@ -171,10 +172,9 @@ module.exports = {
       const key   = buttonId.replace('bj_again_', '')
       const phone = key.includes(':') ? key.split(':')[1] : key
       const user  = await db.getOrCreateUser(phone)
-      const fakeMsg = { key: msg.key, pushName: msg.pushName, message: {} }
-      const senderJid = msg.key.participant || msg.key.remoteJid
       return module.exports.bj({
-        sock, msg, jid, senderJid,
+        sock, msg, jid,
+        senderJid: msg.key.participant || msg.key.remoteJid,
         sender: phone,
         args: ['100'],
         reply: (t) => sock.sendMessage(jid, { text: t }),
@@ -182,14 +182,13 @@ module.exports = {
       })
     }
 
-    // Resolve game key from buttonId suffix
     const keyMatch = buttonId.match(/^bj_(hit|stand|double)_(.+)$/)
     if (!keyMatch) return
     const [, action, key] = keyMatch
     const game = bjGames.get(key)
     if (!game || game.done) return
 
-    const senderJid = msg.key.participant || msg.key.remoteJid
+    const senderJid   = msg.key.participant || msg.key.remoteJid
     const senderPhone = senderJid.split('@')[0].split(':')[0]
     if (senderPhone !== game.phone) return
 
@@ -201,28 +200,23 @@ module.exports = {
         const text = `🃏 *BUST!* 💥\n\n${renderHands(game)}\n\n━━━━━━━━━━━━\n❌ You busted! Lost $${game.bet.toLocaleString()}`
         return sendEndButtons(sock, jid, text, key)
       }
-      if (val === 21) {
-        return resolveGame(sock, jid, game)
-      }
+      if (val === 21) return resolveGame(sock, jid, game)
       const text = `🃏 *BLACKJACK* — Bet: $${game.bet.toLocaleString()}\n\n${renderHands(game)}\n\n━━━━━━━━━━━━\nYou drew a card. What now?`
       return sendGameButtons(sock, jid, game, text)
     }
 
     if (action === 'double') {
-      const user = await db.getOrCreateUser(game.phone)
-      if (user.wallet < game.bet) {
-        return sock.sendMessage(jid, { text: `❌ Not enough funds to double down! Wallet: $${user.wallet.toLocaleString()}` })
+      const u = await db.getOrCreateUser(game.phone)
+      if (u.wallet < game.bet) {
+        return sock.sendMessage(jid, { text: `❌ Not enough funds to double down! Wallet: $${u.wallet.toLocaleString()}` })
       }
-      await db.updateUser(game.phone, { wallet: user.wallet - game.bet })
+      await db.updateUser(game.phone, { wallet: u.wallet - game.bet })
       game.bet *= 2
       game.player.push(game.deck.pop())
-      const text = `💰 *DOUBLE DOWN!*\n\n${renderHands(game)}\n\nNew bet: $${game.bet.toLocaleString()}\nResolving...`
-      await sock.sendMessage(jid, { text })
+      await sock.sendMessage(jid, { text: `💰 *DOUBLE DOWN!*\n\n${renderHands(game)}\n\nNew bet: $${game.bet.toLocaleString()}` })
       return resolveGame(sock, jid, game)
     }
 
-    if (action === 'stand') {
-      return resolveGame(sock, jid, game)
-    }
+    if (action === 'stand') return resolveGame(sock, jid, game)
   },
 }
