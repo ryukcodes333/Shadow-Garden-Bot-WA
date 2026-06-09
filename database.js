@@ -73,8 +73,12 @@ const groupSchema = new mongoose.Schema({
   welcome:         { type: Boolean, default: false },
   leave:           { type: Boolean, default: false },
   muted:           { type: Boolean, default: false },
-  pokemon_enabled: { type: Boolean, default: false },
-  antibot:         { type: Boolean, default: false },
+  pokemon_enabled:   { type: Boolean, default: false },
+  antibot:           { type: Boolean, default: false },
+  cardspawn_enabled: { type: Boolean, default: false },
+  cardspawn_today:   { type: Number,  default: 0 },
+  cardspawn_date:    { type: String,  default: '' },
+  cardspawn_next:    { type: Date,    default: null },
 }, { timestamps: true })
 
 const warningSchema = new mongoose.Schema({
@@ -197,10 +201,19 @@ const disabledCommandSchema = new mongoose.Schema({
   reason:  String,
 })
 
+// Singleton document that stores the bot's trained AI persona (name + facts).
+// Staff can update these via .aitrain. Groq uses them as a dynamic system prompt.
+const aiBotPersonaSchema = new mongoose.Schema({
+  singleton: { type: String, default: 'main', unique: true },
+  name:      { type: String, default: '' },
+  facts:     { type: [String], default: [] },
+}, { timestamps: true })
+
 // ── Models ─────────────────────────────────────────────────────────────────
 
 const User           = mongoose.model('User',           userSchema)
 const Group          = mongoose.model('Group',          groupSchema)
+const AiBotPersona   = mongoose.model('AiBotPersona',   aiBotPersonaSchema)
 const Warning        = mongoose.model('Warning',        warningSchema)
 const AFK            = mongoose.model('AFK',            afkSchema)
 const Message        = mongoose.model('Message',        messageSchema)
@@ -534,6 +547,112 @@ async function addPokemon(phone, pokemonData) {
 async function updatePokemon(id, updates) {
   const p = await UserPokemon.findByIdAndUpdate(id, { $set: updates }, { new: true }).lean()
   return p
+}
+
+// ── Card-spawn group functions ──────────────────────────────────────────────
+
+// Toggle auto card-spawn for a group. Resets the schedule when enabling.
+async function setGroupCardSpawn(groupId, enabled) {
+  await getOrCreateGroup(groupId)
+  const update = { cardspawn_enabled: enabled }
+  if (enabled) {
+    // Schedule first spawn 30–120 min from now
+    const delay = (30 + Math.floor(Math.random() * 90)) * 60 * 1000
+    update.cardspawn_next = new Date(Date.now() + delay)
+    update.cardspawn_today = 0
+    update.cardspawn_date  = new Date().toISOString().slice(0, 10)
+  }
+  return Group.findOneAndUpdate({ group_id: groupId }, { $set: update }, { new: true }).lean()
+}
+
+// Called each time a group message arrives. Returns true if a spawn should fire NOW.
+// Automatically resets daily count at midnight and schedules the next spawn window.
+async function tickCardSpawn(groupId) {
+  const g = await Group.findOne({ group_id: groupId }).lean()
+  if (!g || !g.cardspawn_enabled) return false
+
+  const today = new Date().toISOString().slice(0, 10)
+  let todayCount = g.cardspawn_date === today ? (g.cardspawn_today || 0) : 0
+
+  // Hit the daily cap — leave enabled but don't spawn again until tomorrow
+  if (todayCount >= 7) return false
+
+  const nextSpawn = g.cardspawn_next ? new Date(g.cardspawn_next) : null
+  if (!nextSpawn || Date.now() < nextSpawn.getTime()) return false
+
+  // It's time to spawn — increment count and schedule the next window (30min–5h)
+  const delay = (30 + Math.floor(Math.random() * 270)) * 60 * 1000
+  await Group.findOneAndUpdate(
+    { group_id: groupId },
+    { $set: {
+      cardspawn_today: todayCount + 1,
+      cardspawn_date:  today,
+      cardspawn_next:  new Date(Date.now() + delay),
+    } }
+  )
+  return true
+}
+
+// ── AI persona functions ────────────────────────────────────────────────────
+
+// Returns the singleton AI persona document (creates it if missing).
+async function getAiPersona() {
+  let p = await AiBotPersona.findOne({ singleton: 'main' }).lean()
+  if (!p) {
+    try { p = (await AiBotPersona.create({ singleton: 'main' })).toObject() } catch { p = await AiBotPersona.findOne({ singleton: 'main' }).lean() }
+  }
+  return p
+}
+
+async function setAiPersonaName(name) {
+  return AiBotPersona.findOneAndUpdate(
+    { singleton: 'main' },
+    { $set: { name: name.trim() } },
+    { new: true, upsert: true }
+  ).lean()
+}
+
+async function addAiPersonaFact(fact) {
+  return AiBotPersona.findOneAndUpdate(
+    { singleton: 'main' },
+    { $addToSet: { facts: fact.trim() } },
+    { new: true, upsert: true }
+  ).lean()
+}
+
+async function removeAiPersonaFact(index) {
+  const p = await AiBotPersona.findOne({ singleton: 'main' }).lean()
+  if (!p || !p.facts?.length) return null
+  const facts = [...p.facts]
+  facts.splice(index, 1)
+  return AiBotPersona.findOneAndUpdate(
+    { singleton: 'main' },
+    { $set: { facts } },
+    { new: true }
+  ).lean()
+}
+
+async function clearAiPersonaFacts() {
+  return AiBotPersona.findOneAndUpdate(
+    { singleton: 'main' },
+    { $set: { facts: [] } },
+    { new: true, upsert: true }
+  ).lean()
+}
+
+// Returns up to `limit` distinct trainers who own a Pokémon species by its PokeAPI id.
+// Joins with the User collection to resolve display names.
+async function getPokemonOwnersBySpeciesId(pokemonId, limit = 5) {
+  if (!pokemonId) return []
+  // Get distinct phones that own this species
+  const docs = await UserPokemon.find({ pokemon_id: Number(pokemonId) }, 'phone').lean()
+  const phones = [...new Set(docs.map(d => cleanPhone(d.phone)))].slice(0, limit)
+  if (!phones.length) return []
+  // Batch-fetch user names
+  const users = await User.find({ phone: { $in: phones } }, 'phone name').lean()
+  const nameMap = {}
+  for (const u of users) nameMap[u.phone] = u.name || u.phone
+  return phones.map(p => ({ phone: p, name: nameMap[p] || p }))
 }
 
 // ── Game functions ─────────────────────────────────────────────────────────
@@ -955,6 +1074,58 @@ async function verifyAndLinkJid(senderJid, otp) {
   return final
 }
 
+// ── Economy Inflation Tracking ────────────────────────────────────────────────
+// Lightweight daily ledger stored in MongoDB.
+// Tracks total coins generated (income) and removed (sinks) each calendar day.
+// Staff can query this with the .ecostats command to detect inflation.
+
+const econStatsSchema = new mongoose.Schema({
+  date:      { type: String, unique: true },  // 'YYYY-MM-DD'
+  generated: { type: Number, default: 0 },    // total coins injected today
+  removed:   { type: Number, default: 0 },    // total coins removed today
+}, { timestamps: false })
+const EconStats = mongoose.model('EconStats', econStatsSchema)
+
+function todayKey() {
+  return new Date().toISOString().split('T')[0]
+}
+
+async function trackCurrencyGenerated(amount) {
+  if (!amount || amount <= 0) return
+  try {
+    await EconStats.findOneAndUpdate(
+      { date: todayKey() },
+      { $inc: { generated: amount } },
+      { upsert: true }
+    )
+  } catch {}
+}
+
+async function trackCurrencyRemoved(amount) {
+  if (!amount || amount <= 0) return
+  try {
+    await EconStats.findOneAndUpdate(
+      { date: todayKey() },
+      { $inc: { removed: amount } },
+      { upsert: true }
+    )
+  } catch {}
+}
+
+async function getEconStats(days = 7) {
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - days)
+  const dateStr = cutoff.toISOString().split('T')[0]
+  return EconStats.find({ date: { $gte: dateStr } }).sort({ date: -1 }).lean()
+}
+
+async function getEconTotals() {
+  const agg = await EconStats.aggregate([
+    { $group: { _id: null, totalGenerated: { $sum: '$generated' }, totalRemoved: { $sum: '$removed' } } },
+  ])
+  return agg[0] || { totalGenerated: 0, totalRemoved: 0 }
+}
+
 // ── Bulk seed all cards from JSON files into MongoDB ──────────────────────────
 // Usage: await db.seedAllCards(cardIndex, cardIndex2, cardIndexMazoku)
 // cardIndex:    [{tier, title, url}]       — old shoob (numeric tier)
@@ -1039,8 +1210,12 @@ module.exports = {
   assignCard, addUserCard, deleteUserCardById, updateUserCardById, getCardOwners, getOrCreateShoobCard,
   getCardByExternalId, getOwnerCountsBatch,
   addMutedUser, removeMutedUser, deleteAllUsers,
+  // Card-spawn
+  setGroupCardSpawn, tickCardSpawn,
+  // AI persona
+  getAiPersona, setAiPersonaName, addAiPersonaFact, removeAiPersonaFact, clearAiPersonaFacts,
   // Pokémon
-  getUserPokemon, addPokemon, updatePokemon,
+  getUserPokemon, addPokemon, updatePokemon, getPokemonOwnersBySpeciesId,
   // Games
   getGame, createGame, updateGame, endGame,
   // Summer
@@ -1066,6 +1241,8 @@ module.exports = {
   requestWaLink, verifyAndLinkJid,
   // Card seeding
   seedAllCards,
+  // Economy inflation tracking
+  trackCurrencyGenerated, trackCurrencyRemoved, getEconStats, getEconTotals,
   // Mongoose instance
   mongoose,
 }
