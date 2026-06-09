@@ -84,6 +84,7 @@ async function sendTurnMessage(sock, jid, game) {
   const text = gameStatus(game)
   const mentions = game.players
   await sock.sendMessage(jid, {
+    template: true,
     text,
     footer: '🎴 UNO',
     templateButtons: [
@@ -123,6 +124,7 @@ async function checkWin(sock, jid, game, playerJid) {
     try {
       await sock.sendMessage(jid, {
         text: `🏆 *UNO WINNER!*\n\n🎉 ${winner} has played all their cards!\n\n_The chaos ends…_`,
+        template: true,
         templateButtons: [
           { index: 1, quickReplyButton: { displayText: '🔄 Play Again', id: `uno_rematch_${jid}` } },
           { index: 2, quickReplyButton: { displayText: '❌ End Game',   id: `uno_end_${jid}`     } },

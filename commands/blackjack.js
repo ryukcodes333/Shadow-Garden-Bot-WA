@@ -60,11 +60,12 @@ async function sendGameButtons(sock, jid, game, text, quoted) {
   if (canDouble) {
     templateButtons.push({ index: 3, quickReplyButton: { displayText: '💰 Double Down', id: `bj_double_${game.key}` } })
   }
-  await sock.sendMessage(jid, { text, footer: '🃏 Blackjack', templateButtons }, quoted ? { quoted } : undefined)
+  await sock.sendMessage(jid, { template: true, text, footer: '🃏 Blackjack', templateButtons }, quoted ? { quoted } : undefined)
 }
 
 async function sendEndButtons(sock, jid, text, key) {
   await sock.sendMessage(jid, {
+    template: true,
     text,
     footer: '🃏 Blackjack',
     templateButtons: [

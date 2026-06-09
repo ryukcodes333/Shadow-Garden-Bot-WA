@@ -231,6 +231,7 @@ function boardMessage(game) {
 async function sendBoardWithButtons(sock, jid, game, quoted) {
   const text = boardMessage(game)
   await sock.sendMessage(jid, {
+    template: true,
     text,
     footer: '♟️ Chess',
     templateButtons: [
@@ -243,6 +244,7 @@ async function sendBoardWithButtons(sock, jid, game, quoted) {
 
 async function sendEndButtons(sock, jid, text, mentions) {
   await sock.sendMessage(jid, {
+    template: true,
     text,
     footer: '♟️ Chess',
     templateButtons: [
