@@ -104,17 +104,13 @@ function buildPersonaSystemPrompt(persona) {
 
 // Called by index.js when the AI name is mentioned or someone replies to bot
 async function handleAiPersonaReply(sock, jid, msg, textRaw, persona) {
-  try {
-    const name     = (persona?.name || 'Aqua').trim()
-    const messages = [
-      { role: 'system', content: buildPersonaSystemPrompt(persona) },
-      { role: 'user',   content: textRaw },
-    ]
-    const answer = await askAI(messages, 'openai')
-    await sock.sendMessage(jid, { text: `*${name}:* ${answer}` }, { quoted: msg })
-  } catch (e) {
-    console.error('[AI Persona] Pollinations error:', e.message)
-  }
+  const name     = (persona?.name || 'Aqua').trim()
+  const messages = [
+    { role: 'system', content: buildPersonaSystemPrompt(persona) },
+    { role: 'user',   content: textRaw },
+  ]
+  const answer = await askAI(messages, 'openai')
+  await sock.sendMessage(jid, { text: `*${name}:* ${answer}` }, { quoted: msg })
 }
 
 module.exports = {
@@ -176,12 +172,16 @@ module.exports = {
       const persona = await db.getAiPersona()
       if (!persona?.name) return reply('❌ No AI name set yet. Use *.aitrain name <name>* first.')
       await reply('⏳ Testing AI response...')
-      await handleAiPersonaReply(
-        { sendMessage: async (...a) => reply(a[1]?.text || '') },
-        null, null,
-        rest || 'Say hi and introduce yourself briefly!',
-        persona
-      )
+      try {
+        await handleAiPersonaReply(
+          { sendMessage: async (...a) => reply(a[1]?.text || '') },
+          null, null,
+          rest || 'Say hi and introduce yourself briefly!',
+          persona
+        )
+      } catch (e) {
+        await reply(`❌ AI test failed: ${e.message}\n\n_Check your internet connection or try again in a moment._`)
+      }
       return
     }
 

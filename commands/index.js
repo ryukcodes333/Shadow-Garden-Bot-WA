@@ -251,7 +251,12 @@ async function handleMessage(sock, msg) {
     if (triggered && !textRaw.startsWith(PREFIX) && !textRaw.startsWith(POKE_PREFIX)) {
       // If a persona name is trained — always use the real adaptive AI
       if (persona?.name && (mentionsAiName || isReplyToBot || isBotMentioned)) {
-        await aiCmds.handleAiPersonaReply(sock, jid, msg, textRaw, persona)
+        try {
+          await aiCmds.handleAiPersonaReply(sock, jid, msg, textRaw, persona)
+        } catch (e) {
+          console.error('[AI Persona] reply error:', e.message)
+          // silent fail in group — don't spam with error messages
+        }
       } else if ((mentionsAqua && !mentionsAlpha) || isReplyToBot) {
         await aquaChatReply(sock, jid, msg, sender, msg.pushName || sender, textRaw)
       } else {

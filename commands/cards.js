@@ -1111,7 +1111,10 @@ module.exports = {
     const series   = cardData?.series || ''
 
     // Store pending give (expires in 60s)
-    pendingGives[sender] = { toPhone, toJid, cardIndex: index - 1, ucId: uc._id || uc.id, expiresAt: Date.now() + 60000 }
+    // cardDbId = the Card document's _id (needed by addUserCard to create a new UserCard for the recipient)
+    // ucId     = the sender's UserCard document's _id (needed by deleteUserCardById to remove it)
+    const cardDbId = cardData?._id || cardData?.id || null
+    pendingGives[sender] = { toPhone, toJid, cardIndex: index - 1, ucId: uc._id || uc.id, cardDbId, expiresAt: Date.now() + 60000 }
     setTimeout(() => { if (pendingGives[sender]) delete pendingGives[sender] }, 60000)
 
     await sock.sendMessage(jid, {
@@ -1133,9 +1136,12 @@ module.exports = {
     if (!p || Date.now() > p.expiresAt) return reply('❌ No pending card give, or it expired. Use *.cg* again.')
     delete pendingGives[sender]
     try {
+      if (!p.cardDbId) return reply('❌ Card data missing — please try .cg again.')
+      // Remove the card from sender's collection (delete their UserCard entry)
       await db.deleteUserCardById(p.ucId)
-      await db.addUserCard(p.toPhone, p.ucId)
-      await reply(`✅ *Card given to @${p.toPhone} successfully!*`)
+      // Create a fresh UserCard entry for the recipient pointing at the same Card document
+      await db.addUserCard(p.toPhone, p.cardDbId)
+      await reply(`✅ *Card given to @${p.toPhone} successfully!*\n\nThey can view it with *.coll*`)
     } catch (err) {
       await reply(`❌ Failed to transfer card: ${err.message}`)
     }

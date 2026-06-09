@@ -771,12 +771,9 @@ module.exports = {
       ownersBlock = `*👥 Owners:* None yet`
     } else {
       const lines = owners.map((o, i) => {
-        const isLast  = i === owners.length - 1
-        const prefix  = isLast ? '   └' : '   ├'
-        const display = o.name && o.name !== o.phone && !/^\d{6,}$/.test(o.name)
-          ? o.name
-          : `@${o.phone}`
-        return `${prefix} 👤 ${display}`
+        const isLast = i === owners.length - 1
+        const prefix = isLast ? '   └' : '   ├'
+        return `${prefix} 👤 @${o.phone}`
       })
       ownersBlock = `*👥 Owners:*\n${lines.join('\n')}`
     }

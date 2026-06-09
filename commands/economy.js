@@ -394,6 +394,21 @@ module.exports = {
       return reply('❌ Mention or *quote* a user\'s message to rob them.')
     }
 
+    // ── Resolve @lid to real phone number ────────────────────────────────────
+    // WhatsApp sends @lid JIDs for some participants. Resolve to real @s.whatsapp.net
+    // so DB lookups and message mentions use the actual phone number.
+    const isGroup = jid?.endsWith('@g.us')
+    if (target.endsWith('@lid') && isGroup) {
+      try {
+        const meta    = await sock.groupMetadata(jid).catch(() => null)
+        const matched = (meta?.participants || []).find(p => p.lid === target || p.id === target)
+        if (matched?.id && matched.id.endsWith('@s.whatsapp.net')) {
+          target = matched.id
+          tp     = matched.id.split('@')[0]
+        }
+      } catch {}
+    }
+
     const u = user || await db.getOrCreateUser(sender)
     const remaining = await db.getCooldown(sender, 'rob')
     if (remaining > 0) {
@@ -412,6 +427,9 @@ module.exports = {
     const success = Math.random() < 0.40  // 40% success
     await db.setCooldown(sender, 'rob', CD_ROB)
 
+    // Build a proper @s.whatsapp.net JID for mentions (never pass a @lid to mentions)
+    const mentionJid = target.endsWith('@s.whatsapp.net') ? target : `${tp}@s.whatsapp.net`
+
     if (success) {
       // Steal only 3–8% of wallet (never destroys progress)
       const pct    = 0.03 + Math.random() * 0.05
@@ -421,7 +439,7 @@ module.exports = {
       console.log(`[economy] rob: ${sender} stole $${stolen} (${(pct*100).toFixed(1)}%) from ${tp}`)
       await sock.sendMessage(jid, {
         text: `🦹 *Rob Successful!*\n\nYou stole *$${stolen.toLocaleString()}* from @${tp}!\n_(${(pct*100).toFixed(1)}% of their wallet)_`,
-        mentions: [target],
+        mentions: [mentionJid],
       }, { quoted: msg })
     } else {
       const fine = Math.min(Math.floor(Math.random() * 101) + 100, u.wallet || 0)  // 100–200 fine
@@ -429,7 +447,7 @@ module.exports = {
       await db.trackCurrencyRemoved(fine)
       await sock.sendMessage(jid, {
         text: `👮 *Your robbery attempt failed.*\n\nYou failed to rob @${tp} and paid a *$${fine}* fine.`,
-        mentions: [target],
+        mentions: [mentionJid],
       }, { quoted: msg })
     }
   },
