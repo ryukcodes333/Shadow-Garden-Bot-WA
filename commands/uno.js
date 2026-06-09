@@ -83,20 +83,16 @@ async function sendTurnMessage(sock, jid, game) {
   const cur = game.players[game.turn]
   const text = gameStatus(game)
   const mentions = game.players
-  try {
-    await sock.sendMessage(jid, {
-      text,
-      buttons: [
-        { buttonId: `uno_hand_${jid}`,  buttonText: { displayText: '🃏 View My Hand' }, type: 1 },
-        { buttonId: `uno_draw_${jid}`,  buttonText: { displayText: '➕ Draw Card'   }, type: 1 },
-        { buttonId: `uno_call_${jid}`,  buttonText: { displayText: '🔴 UNO!'        }, type: 1 },
-      ],
-      headerType: 1,
-      mentions,
-    })
-  } catch {
-    await sock.sendMessage(jid, { text, mentions })
-  }
+  await sock.sendMessage(jid, {
+    text,
+    footer: '🎴 UNO',
+    templateButtons: [
+      { index: 1, quickReplyButton: { displayText: '🃏 View My Hand', id: `uno_hand_${jid}` } },
+      { index: 2, quickReplyButton: { displayText: '➕ Draw Card',    id: `uno_draw_${jid}` } },
+      { index: 3, quickReplyButton: { displayText: '🔴 UNO!',         id: `uno_call_${jid}` } },
+    ],
+    mentions,
+  })
 }
 
 // ── Game flow helpers ────────────────────────────────────────────────────────
@@ -127,11 +123,10 @@ async function checkWin(sock, jid, game, playerJid) {
     try {
       await sock.sendMessage(jid, {
         text: `🏆 *UNO WINNER!*\n\n🎉 ${winner} has played all their cards!\n\n_The chaos ends…_`,
-        buttons: [
-          { buttonId: `uno_rematch_${jid}`, buttonText: { displayText: '🔄 Play Again' }, type: 1 },
-          { buttonId: `uno_end_${jid}`,     buttonText: { displayText: '❌ End Game'   }, type: 1 },
+        templateButtons: [
+          { index: 1, quickReplyButton: { displayText: '🔄 Play Again', id: `uno_rematch_${jid}` } },
+          { index: 2, quickReplyButton: { displayText: '❌ End Game',   id: `uno_end_${jid}`     } },
         ],
-        headerType: 1,
         mentions,
       })
     } catch {

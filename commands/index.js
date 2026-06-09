@@ -47,7 +47,11 @@ async function handleInteraction(sock, msg) {
   let isButton  = false
   let isList    = false
 
-  if (msgType === 'buttonsResponseMessage') {
+  if (msgType === 'templateButtonReplyMessage') {
+    buttonId = msg.message.templateButtonReplyMessage?.selectedId || ''
+    isButton = true
+  } else if (msgType === 'buttonsResponseMessage') {
+    // fallback for older clients
     buttonId = msg.message.buttonsResponseMessage?.selectedButtonId || ''
     isButton = true
   } else if (msgType === 'listResponseMessage') {

@@ -53,33 +53,25 @@ function renderHands(game, reveal = false) {
 async function sendGameButtons(sock, jid, game, text, quoted) {
   const val = handValue(game.player)
   const canDouble = game.player.length === 2 && game.bet * 2 <= game.walletSnapshot
-  const buttons = [
-    { buttonId: `bj_hit_${game.key}`,   buttonText: { displayText: '🃏 Hit'   }, type: 1 },
-    { buttonId: `bj_stand_${game.key}`, buttonText: { displayText: '✋ Stand' }, type: 1 },
+  const templateButtons = [
+    { index: 1, quickReplyButton: { displayText: '🃏 Hit',   id: `bj_hit_${game.key}`   } },
+    { index: 2, quickReplyButton: { displayText: '✋ Stand', id: `bj_stand_${game.key}` } },
   ]
   if (canDouble) {
-    buttons.push({ buttonId: `bj_double_${game.key}`, buttonText: { displayText: '💰 Double Down' }, type: 1 })
+    templateButtons.push({ index: 3, quickReplyButton: { displayText: '💰 Double Down', id: `bj_double_${game.key}` } })
   }
-  try {
-    await sock.sendMessage(jid, { text, buttons, headerType: 1 }, quoted ? { quoted } : undefined)
-  } catch {
-    await sock.sendMessage(jid, { text }, quoted ? { quoted } : undefined)
-  }
+  await sock.sendMessage(jid, { text, footer: '🃏 Blackjack', templateButtons }, quoted ? { quoted } : undefined)
 }
 
 async function sendEndButtons(sock, jid, text, key) {
-  try {
-    await sock.sendMessage(jid, {
-      text,
-      buttons: [
-        { buttonId: `bj_again_${key}`, buttonText: { displayText: '🔄 Play Again' }, type: 1 },
-        { buttonId: `bj_leave_${key}`, buttonText: { displayText: '❌ Leave'      }, type: 1 },
-      ],
-      headerType: 1,
-    })
-  } catch {
-    await sock.sendMessage(jid, { text })
-  }
+  await sock.sendMessage(jid, {
+    text,
+    footer: '🃏 Blackjack',
+    templateButtons: [
+      { index: 1, quickReplyButton: { displayText: '🔄 Play Again', id: `bj_again_${key}` } },
+      { index: 2, quickReplyButton: { displayText: '❌ Leave',      id: `bj_leave_${key}` } },
+    ],
+  })
 }
 
 async function resolveGame(sock, jid, game) {

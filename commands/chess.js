@@ -230,35 +230,27 @@ function boardMessage(game) {
 
 async function sendBoardWithButtons(sock, jid, game, quoted) {
   const text = boardMessage(game)
-  try {
-    await sock.sendMessage(jid, {
-      text,
-      buttons: [
-        { buttonId: `chess_select_piece_${jid}`, buttonText: { displayText: '♟️ Select Piece' }, type: 1 },
-        { buttonId: `chess_resign_${jid}`,       buttonText: { displayText: '🏳️ Resign'       }, type: 1 },
-      ],
-      headerType: 1,
-      mentions: [game.white, ...(game.black !== 'bot' ? [game.black] : [])],
-    }, quoted ? { quoted } : undefined)
-  } catch {
-    await sock.sendMessage(jid, { text }, quoted ? { quoted } : undefined)
-  }
+  await sock.sendMessage(jid, {
+    text,
+    footer: '♟️ Chess',
+    templateButtons: [
+      { index: 1, quickReplyButton: { displayText: '♟️ Select Piece', id: `chess_select_piece_${jid}` } },
+      { index: 2, quickReplyButton: { displayText: '🏳️ Resign',       id: `chess_resign_${jid}`       } },
+    ],
+    mentions: [game.white, ...(game.black !== 'bot' ? [game.black] : [])],
+  }, quoted ? { quoted } : undefined)
 }
 
 async function sendEndButtons(sock, jid, text, mentions) {
-  try {
-    await sock.sendMessage(jid, {
-      text,
-      buttons: [
-        { buttonId: `chess_rematch_${jid}`, buttonText: { displayText: '🔄 Rematch' }, type: 1 },
-        { buttonId: `chess_close_${jid}`,   buttonText: { displayText: '❌ Close'   }, type: 1 },
-      ],
-      headerType: 1,
-      mentions,
-    })
-  } catch {
-    await sock.sendMessage(jid, { text, mentions })
-  }
+  await sock.sendMessage(jid, {
+    text,
+    footer: '♟️ Chess',
+    templateButtons: [
+      { index: 1, quickReplyButton: { displayText: '🔄 Rematch', id: `chess_rematch_${jid}` } },
+      { index: 2, quickReplyButton: { displayText: '❌ Close',   id: `chess_close_${jid}`   } },
+    ],
+    mentions,
+  })
 }
 
 // ── Bot move ────────────────────────────────────────────────────────────────
