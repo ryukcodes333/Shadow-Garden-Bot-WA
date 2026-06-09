@@ -12,6 +12,8 @@ const pokemonCmds     = require('./pokemon')
 const interactionCmds = require('./interactions')
 const funCmds         = require('./fun')
 const rpgCmds         = require('./rpg')
+const chessCmds       = require('./chess')
+const blackjackCmds   = require('./blackjack')
 const unoCmds         = require('./uno')
 const gambleCmds      = require('./gamble')
 const summerCmds      = require('./summer')
@@ -32,15 +34,87 @@ const OWNER_LID   = '12232838631673@lid'
 
 const spamTracker = {}
 
+// ── Button / List response router ────────────────────────────────────────────
+// Detects buttonsResponseMessage and listResponseMessage and routes to the
+// correct game handler.  All game state lives in the handlers' own Map()s.
+
+async function handleInteraction(sock, msg) {
+  const msgType = Object.keys(msg.message || {})[0]
+
+  // Support both classic and interactive response formats
+  let buttonId  = null
+  let rowId     = null
+  let isButton  = false
+  let isList    = false
+
+  if (msgType === 'buttonsResponseMessage') {
+    buttonId = msg.message.buttonsResponseMessage?.selectedButtonId || ''
+    isButton = true
+  } else if (msgType === 'listResponseMessage') {
+    rowId  = msg.message.listResponseMessage?.singleSelectReply?.selectedRowId || ''
+    isList = true
+  } else if (msgType === 'interactiveResponseMessage') {
+    // Newer WA clients wrap everything in interactiveResponseMessage
+    try {
+      const body = msg.message.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson
+      if (body) {
+        const parsed = JSON.parse(body)
+        if (parsed.id) {
+          buttonId = parsed.id
+          isButton = true
+        }
+      }
+    } catch {}
+    if (!buttonId) {
+      const sel = msg.message.interactiveResponseMessage?.singleSelectReply?.selectedRowId
+      if (sel) { rowId = sel; isList = true }
+    }
+  } else {
+    return false // not an interaction
+  }
+
+  if (isButton && buttonId) {
+    // ── Chess buttons ──────────────────────────────────────────────────────
+    if (buttonId.startsWith('chess_')) {
+      await chessCmds.handleButton(sock, msg, buttonId)
+      return true
+    }
+    // ── Blackjack buttons ──────────────────────────────────────────────────
+    if (buttonId.startsWith('bj_')) {
+      await blackjackCmds.handleButton(sock, msg, buttonId)
+      return true
+    }
+    // ── UNO buttons ────────────────────────────────────────────────────────
+    if (buttonId.startsWith('uno_')) {
+      await unoCmds.handleButton(sock, msg, buttonId)
+      return true
+    }
+  }
+
+  if (isList && rowId) {
+    // ── Chess list selections ──────────────────────────────────────────────
+    if (rowId.startsWith('select_') || rowId.startsWith('move_')) {
+      await chessCmds.handleList(sock, msg, rowId)
+      return true
+    }
+    // ── UNO list selections (play_ / color_) ──────────────────────────────
+    if (rowId.startsWith('play_') || rowId.startsWith('color_')) {
+      await unoCmds.handleList(sock, msg, rowId)
+      return true
+    }
+  }
+
+  return false
+}
+
+// ── Main message handler ─────────────────────────────────────────────────────
+
 async function handleMessage(sock, msg) {
   const jid       = msg.key.remoteJid
   const isGroup   = jid?.endsWith('@g.us')
   let senderJid   = isGroup ? msg.key.participant : msg.key.remoteJid
 
   // ── LID → @s.whatsapp.net normalization ─────────────────────────────────
-  // Newer WhatsApp versions may send participants as @lid JIDs (internal Meta IDs).
-  // Resolve to the real @s.whatsapp.net JID via group metadata so stored phone
-  // numbers are always real phone numbers, not LID identifiers.
   if (senderJid?.endsWith('@lid') && isGroup) {
     try {
       const meta = await sock.groupMetadata(jid).catch(() => null)
@@ -69,7 +143,15 @@ async function handleMessage(sock, msg) {
     } catch {}
   }
 
-  const msgType    = Object.keys(msg.message || {})[0]
+  const msgType = Object.keys(msg.message || {})[0]
+
+  // ── Route button / list interactions FIRST (before any text checks) ──────
+  const interactionHandled = await handleInteraction(sock, msg).catch(err => {
+    console.error('[interaction error]', err?.message || err)
+    return false
+  })
+  if (interactionHandled) return
+
   const isSticker  = msgType === 'stickerMessage'
   const isReaction = msgType === 'reactionMessage'
 
@@ -85,7 +167,7 @@ async function handleMessage(sock, msg) {
 
   if (!textRaw && !isSticker && !isReaction && !isImageWithStickerCmd) return
 
-  // ── Group-level protections ─────────────────────────────────
+  // ── Group-level protections ─────────────────────────────────────────────
   if (isGroup && textRaw) {
     await db.logMessage(sender, jid).catch(() => {})
 
@@ -132,7 +214,7 @@ async function handleMessage(sock, msg) {
       }
     }
 
-    // ── Auto card-spawn check (message-event based, no background timers) ────
+    // ── Auto card-spawn check ─────────────────────────────────────────────
     if (groupSettings?.cardspawn_enabled) {
       setImmediate(() => cardCmds.checkAutoSpawn(sock, jid))
     }
@@ -157,7 +239,7 @@ async function handleMessage(sock, msg) {
     }
   }
 
-  // ── AFK return ──────────────────────────────────────────────
+  // ── AFK return ──────────────────────────────────────────────────────────
   if (!isSticker && !isReaction && !isBold && textRaw) {
     const afkRecord = await db.getAFK(sender).catch(() => null)
     if (afkRecord) {
@@ -174,7 +256,7 @@ async function handleMessage(sock, msg) {
     }
   }
 
-  // ── AFK notifications ────────────────────────────────────────
+  // ── AFK notifications ────────────────────────────────────────────────────
   if (isGroup && textRaw && senderJid) {
     const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     for (const mentionedJid of mentions) {
@@ -201,7 +283,7 @@ async function handleMessage(sock, msg) {
     }
   }
 
-  // ── Image + sticker shortcut ─────────────────────────────────
+  // ── Image + sticker shortcut ─────────────────────────────────────────────
   if (isImageWithStickerCmd) {
     const ctx = {
       sock, msg, jid, senderJid, sender, args: [], cmd: 's', user: null,
@@ -216,7 +298,7 @@ async function handleMessage(sock, msg) {
 
   if (!textRaw) return
 
-  // ── Yes/No pay confirmation handler ─────────────────────────
+  // ── Yes/No pay confirmation handler ─────────────────────────────────────
   const textLower = textRaw.trim().toLowerCase()
   if (textLower === 'yes' || textLower === 'no') {
     try {
@@ -228,9 +310,16 @@ async function handleMessage(sock, msg) {
     } catch {}
   }
 
-  // ── AI chat detection (before prefix check) ──────────────────
-  // If a persona name has been trained, it takes over all AI replies.
-  // Otherwise falls back to legacy alphaChatReply / aquaChatReply.
+  // ── Chess accept handler ─────────────────────────────────────────────────
+  if (textLower === 'accept') {
+    const game = chessCmds.chessGames.get(jid)
+    if (game?.status === 'pending') {
+      await chessCmds.accept({ sock, msg, jid, senderJid, sender, reply: (t) => sock.sendMessage(jid, { text: t }, { quoted: msg }) })
+      return
+    }
+  }
+
+  // ── AI chat detection ────────────────────────────────────────────────────
   if (!isSticker && !isReaction && !isBold) {
     const botPhone       = (sock.user?.id || '').split(':')[0].split('@')[0]
     const mentionedJids  = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
@@ -238,7 +327,6 @@ async function handleMessage(sock, msg) {
     const isReplyToBot   = quotedParticipant && botPhone && quotedParticipant === botPhone
     const isBotMentioned = botPhone && mentionedJids.some(m => m.split('@')[0].split(':')[0] === botPhone)
 
-    // Load trained AI persona (fast — Mongo lookup with lean)
     const persona    = await db.getAiPersona().catch(() => null)
     const aiName     = (persona?.name || '').trim().toLowerCase()
     const nameRegex  = aiName ? new RegExp(`\\b${aiName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i') : null
@@ -249,13 +337,11 @@ async function handleMessage(sock, msg) {
     const triggered = isBotMentioned || isReplyToBot || mentionsAiName || mentionsAlpha || mentionsAqua
 
     if (triggered && !textRaw.startsWith(PREFIX) && !textRaw.startsWith(POKE_PREFIX)) {
-      // If a persona name is trained — always use the real adaptive AI
       if (persona?.name && (mentionsAiName || isReplyToBot || isBotMentioned)) {
         try {
           await aiCmds.handleAiPersonaReply(sock, jid, msg, textRaw, persona)
         } catch (e) {
           console.error('[AI Persona] reply error:', e.message)
-          // silent fail in group — don't spam with error messages
         }
       } else if ((mentionsAqua && !mentionsAlpha) || isReplyToBot) {
         await aquaChatReply(sock, jid, msg, sender, msg.pushName || sender, textRaw)
@@ -266,7 +352,7 @@ async function handleMessage(sock, msg) {
     }
   }
 
-  // ── Determine prefix ─────────────────────────────────────────
+  // ── Determine prefix ─────────────────────────────────────────────────────
   const isPokemon = textRaw.startsWith(POKE_PREFIX)
   const isDot     = textRaw.startsWith(PREFIX)
   if (!isPokemon && !isDot) return
@@ -276,21 +362,13 @@ async function handleMessage(sock, msg) {
   const args  = body.split(/\s+/)
   const cmd   = args.shift().toLowerCase()
 
-  // ── Look up user — JID-first so post-link lookups find the master account ─
-  // After .link, the master record (web phone) has jid set.
-  // getOrCreateUser(phone, name, jid) checks jid first → returns master.
-  // We then use user.phone as the canonical sender so all updateUser() calls
-  // in command files write to the correct record, not a freshly-created empty one.
+  // ── Look up user ─────────────────────────────────────────────────────────
   const user = await db.getOrCreateUser(sender, msg.pushName || sender, senderJid).catch(() => null)
-
-  // Canonical phone: after a WA↔web link, user.phone is the master (web) phone.
-  // Use it as `sender` in ctx so every db.updateUser(sender, ...) hits the right row.
   const canonicalSender = user?.phone || sender
 
-  // ── Banned: silently ignore ───────────────────────────────────
   if (user?.banned && !isOwner) return
 
-  // ── Suspension check (sender) ─────────────────────────────────
+  // ── Suspension check (sender) ─────────────────────────────────────────────
   if (!isOwner && cmd !== 'p' && cmd !== 'profile') {
     const suspension = await db.getSuspension(sender).catch(() => null)
     if (suspension) {
@@ -308,7 +386,7 @@ async function handleMessage(sock, msg) {
     }
   }
 
-  // ── Suspension check (mentioned/target user) ──────────────────
+  // ── Suspension check (mentioned/target user) ──────────────────────────────
   if (!isOwner && cmd !== 'p' && cmd !== 'profile') {
     const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     for (const mJid of mentions) {
@@ -351,18 +429,15 @@ async function handleMessage(sock, msg) {
     'poll','pollresult','dbstatus','checkdb',
     'addmod','removemod','addguardian','removeguardian','mods','modlist','modslist',
     'phelp','law','pbenefits','report','trivia','math','fact','joke','flip','8ball','roll','choose',
-    
     'removebg','nobg','enhance','remini','upscale','night','sunset','rain','city','gun','jail','toanime','cartoon','carbon',
     'suspend','unsuspend','suspendlist',
     'market','wallet','bank','weekly','monthly','crime','rob','heist','topmoney','topbank','howgay','lockgroup','unlockgroup','join','exit','listgc',
-    // ── new-user / registration commands always allowed ──────────
     'register','reg','start','p','profile','bal','balance','help','menu',
     'myid','id',
   ])
 
   const reply = (text) => sock.sendMessage(jid, { text }, { quoted: msg })
 
-  // ── Real DB connectivity check (not a user-existence check) ───
   const isDbReady = db.mongoose.connection.readyState === 1
 
   if (!isDbReady && !NO_DB_CMDS.has(cmd)) {
@@ -371,18 +446,14 @@ async function handleMessage(sock, msg) {
     )
   }
 
-  // If DB is ready but user wasn't fetched (race condition on startup), retry once
   if (isDbReady && !user) {
     try { user = await db.getOrCreateUser(sender, msg.pushName || sender, senderJid) } catch {}
   }
 
   const ctx = {
     sock, msg, jid, senderJid,
-    // sender in ctx is the CANONICAL phone (master record's phone after WA↔web link).
-    // Command files use ctx.sender for db.updateUser() — this ensures writes go to the
-    // correct unified account, not a newly-created empty one for the JID phone.
     sender: canonicalSender,
-    rawSender: sender,  // original JID-derived phone, for auth/group checks if needed
+    rawSender: sender,
     args, cmd, user, isGroup, isOwner, isMod, isGuardian, PREFIX,
     pushName: msg.pushName || sender, msgType, textRaw,
     reply,
@@ -391,7 +462,7 @@ async function handleMessage(sock, msg) {
   }
 
   try {
-    // ── # prefix → Pokémon commands ─────────────────────────────
+    // ── # prefix → Pokémon commands ──────────────────────────────────────
     if (isPokemon) {
       const pk = pokemonCmds
       if (cmd === 'phelp')                       return await pk.phelp(ctx)
@@ -434,7 +505,7 @@ async function handleMessage(sock, msg) {
       return
     }
 
-    // ── . prefix → all other commands ───────────────────────────
+    // ── . prefix → all other commands ───────────────────────────────────
 
     // GTA V RP commands
     if (gtaCmds[cmd])           return await gtaCmds[cmd](ctx)
@@ -458,15 +529,28 @@ async function handleMessage(sock, msg) {
     // Economy commands
     if (economyCmds[cmd])       return await economyCmds[cmd](ctx)
 
-    // Card commands (includes .cardspawn, .cg, .cgconfirm, .cgcancel)
+    // Card commands
     if (cmd === 'cardspawn')    return await cardCmds.cardspawn(ctx)
     if (cmd === 'cg')           return await cardCmds.cg(ctx)
     if (cmd === 'cgconfirm')    return await cardCmds.cgconfirm(ctx)
     if (cmd === 'cgcancel')     return await cardCmds.cgcancel(ctx)
     if (cardCmds[cmd])          return await cardCmds[cmd](ctx)
 
-    // Game commands
+    // Game commands (ttt, etc.)
     if (gameCmds[cmd])          return await gameCmds[cmd](ctx)
+
+    // ── Chess ─────────────────────────────────────────────────────────────
+    if (cmd === 'chess')        return await chessCmds.chess(ctx)
+
+    // ── Blackjack ─────────────────────────────────────────────────────────
+    if (cmd === 'bj' || cmd === 'blackjack') return await blackjackCmds.bj(ctx)
+
+    // ── UNO ───────────────────────────────────────────────────────────────
+    if (cmd === 'uno')          return await unoCmds.uno(ctx)
+    if (cmd === 'joinuno')      return await unoCmds.joinuno(ctx)
+    if (cmd === 'unostart')     return await unoCmds.unostart(ctx)
+    if (cmd === 'stopgame' || cmd === 'unostop') return await unoCmds.stopgame(ctx)
+    if (cmd === 'caught')       return await unoCmds.caught(ctx)
 
     // Legacy . prefix Pokémon commands
     if (cmd === 'wb')           return await pokemonCmds.hunt(ctx)
@@ -485,10 +569,7 @@ async function handleMessage(sock, msg) {
     // RPG commands
     if (rpgCmds[cmd])           return await rpgCmds[cmd](ctx)
 
-    // UNO commands
-    if (unoCmds[cmd])           return await unoCmds[cmd](ctx)
-
-    // Gamble commands (bet, slots, roulette, horse, casino, etc.)
+    // Gamble commands
     if (gambleCmds[cmd])        return await gambleCmds[cmd](ctx)
 
     // Summer event commands
@@ -500,42 +581,41 @@ async function handleMessage(sock, msg) {
     // Converter / calc / currency commands
     if (converterCmds[cmd])     return await converterCmds[cmd](ctx)
 
-    // Economy stats (inflation dashboard — staff only)
+    // Economy stats
     if (cmd === 'ecostats')     return await econStatsCmds.ecostats(ctx)
 
     // Staff commands
     if (cmd === 'resetallusers') return await staffCmds['resetallusers'](ctx)
     if (staffCmds[cmd])         return await staffCmds[cmd](ctx)
-    // Group join/exit/list commands (routed through staffCmds)
     if (cmd === 'join')          return await staffCmds['join'] ? staffCmds['join'](ctx) : ctx.reply('❌ .join <invite link>')
     if (cmd === 'exit')          return await staffCmds['exit'] ? staffCmds['exit'](ctx) : ctx.reply('❌ Groups only.')
     if (cmd === 'listgc')        return await staffCmds['listgc'] ? staffCmds['listgc'](ctx) : ctx.reply('❌ Access Denied')
 
     // Renamed commands
-    if (cmd === 'lockgroup')     return await adminCmds['close']   ? adminCmds['close'](ctx)   : ctx.reply('❌ Groups only.')
-    if (cmd === 'unlockgroup')   return await adminCmds['open']    ? adminCmds['open'](ctx)    : ctx.reply('❌ Groups only.')
-    if (cmd === 'howgay')        return await funCmds['gay']       ? funCmds['gay'](ctx)       : ctx.reply('❌ Fun cmd missing.')
-    if (cmd === 'market')        return await economyCmds['market']? economyCmds['market'](ctx): ctx.reply('❌ Economy cmd missing.')
-    if (cmd === 'wallet')        return await economyCmds['wallet']? economyCmds['wallet'](ctx): economyCmds['bal'](ctx)
-    if (cmd === 'bank')          return await economyCmds['bankbal']?economyCmds['bankbal'](ctx): economyCmds['bal'](ctx)
-    if (cmd === 'weekly')        return await economyCmds['weekly']? economyCmds['weekly'](ctx): ctx.reply('⏳ Coming soon.')
-    if (cmd === 'monthly')       return await economyCmds['monthly']?economyCmds['monthly'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'crime')         return await economyCmds['crime']? economyCmds['crime'](ctx) : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'rob')           return await economyCmds['rob']   ? economyCmds['rob'](ctx)   : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'heist')         return await economyCmds['heist'] ? economyCmds['heist'](ctx) : ctx.reply('⏳ Coming soon.')
+    if (cmd === 'lockgroup')     return await adminCmds['close']    ? adminCmds['close'](ctx)   : ctx.reply('❌ Groups only.')
+    if (cmd === 'unlockgroup')   return await adminCmds['open']     ? adminCmds['open'](ctx)    : ctx.reply('❌ Groups only.')
+    if (cmd === 'howgay')        return await funCmds['gay']        ? funCmds['gay'](ctx)       : ctx.reply('❌ Fun cmd missing.')
+    if (cmd === 'market')        return await economyCmds['market'] ? economyCmds['market'](ctx): ctx.reply('❌ Economy cmd missing.')
+    if (cmd === 'wallet')        return await economyCmds['wallet'] ? economyCmds['wallet'](ctx): economyCmds['bal'](ctx)
+    if (cmd === 'bank')          return await economyCmds['bankbal']? economyCmds['bankbal'](ctx): economyCmds['bal'](ctx)
+    if (cmd === 'weekly')        return await economyCmds['weekly'] ? economyCmds['weekly'](ctx): ctx.reply('⏳ Coming soon.')
+    if (cmd === 'monthly')       return await economyCmds['monthly']? economyCmds['monthly'](ctx):ctx.reply('⏳ Coming soon.')
+    if (cmd === 'crime')         return await economyCmds['crime']  ? economyCmds['crime'](ctx) : ctx.reply('⏳ Coming soon.')
+    if (cmd === 'rob')           return await economyCmds['rob']    ? economyCmds['rob'](ctx)   : ctx.reply('⏳ Coming soon.')
+    if (cmd === 'heist')         return await economyCmds['heist']  ? economyCmds['heist'](ctx) : ctx.reply('⏳ Coming soon.')
     if (cmd === 'topmoney')      return await economyCmds['topmoney']?economyCmds['topmoney'](ctx):economyCmds['richlist'](ctx)
     if (cmd === 'topbank')       return await economyCmds['topbank']?economyCmds['topbank'](ctx):economyCmds['richlist'](ctx)
     if (cmd === 'achievements')  return await economyCmds['achievements']?economyCmds['achievements'](ctx):ctx.reply('🏆 Achievements coming soon!')
-    if (cmd === 'claim')         return await economyCmds['claim'] ? economyCmds['claim'](ctx) : economyCmds['daily'](ctx)
-    if (cmd === 'bonus')         return await economyCmds['bonus'] ? economyCmds['bonus'](ctx) : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'upgrade')       return await economyCmds['upgrade']?economyCmds['upgrade'](ctx):ctx.reply('⏳ Coming soon.')
+    if (cmd === 'claim')         return await economyCmds['claim']  ? economyCmds['claim'](ctx) : economyCmds['daily'](ctx)
+    if (cmd === 'bonus')         return await economyCmds['bonus']  ? economyCmds['bonus'](ctx) : ctx.reply('⏳ Coming soon.')
+    if (cmd === 'upgrade')       return await economyCmds['upgrade']? economyCmds['upgrade'](ctx):ctx.reply('⏳ Coming soon.')
     if (cmd === 'prestige')      return await economyCmds['prestige']?economyCmds['prestige'](ctx):ctx.reply('⏳ Coming soon.')
     if (cmd === 'bankupgrade')   return await economyCmds['bankupgrade']?economyCmds['bankupgrade'](ctx):ctx.reply('⏳ Coming soon.')
     if (cmd === 'withdrawall')   return await economyCmds['withdrawall']?economyCmds['withdrawall'](ctx):(()=>{ctx.args=['all'];return economyCmds['withdraw'](ctx)})()
-    if (cmd === 'goodbye')       return await adminCmds['leave']   ? adminCmds['leave'](ctx)   : ctx.reply('❌ Usage: .goodbye on/off')
+    if (cmd === 'goodbye')       return await adminCmds['leave']    ? adminCmds['leave'](ctx)   : ctx.reply('❌ Usage: .goodbye on/off')
     if (cmd === 'invitelink')    return await adminCmds['invitelink']?adminCmds['invitelink'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'stafflist')     return await staffCmds['mods']    ? staffCmds['mods'](ctx)    : ctx.reply('No staff found.')
-    if (cmd === 'myrole')        return await staffCmds['myrole']  ? staffCmds['myrole'](ctx)  : ctx.reply('⏳ Coming soon.')
+    if (cmd === 'stafflist')     return await staffCmds['mods']     ? staffCmds['mods'](ctx)    : ctx.reply('No staff found.')
+    if (cmd === 'myrole')        return await staffCmds['myrole']   ? staffCmds['myrole'](ctx)  : ctx.reply('⏳ Coming soon.')
 
     // Poll commands
     if (pollCmds[cmd])          return await pollCmds[cmd](ctx)
@@ -543,11 +623,11 @@ async function handleMessage(sock, msg) {
     // Lottery commands
     if (lotteryCmds[cmd])       return await lotteryCmds[cmd](ctx)
 
-    // AI commands (Pollinations, image gen, anime, aitrain)
+    // AI commands
     if (cmd === 'aitrain')      return await aiCmds.aitrain(ctx)
     if (aiCmds[cmd])            return await aiCmds[cmd](ctx)
 
-    // Utility commands (weather, wiki, translate, download, etc.)
+    // Utility commands
     if (utilityCmds[cmd])       return await utilityCmds[cmd](ctx)
 
   } catch (err) {
