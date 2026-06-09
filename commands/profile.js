@@ -216,7 +216,7 @@ module.exports = {
     const frameName = getFrame(frameId).name
     const cardCount = await db.getUserCardCount(sender).catch(() => '?')
     const joinDate  = u.created_at ? new Date(u.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown'
-    const xpNeeded  = (u.level || 1) * 1000
+    const xpNeeded  = (u.level || 1) * 300   // matches economy.js xpForLevel: level * 300
     const xpFill    = Math.min(Math.round(((u.xp || 0) / xpNeeded) * 10), 10)
     const xpBar     = '🟦'.repeat(xpFill) + '⬛'.repeat(10 - xpFill)
     const netWorth  = (Number(u.wallet || 0) + Number(u.bank || 0))

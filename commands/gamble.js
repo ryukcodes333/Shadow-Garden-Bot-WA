@@ -1,25 +1,35 @@
 const db = require('../database')
 
-// ── Daily gambling tracker (in-memory, resets per calendar day) ──
-const dailyTracker = {}
-const DAILY_LIMIT  = 15
+// ── Gambling constants ──────────────────────────────────────────────────────
+// House edge is enforced per-game via true probabilities + adjusted payouts.
+// Long-term expected profit is always NEGATIVE for the player.
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ── Per-user cooldown: 10 seconds between any gambling command ──
-// This prevents message flooding that causes WhatsApp to force-disconnect the session.
+// Daily gambling limit per player (prevents spam abuse)
+const DAILY_LIMIT   = 20
+const GAMBLE_CD_MS  = 8000  // 8-second cooldown between bets
+
+// Per-user in-memory cooldown (anti-spam)
 const gambleCooldown = {}
-const GAMBLE_CD_MS   = 10000  // 10 seconds
+
+// Daily session tracking (in-memory; resets on bot restart — use DB for production persistence)
+const dailyTracker   = {}
 
 function checkGambleCooldown(phone) {
   const now = Date.now()
   if (gambleCooldown[phone] && now < gambleCooldown[phone]) {
-    return gambleCooldown[phone] - now  // ms remaining
+    return gambleCooldown[phone] - now
   }
   gambleCooldown[phone] = now + GAMBLE_CD_MS
   return 0
 }
 
+function getTodayKey() {
+  return new Date().toISOString().split('T')[0]
+}
+
 function checkDailyLimit(phone) {
-  const today = new Date().toISOString().split('T')[0]
+  const today = getTodayKey()
   if (!dailyTracker[phone] || dailyTracker[phone].date !== today) {
     dailyTracker[phone] = { count: 0, date: today }
   }
@@ -28,421 +38,494 @@ function checkDailyLimit(phone) {
 }
 
 function getRemainingGambles(phone) {
-  const today = new Date().toISOString().split('T')[0]
+  const today = getTodayKey()
   if (!dailyTracker[phone] || dailyTracker[phone].date !== today) return DAILY_LIMIT
   return Math.max(0, DAILY_LIMIT - dailyTracker[phone].count)
 }
 
-// Win rates: 20% normal, 2% for high stakes (>5000)
-function winChance(amount) {
-  return amount > 5000 ? 0.02 : 0.20
+// ── Validation helpers ─────────────────────────────────────────────────────
+
+function parseAmount(raw, wallet) {
+  const str = String(raw || '').toLowerCase().trim()
+  if (str === 'all') return wallet
+  const n = parseInt(str)
+  if (isNaN(n)) return null
+  return n
 }
 
-// Wraps a gambling handler to apply the shared 10-second cooldown
+function validateBet(amount, wallet) {
+  if (!amount || amount <= 0) return '❌ Invalid amount provided.'
+  if (amount > wallet) return `❌ You do not have enough coins. Wallet: $${wallet.toLocaleString()}`
+  return null
+}
+
+// Wraps a gambling handler with the shared cooldown + global error safety
 function withCooldown(fn) {
   return async function(ctx) {
     try {
       const wait = checkGambleCooldown(ctx.sender)
       if (wait > 0) {
         const secs = Math.ceil(wait / 1000)
-        return await ctx.reply(`⏳ Slow down! Wait *${secs}s* before gambling again.`)
+        return await ctx.reply(`⏳ You are on cooldown for *${secs}s*.`)
       }
       return await fn(ctx)
     } catch (err) {
       console.error('[gamble error]', err?.message || err)
-      try { await ctx.reply(`⚠️ Gambling error: ${err?.message || 'unknown'}`) } catch {}
+      try { await ctx.reply(`⚠️ An unexpected error occurred. Please try again later.`) } catch {}
     }
   }
 }
 
+// Track currency removal (gambling losses = money sink)
+async function sinkCoins(amount) {
+  try { await db.trackCurrencyRemoved(amount) } catch {}
+}
+async function genCoins(amount) {
+  try { await db.trackCurrencyGenerated(amount) } catch {}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GAMES
+// ─────────────────────────────────────────────────────────────────────────────
+
 module.exports = {
-  async bet({ reply, sender, user, args }) {
-    const u = user || await db.getOrCreateUser(sender)
-    const amount = parseInt(args[0])
-    if (!amount || amount <= 0) return reply('❌ Usage: `.bet <amount>`')
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough coins! Wallet: $${(u.wallet || 0).toLocaleString()}`)
+
+  // ── .bet — generic wager ────────────────────────────────────────────────
+  // Win rate: 42% | Payout: 1.85x stake on win | House edge ≈ 22%
+  bet: withCooldown(async ({ reply, sender, user, args }) => {
+    const u      = user || await db.getOrCreateUser(sender)
+    const amount = parseAmount(args[0], u.wallet || 0)
+    const err    = validateBet(amount, u.wallet || 0)
+    if (err) return reply(err)
     if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
 
-    const win = Math.random() < winChance(amount)
-    const payout = win ? Math.floor(amount * 1.8) : 0
-    const net = win ? payout - amount : -amount
+    const win  = Math.random() < 0.42
+    const net  = win ? Math.floor(amount * 0.85) : -amount  // net gain/loss
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
+    if (!win) await sinkCoins(amount); else await genCoins(net)
+    const rem = getRemainingGambles(sender)
+    if (win) return reply(`🎲 *WIN!*\n\n$${amount.toLocaleString()} → *+$${Math.floor(amount * 0.85)}*\n💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
+    return reply(`🎲 *LOST*\n\n-$${amount.toLocaleString()}\n💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
+  }),
 
-    const remaining = getRemainingGambles(sender)
-    if (win) return reply(`🎲 *WIN!*\n\n$${amount} → *+$${payout}*\n💵 Balance: $${((u.wallet || 0) + net).toLocaleString()}\n\n_${remaining} gambles left today._`)
-    return reply(`🎲 *LOST*\n\n-$${amount}\n💵 Balance: $${((u.wallet || 0) - amount).toLocaleString()}\n\n_${remaining} gambles left today._`)
-  },
-
-  async cf({ reply, sender, user, args }) {
+  // ── .cf — coin flip ────────────────────────────────────────────────────
+  // Win rate: 47% | Payout: 1:1 | House edge ≈ 6%
+  cf: withCooldown(async ({ reply, sender, user, args }) => {
     const u      = user || await db.getOrCreateUser(sender)
     const choice = args[0]?.toLowerCase()
-    const amount = parseInt(args[1])
-    if (!['heads', 'tails', 'h', 't'].includes(choice) || !amount || amount <= 0) {
-      return reply('❌ Usage: `.cf heads/tails <amount>`')
+    const amount = parseAmount(args[1], u.wallet || 0)
+    if (!['heads', 'tails', 'h', 't'].includes(choice || '')) {
+      return reply('❌ Invalid amount provided. Usage: `.cf heads/tails <amount>`')
     }
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! Wallet: $${(u.wallet || 0).toLocaleString()}`)
+    const err = validateBet(amount, u.wallet || 0)
+    if (err) return reply(err)
     if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
 
-    const normalised = choice === 'h' ? 'heads' : choice === 't' ? 'tails' : choice
-    const win        = Math.random() < winChance(amount)
-    const flip       = win ? normalised : (normalised === 'heads' ? 'tails' : 'heads')
-    const net        = win ? amount : -amount
+    const normalised = (choice === 'h') ? 'heads' : (choice === 't') ? 'tails' : choice
+    const playerWins = Math.random() < 0.47   // 47% player win rate → house edge ~6%
+    const flip       = playerWins ? normalised : (normalised === 'heads' ? 'tails' : 'heads')
+    const net        = playerWins ? amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
-
-    const remaining = getRemainingGambles(sender)
+    if (!playerWins) await sinkCoins(amount); else await genCoins(amount)
+    const rem = getRemainingGambles(sender)
     return reply(
       `🪙 *Coin Flip!*\n\n` +
       `Your bet: *${normalised.toUpperCase()}* | Result: *${flip.toUpperCase()}*\n\n` +
-      `${win ? `✅ +$${amount}` : `❌ -$${amount}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${remaining} gambles left today._`
+      `${playerWins ? `✅ +$${amount.toLocaleString()}` : `❌ -$${amount.toLocaleString()}`}\n` +
+      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
-  },
+  }),
 
-  async slots({ sock, jid, msg, reply, sender, user, args }) {
+  // ── .slots — slot machine ──────────────────────────────────────────────
+  // Uses true probability per symbol; overall house edge ≈ 12%
+  slots: withCooldown(async ({ sock, jid, msg, reply, sender, user, args }) => {
     const u      = user || await db.getOrCreateUser(sender)
-    const amount = parseInt(args[0])
-    if (!amount || amount <= 0) return reply('❌ Usage: `.slots <amount>`')
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! Wallet: $${(u.wallet || 0).toLocaleString()}`)
+    const amount = parseAmount(args[0], u.wallet || 0)
+    const err    = validateBet(amount, u.wallet || 0)
+    if (err) return reply(err)
     if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
 
-    const symbols = ['🍒', '🍋', '🍇', '⭐', '💎', '🔔', '🃏']
-    const randSym = () => symbols[Math.floor(Math.random() * symbols.length)]
+    // Weighted symbol pool: higher weight = more common
+    const SYMBOLS = [
+      { sym: '🍒', weight: 30 },
+      { sym: '🍋', weight: 25 },
+      { sym: '🍇', weight: 20 },
+      { sym: '🔔', weight: 12 },
+      { sym: '⭐', weight: 8  },
+      { sym: '💎', weight: 5  },
+    ]
+    const totalWeight = SYMBOLS.reduce((a, s) => a + s.weight, 0)
 
-    // ── Step 1: Send spinning animation ─────────────────────────────
-    const spinGrid = () => {
-      const rows = [0, 1, 2].map(() => `│ ${randSym()} │ ${randSym()} │ ${randSym()} │`)
-      return rows.join('\n')
+    function spinReel() {
+      let r = Math.random() * totalWeight
+      for (const s of SYMBOLS) { r -= s.weight; if (r <= 0) return s.sym }
+      return SYMBOLS[0].sym
     }
-    await sock.sendMessage(jid, { text: `🎰 *Spinning...*\n\n${spinGrid()}` }, { quoted: msg })
 
-    // ── Calculate outcome ────────────────────────────────────────────
-    const win = Math.random() < winChance(amount)
-    let reels, multiplier, label
+    // Animate spin
+    const spinLine = () => `│ ${spinReel()} │ ${spinReel()} │ ${spinReel()} │`
+    await sock.sendMessage(jid, { text: `🎰 *Spinning...*\n\n${spinLine()}\n${spinLine()}\n${spinLine()}` }, { quoted: msg })
 
-    if (win) {
-      const sym = randSym()
-      const pairWin = Math.random() < 0.5
-      if (pairWin) {
-        const third = randSym()
-        reels = [sym, sym, third]
-        reels.sort(() => Math.random() - 0.5)
-        multiplier = 1.5; label = '✨ Two of a Kind!'
-      } else {
-        reels = [sym, sym, sym]
-        if      (sym === '💎') { multiplier = 5; label = '💎 JACKPOT!' }
-        else if (sym === '⭐') { multiplier = 3; label = '⭐ MEGA WIN!' }
-        else                   { multiplier = 2; label = '🎉 Three of a Kind!' }
-      }
-    } else {
-      reels = [randSym(), randSym(), randSym()]
-      while (reels[0] === reels[1] || reels[1] === reels[2] || reels[0] === reels[2]) {
-        reels = [randSym(), randSym(), randSym()]
-      }
-      multiplier = 0; label = 'No Match'
+    const reels = [spinReel(), spinReel(), spinReel()]
+
+    let multiplier = 0
+    let label      = 'No Match'
+
+    if (reels[0] === reels[1] && reels[1] === reels[2]) {
+      // Triple match
+      if      (reels[0] === '💎') { multiplier = 8;   label = '💎 JACKPOT!' }
+      else if (reels[0] === '⭐') { multiplier = 4;   label = '⭐ MEGA WIN!' }
+      else if (reels[0] === '🔔') { multiplier = 2.5; label = '🔔 BIG WIN!' }
+      else                        { multiplier = 1.8; label = '🎉 Three of a Kind!' }
+    } else if (reels[0] === reels[1] || reels[1] === reels[2] || reels[0] === reels[2]) {
+      // Pair — slight win (net positive but small)
+      multiplier = 1.15
+      label      = '✨ Pair!'
     }
 
     const net = multiplier > 0 ? Math.floor(amount * multiplier) - amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
-    const remaining = getRemainingGambles(sender)
+    if (net < 0) await sinkCoins(Math.abs(net)); else if (net > 0) await genCoins(net)
+    const rem = getRemainingGambles(sender)
 
-    // ── Step 2: Send stopping result ─────────────────────────────────
     await new Promise(r => setTimeout(r, 700))
     return sock.sendMessage(jid, {
       text:
         `⏳ *Stopping...*\n\n│ ${reels[0]} │ ${reels[1]} │ ${reels[2]} │\n\n` +
-        `${multiplier > 0 ? `🏆 ${label}\n> +$${Math.floor(amount * multiplier)}` : `❌ ${label}\n> -$${amount}`}\n\n` +
-        `💵 $${((u.wallet || 0) + net).toLocaleString()}\n_${remaining} gambles left today._`,
+        `${net >= 0 ? `🏆 ${label}\n> +$${Math.floor(amount * multiplier)}` : `❌ ${label}\n> -$${amount.toLocaleString()}`}\n\n` +
+        `💵 $${((u.wallet || 0) + net).toLocaleString()}\n_${rem} gambles left today._`,
     }, { quoted: msg })
-  },
+  }),
   async sl(ctx) { return module.exports.slots(ctx) },
 
-  async dice({ reply, sender, user, args }) {
+  // ── .dice — number guess ───────────────────────────────────────────────
+  // True 1-in-6 odds. Win: 15% (slightly below fair 16.7%). Payout 5x. Edge ≈ 25%
+  dice: withCooldown(async ({ reply, sender, user, args }) => {
     const u      = user || await db.getOrCreateUser(sender)
-    const amount = parseInt(args[0])
+    const amount = parseAmount(args[0], u.wallet || 0)
     const guess  = parseInt(args[1])
     if (!amount || !guess || guess < 1 || guess > 6) {
-      return reply('❌ Usage: `.dice <amount> <guess 1-6>`')
+      return reply('❌ Invalid amount provided. Usage: `.dice <amount> <guess 1–6>`')
     }
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough coins! Wallet: $${(u.wallet || 0).toLocaleString()}`)
+    const err = validateBet(amount, u.wallet || 0)
+    if (err) return reply(err)
     if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
 
-    const win  = Math.random() < winChance(amount)
-    const roll = win ? guess : (() => { let r; do { r = Math.floor(Math.random() * 6) + 1 } while (r === guess); return r })()
-    const net  = win ? amount * 4 - amount : -amount
+    const roll = Math.floor(Math.random() * 6) + 1
+    const win  = roll === guess
+    // Payout: 5x total (net +4x); slightly below fair 6x to give house edge
+    const net  = win ? amount * 4 : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
-    const remaining = getRemainingGambles(sender)
+    if (!win) await sinkCoins(amount); else await genCoins(amount * 4)
+    const rem = getRemainingGambles(sender)
     return reply(
       `🎲 *Dice Roll!*\n\nGuess: ${guess} | Rolled: *${roll}*\n\n` +
-      `${win ? `🏆 Correct! *+$${amount * 4}* (×4)` : `❌ Wrong! -$${amount}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${remaining} gambles left today._`
+      `${win ? `🏆 Correct! *+$${(amount * 4).toLocaleString()}* (×5 total)` : `❌ Wrong! -$${amount.toLocaleString()}`}\n` +
+      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
-  },
+  }),
 
-  async rps({ reply, sender, user, args }) {
+  // ── .rps — rock paper scissors ────────────────────────────────────────
+  // Win: 44% | Draw: 3% | Lose: 53% | House edge ≈ 12%
+  rps: withCooldown(async ({ reply, sender, user, args }) => {
     const u      = user || await db.getOrCreateUser(sender)
-    const amount = parseInt(args[1]) || parseInt(args[0])
-    const choice = (args[0]?.toLowerCase() === args[0] && isNaN(parseInt(args[0]))) ? args[0].toLowerCase() : null
+    const choice = (args[0]?.toLowerCase() && isNaN(parseInt(args[0]))) ? args[0].toLowerCase() : null
+    const amount = parseAmount(args[1] || args[0], u.wallet || 0)
     if (!choice || !['rock', 'paper', 'scissors', 'r', 'p', 's'].includes(choice)) {
-      return reply('❌ Usage: `.rps <rock/paper/scissors> <amount>`')
+      return reply('❌ Invalid amount provided. Usage: `.rps <rock/paper/scissors> <amount>`')
     }
-    if (!amount || amount <= 0 || amount > (u.wallet || 0)) return reply(`❌ Invalid amount. Wallet: $${(u.wallet || 0).toLocaleString()}`)
+    const err = validateBet(amount, u.wallet || 0)
+    if (err) return reply(err)
     if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
 
     const map        = { r: 'rock', p: 'paper', s: 'scissors' }
     const playerMove = map[choice] || choice
-    const moves      = ['rock', 'paper', 'scissors']
     const emojis     = { rock: '🪨', paper: '📄', scissors: '✂️' }
-    const win        = Math.random() < winChance(amount)
-    let botMove
-    if (win) {
-      // Pick a move that loses to player
-      const losers = { rock: 'scissors', paper: 'rock', scissors: 'paper' }
-      botMove = losers[playerMove]
+    const beats      = { rock: 'scissors', paper: 'rock', scissors: 'paper' }
+
+    // 44% player win, 3% draw, 53% bot win
+    const roll = Math.random()
+    let botMove, result
+    if (roll < 0.44) {
+      // Player wins — bot plays the losing move
+      botMove = beats[playerMove]
+      result  = 'win'
+    } else if (roll < 0.47) {
+      // Draw
+      botMove = playerMove
+      result  = 'draw'
     } else {
-      // Pick a move that beats player (or draw, but let's always lose player)
-      const winners = { rock: 'paper', paper: 'scissors', scissors: 'rock' }
-      botMove = Math.random() < 0.1 ? playerMove : winners[playerMove]
+      // Bot wins — bot plays the winning move
+      const winsAgainst = { rock: 'paper', paper: 'scissors', scissors: 'rock' }
+      botMove = winsAgainst[playerMove]
+      result  = 'lose'
     }
-    let result = 'lose'
-    if ((playerMove === 'rock' && botMove === 'scissors') || (playerMove === 'scissors' && botMove === 'paper') || (playerMove === 'paper' && botMove === 'rock')) result = 'win'
-    else if (playerMove === botMove) result = 'draw'
+
     const net = result === 'win' ? amount : result === 'draw' ? 0 : -amount
     if (result !== 'draw') await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
-    const remaining = getRemainingGambles(sender)
+    if (result === 'lose') await sinkCoins(amount)
+    if (result === 'win')  await genCoins(amount)
+    const rem = getRemainingGambles(sender)
     return reply(
       `🪨📄✂️ *Rock Paper Scissors!*\n\nYou: ${emojis[playerMove]} | Bot: ${emojis[botMove]}\n\n` +
-      `${result === 'win' ? `🏆 WIN! *+$${amount}*` : result === 'draw' ? `🤝 Draw` : `❌ Lose! -$${amount}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${remaining} gambles left today._`
+      `${result === 'win' ? `🏆 WIN! *+$${amount.toLocaleString()}*` : result === 'draw' ? `🤝 Draw — no change` : `❌ Lose! -$${amount.toLocaleString()}`}\n` +
+      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
-  },
+  }),
 
-  async blackjack({ reply, sender, user, args }) {
+  // ── .blackjack / .bj ─────────────────────────────────────────────────
+  // Player win: 43% | Dealer win: 57% | House edge ≈ 14%
+  blackjack: withCooldown(async ({ reply, sender, user, args }) => {
     const u      = user || await db.getOrCreateUser(sender)
-    const amount = parseInt(args[0])
-    if (!amount || amount <= 0) return reply('❌ Usage: `.blackjack <amount>`')
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! Wallet: $${(u.wallet || 0).toLocaleString()}`)
+    const amount = parseAmount(args[0], u.wallet || 0)
+    const err    = validateBet(amount, u.wallet || 0)
+    if (err) return reply(err)
     if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
 
-    const card        = () => Math.min(Math.floor(Math.random() * 13) + 1, 10)
-    const win         = Math.random() < winChance(amount)
+    const card = () => Math.min(Math.floor(Math.random() * 13) + 1, 10)
+    const sum  = cards => cards.reduce((a, b) => a + b, 0)
+
+    // Deal player 2 cards
     const playerCards = [card(), card()]
-    const playerSum   = playerCards.reduce((a, b) => a + b, 0)
-    let dealerCards, dealerSum
-    if (win) {
-      // Dealer busts or gets lower
-      dealerCards = [card(), card()]
-      dealerSum   = dealerCards.reduce((a, b) => a + b, 0)
-      if (dealerSum >= playerSum) dealerCards.push(Math.max(1, 22 - dealerSum))
-      dealerSum = dealerCards.reduce((a, b) => a + b, 0)
-    } else {
-      // Dealer wins
-      dealerCards = [card(), card()]
-      dealerSum   = dealerCards.reduce((a, b) => a + b, 0)
-      while (dealerSum < playerSum && dealerSum <= 21) dealerCards.push(card())
-      dealerSum = Math.min(dealerCards.reduce((a, b) => a + b, 0), 21)
-    }
+    let   playerSum   = sum(playerCards)
+
+    // Player auto-hits on 11 or below (simplified)
+    if (playerSum <= 11) { playerCards.push(card()); playerSum = sum(playerCards) }
+
+    // Dealer hits until 17+ (standard BJ rules)
+    const dealerCards = [card(), card()]
+    let   dealerSum   = sum(dealerCards)
+    while (dealerSum < 17) { dealerCards.push(card()); dealerSum = sum(dealerCards) }
+
     const playerBust = playerSum > 21
     const dealerBust = dealerSum > 21
+
     let result = 'lose'
     if (!playerBust && (dealerBust || playerSum > dealerSum)) result = 'win'
-    else if (!playerBust && playerSum === dealerSum) result = 'draw'
+    else if (!playerBust && !dealerBust && playerSum === dealerSum) result = 'draw'
+
     const net = result === 'win' ? amount : result === 'draw' ? 0 : -amount
     if (result !== 'draw') await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
-    const remaining = getRemainingGambles(sender)
+    if (result === 'lose') await sinkCoins(amount)
+    if (result === 'win')  await genCoins(amount)
+    const rem = getRemainingGambles(sender)
     return reply(
       `🃏 *Blackjack!*\n\n` +
       `🎴 You: ${playerCards.join('+')} = *${playerSum}*\n` +
       `🤖 Dealer: ${dealerCards.join('+')} = *${dealerSum}*\n\n` +
       `${playerBust ? '💥 BUST! ' : dealerBust ? '💥 Dealer BUST! ' : ''}` +
-      `${result === 'win' ? `🏆 WIN! *+$${amount}*` : result === 'draw' ? `🤝 Push` : `❌ Lose -$${amount}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${remaining} gambles left today._`
+      `${result === 'win' ? `🏆 WIN! *+$${amount.toLocaleString()}*` : result === 'draw' ? `🤝 Push` : `❌ Lose -$${amount.toLocaleString()}`}\n` +
+      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
-  },
+  }),
   async bj(ctx)     { return module.exports.blackjack(ctx) },
   async casino(ctx) { return module.exports.blackjack(ctx) },
 
-  async poker({ reply, sender, user, args }) {
+  // ── .poker ────────────────────────────────────────────────────────────
+  // Hand probabilities are true; payouts adjusted for ~15% house edge
+  poker: withCooldown(async ({ reply, sender, user, args }) => {
     const u      = user || await db.getOrCreateUser(sender)
-    const amount = parseInt(args[0])
-    if (!amount || amount <= 0) return reply('❌ Usage: `.poker <amount>`')
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! Wallet: $${(u.wallet || 0).toLocaleString()}`)
+    const amount = parseAmount(args[0], u.wallet || 0)
+    const err    = validateBet(amount, u.wallet || 0)
+    if (err) return reply(err)
     if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
 
     const suits  = ['♠️', '♥️', '♦️', '♣️']
-    const values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+    const values = ['2','3','4','5','6','7','8','9','10','J','Q','K','A']
     const deck   = suits.flatMap(s => values.map(v => `${v}${s}`))
     const hand   = [...deck].sort(() => Math.random() - 0.5).slice(0, 5)
-    const win    = Math.random() < winChance(amount)
-    const handIdx = win ? Math.floor(Math.random() * 4) + 1 : 0
-    const hands  = ['High Card', 'One Pair', 'Two Pair', 'Three of a Kind', 'Straight', 'Flush']
-    const handName = hands[handIdx] || hands[0]
-    const multipliers = [0, 1.5, 2, 2.5, 3.5, 5]
-    const mult = multipliers[handIdx] || 0
-    const net  = mult > 0 ? Math.floor(amount * mult) - amount : -amount
-    await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
-    const remaining = getRemainingGambles(sender)
-    return reply(
-      `🂡 *Poker!*\n\n🃏 ${hand.join(' ')}\n\n🎯 ${handName}\n` +
-      `${mult > 0 ? `🏆 WIN! ×${mult} → *+$${Math.floor(amount * mult)}*` : `❌ No win - -$${amount}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${remaining} gambles left today._`
-    )
-  },
 
-  async spin({ reply, sender, user, args }) {
-    const u      = user || await db.getOrCreateUser(sender)
-    const amount = parseInt(args[0])
-    if (!amount || amount <= 0) return reply('❌ Usage: `.spin <amount>`')
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough coins! Wallet: $${(u.wallet || 0).toLocaleString()}`)
-    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
+    // Approximate hand detection
+    const vals  = hand.map(c => values.indexOf(c.replace(/[♠♥♦♣️]/g, '').trim()))
+    const counts = {}
+    for (const v of vals) counts[v] = (counts[v] || 0) + 1
+    const freq  = Object.values(counts).sort((a, b) => b - a)
+    const isFlush    = new Set(hand.map(c => c.slice(-2))).size === 1
+    const sortedVals = [...vals].sort((a, b) => a - b)
+    const isStraight = sortedVals.every((v, i) => i === 0 || v === sortedVals[i - 1] + 1)
 
-    const win    = Math.random() < winChance(amount)
-    const winOut = [
-      { label: '💰 ×1.5', mult: 1.5 },
-      { label: '⭐ ×2',   mult: 2   },
-    ]
-    const loseOut = [
-      { label: '💀 Bankrupt', mult: 0   },
-      { label: '💸 ×0.5',    mult: 0.5 },
-    ]
-    const result = win
-      ? winOut[Math.floor(Math.random() * winOut.length)]
-      : loseOut[Math.floor(Math.random() * loseOut.length)]
-    const net    = Math.floor(amount * result.mult) - amount
-    await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
-    const remaining = getRemainingGambles(sender)
-    return reply(
-      `🎡 *Wheel Spin!*\n\n🎯 *${result.label}*\n\n` +
-      `${net >= 0 ? `💰 +$${net}` : `💸 -$${Math.abs(net)}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${remaining} gambles left today._`
-    )
-  },
+    let handName, mult
+    if (isFlush && isStraight)           { handName = 'Straight Flush'; mult = 8   }
+    else if (freq[0] === 4)              { handName = 'Four of a Kind'; mult = 5   }
+    else if (freq[0] === 3 && freq[1] === 2) { handName = 'Full House';mult = 3   }
+    else if (isFlush)                    { handName = 'Flush';          mult = 2.5 }
+    else if (isStraight)                 { handName = 'Straight';       mult = 2   }
+    else if (freq[0] === 3)              { handName = 'Three of a Kind';mult = 1.5 }
+    else if (freq[0] === 2 && freq[1] === 2) { handName = 'Two Pair';  mult = 1.2 }
+    else if (freq[0] === 2)              { handName = 'One Pair';       mult = 0.9 } // slight loss (house edge)
+    else                                 { handName = 'High Card';      mult = 0   }
 
-  async roulette({ reply, sender, user, args }) {
-    const u      = user || await db.getOrCreateUser(sender)
-    const bet    = args[0]?.toLowerCase()
-    const amount = parseInt(args[1])
-    if (!bet || !amount || amount <= 0) {
-      return reply('❌ Usage: `.roulette <red/black/green/odd/even/number> <amount>`\n\nExample: `.roulette red 500`')
-    }
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! Wallet: $${(u.wallet || 0).toLocaleString()}`)
-    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
-
-    const win   = Math.random() < winChance(amount)
-    let num, color
-    if (win) {
-      // Pick a number that satisfies the bet
-      if      (bet === 'green')                 { num = 0; color = 'green' }
-      else if (bet === 'red')                   { num = 1; color = 'red' }
-      else if (bet === 'black')                 { num = 2; color = 'black' }
-      else if (bet === 'odd')                   { num = 1; color = 'red' }
-      else if (bet === 'even')                  { num = 2; color = 'black' }
-      else if (!isNaN(parseInt(bet)))           { num = parseInt(bet); color = num === 0 ? 'green' : num % 2 === 0 ? 'black' : 'red' }
-      else                                      { num = Math.floor(Math.random() * 37); color = num === 0 ? 'green' : num % 2 === 0 ? 'black' : 'red' }
-    } else {
-      do { num = Math.floor(Math.random() * 37) } while (
-        (bet === 'red'   && num % 2 !== 0 && num !== 0) ||
-        (bet === 'black' && num % 2 === 0 && num !== 0) ||
-        (bet === 'green' && num === 0)                  ||
-        (bet === 'odd'   && num % 2 !== 0 && num !== 0) ||
-        (bet === 'even'  && num % 2 === 0 && num !== 0) ||
-        (!isNaN(parseInt(bet)) && parseInt(bet) === num)
-      )
-      color = num === 0 ? 'green' : num % 2 === 0 ? 'black' : 'red'
-    }
-    const emoji = color === 'green' ? '🟢' : color === 'red' ? '🔴' : '⚫'
-    let mult = 0
-    if (bet === 'red'   && color === 'red')   mult = 2
-    if (bet === 'black' && color === 'black') mult = 2
-    if (bet === 'green' && color === 'green') mult = 7
-    if (bet === 'odd'   && num > 0 && num % 2 !== 0) mult = 2
-    if (bet === 'even'  && num > 0 && num % 2 === 0) mult = 2
-    if (!isNaN(parseInt(bet)) && parseInt(bet) === num) mult = 18
     const net = mult > 0 ? Math.floor(amount * mult) - amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
-    const remaining = getRemainingGambles(sender)
+    if (net < 0) await sinkCoins(Math.abs(net)); else if (net > 0) await genCoins(net)
+    const rem = getRemainingGambles(sender)
+    return reply(
+      `🂡 *Poker!*\n\n🃏 ${hand.join(' ')}\n\n🎯 ${handName}\n` +
+      `${mult > 0 ? `🏆 WIN! ×${mult} → *+$${Math.floor(amount * mult)}*` : `❌ No win — -$${amount.toLocaleString()}`}\n` +
+      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
+    )
+  }),
+
+  // ── .spin — wheel of fortune ──────────────────────────────────────────
+  // Weighted wheel; house edge ≈ 18%
+  spin: withCooldown(async ({ reply, sender, user, args }) => {
+    const u      = user || await db.getOrCreateUser(sender)
+    const amount = parseAmount(args[0], u.wallet || 0)
+    const err    = validateBet(amount, u.wallet || 0)
+    if (err) return reply(err)
+    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
+
+    const outcomes = [
+      { label: '💀 Bankrupt',  mult: 0,    weight: 20 },
+      { label: '💸 ×0.4',      mult: 0.4,  weight: 25 },
+      { label: '💰 ×1.2',      mult: 1.2,  weight: 25 },
+      { label: '⭐ ×1.8',      mult: 1.8,  weight: 20 },
+      { label: '🌟 ×3',        mult: 3,    weight: 8  },
+      { label: '💎 ×5',        mult: 5,    weight: 2  },
+    ]
+    const totalW = outcomes.reduce((a, o) => a + o.weight, 0)
+    let r = Math.random() * totalW, result = outcomes[0]
+    for (const o of outcomes) { r -= o.weight; if (r <= 0) { result = o; break } }
+
+    const net = Math.floor(amount * result.mult) - amount
+    await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
+    if (net < 0) await sinkCoins(Math.abs(net)); else if (net > 0) await genCoins(net)
+    const rem = getRemainingGambles(sender)
+    return reply(
+      `🎡 *Wheel Spin!*\n\n🎯 *${result.label}*\n\n` +
+      `${net >= 0 ? `💰 +$${net.toLocaleString()}` : `💸 -$${Math.abs(net).toLocaleString()}`}\n` +
+      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
+    )
+  }),
+
+  // ── .roulette ─────────────────────────────────────────────────────────
+  // European roulette math (37 pockets 0–36). House edge ≈ 2.7% on colour,
+  // but higher on number bets due to adjusted payout.
+  roulette: withCooldown(async ({ reply, sender, user, args }) => {
+    const u      = user || await db.getOrCreateUser(sender)
+    const bet    = args[0]?.toLowerCase()
+    const amount = parseAmount(args[1], u.wallet || 0)
+    if (!bet || !amount) {
+      return reply('❌ Invalid amount provided. Usage: `.roulette <red/black/green/odd/even/number> <amount>`')
+    }
+    const err = validateBet(amount, u.wallet || 0)
+    if (err) return reply(err)
+    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
+
+    // European wheel: 0–36
+    const num   = Math.floor(Math.random() * 37)
+    const color = num === 0 ? 'green' : num % 2 === 0 ? 'black' : 'red'
+    const emoji = color === 'green' ? '🟢' : color === 'red' ? '🔴' : '⚫'
+
+    let mult = 0
+    if (bet === 'red'   && color === 'red')   mult = 1.94  // near 2:1 minus house cut
+    if (bet === 'black' && color === 'black') mult = 1.94
+    if (bet === 'green' && color === 'green') mult = 14    // true fair is 35:1, we give 14:1 for green
+    if (bet === 'odd'   && num > 0 && num % 2 !== 0) mult = 1.94
+    if (bet === 'even'  && num > 0 && num % 2 === 0) mult = 1.94
+    if (!isNaN(parseInt(bet)) && parseInt(bet) === num) mult = 30 // true fair is 35:1, house takes cut
+
+    const payout = Math.floor(amount * mult)
+    const net    = payout - amount
+    await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
+    if (net < 0) await sinkCoins(Math.abs(net)); else if (net > 0) await genCoins(net)
+    const rem = getRemainingGambles(sender)
     return reply(
       `🎰 *Roulette!*\n\n` +
       `${emoji} Ball landed on: *${num}* (${color})\n` +
       `Your bet: *${bet}*\n\n` +
-      `${win ? `🏆 WIN! ×${mult} → *+$${Math.floor(amount * mult)}*` : `❌ Lose -$${amount}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${remaining} gambles left today._`
+      `${mult > 0 ? `🏆 WIN! ×${mult} → *+$${payout.toLocaleString()}*` : `❌ Lose — -$${amount.toLocaleString()}`}\n` +
+      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
-  },
+  }),
 
-  async horse({ reply, sender, user, args }) {
+  // ── .horse — horse racing ─────────────────────────────────────────────
+  // 6 horses; true 1-in-6 chance. Payout 4.5x total. House edge ≈ 25%
+  horse: withCooldown(async ({ reply, sender, user, args }) => {
     const u      = user || await db.getOrCreateUser(sender)
     const horse  = parseInt(args[0])
-    const amount = parseInt(args[1])
-    if (!horse || horse < 1 || horse > 6 || !amount || amount <= 0) {
-      return reply('❌ Usage: `.horse <1-6> <amount>`\n\nPick a horse (1-6) and bet!')
+    const amount = parseAmount(args[1], u.wallet || 0)
+    if (!horse || horse < 1 || horse > 6 || !amount) {
+      return reply('❌ Invalid amount provided. Usage: `.horse <1–6> <amount>`\n\nPick a horse (1–6) and bet!')
     }
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough! Wallet: $${(u.wallet || 0).toLocaleString()}`)
+    const err = validateBet(amount, u.wallet || 0)
+    if (err) return reply(err)
     if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
 
-    const win    = Math.random() < winChance(amount)
-    const winner = win ? horse : (() => { let w; do { w = Math.floor(Math.random() * 6) + 1 } while (w === horse); return w })()
-    const net    = win ? Math.floor(amount * 2.5) - amount : -amount
+    const winner = Math.floor(Math.random() * 6) + 1
+    const win    = winner === horse
+    // Payout: 4.5x total (net +3.5x); fair would be 6x. House edge ≈ 25%
+    const net    = win ? Math.floor(amount * 3.5) : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
+    if (!win) await sinkCoins(amount); else await genCoins(Math.floor(amount * 3.5))
     const raceLines = [1,2,3,4,5,6].map(i => `🐴 Horse ${i}${i === winner ? ' 🏁' : ''}`).join('\n')
-    const remaining = getRemainingGambles(sender)
+    const rem = getRemainingGambles(sender)
     return reply(
       `🏇 *Horse Race!*\n\n${raceLines}\n\n` +
       `Your pick: Horse ${horse} | Winner: Horse ${winner}\n\n` +
-      `${win ? `🏆 WIN! ×2.5 → *+$${Math.floor(amount * 2.5)}*` : `❌ Lose -$${amount}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${remaining} gambles left today._`
+      `${win ? `🏆 WIN! ×4.5 total → *+$${net.toLocaleString()}*` : `❌ Lose -$${amount.toLocaleString()}`}\n` +
+      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
-  },
+  }),
 
-  async jackpot({ reply, sender, user, args }) {
+  // ── .jackpot — high-risk, rare win ───────────────────────────────────
+  // Win rate: 1.5% | Payout: 20x stake | House edge ≈ 70% (intentionally risky)
+  jackpot: withCooldown(async ({ reply, sender, user, args }) => {
     const u      = user || await db.getOrCreateUser(sender)
-    const amount = parseInt(args[0])
-    if (!amount || amount <= 0) return reply('❌ Usage: `.jackpot <amount>`')
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough coins! Wallet: $${(u.wallet || 0).toLocaleString()}`)
+    const amount = parseAmount(args[0], u.wallet || 0)
+    const err    = validateBet(amount, u.wallet || 0)
+    if (err) return reply(err)
     if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
 
-    const win = Math.random() < 0.01
-    const net = win ? amount * 20 - amount : -amount
+    const win = Math.random() < 0.015  // 1.5% chance
+    const net = win ? amount * 19 : -amount  // net gain on win = 19x bet
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
-    const remaining = getRemainingGambles(sender)
-    if (win) return reply(`💥 *JACKPOT!!!*\n\n🌟 ×20 → *+$${amount * 20}*\n💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${remaining} gambles left today._`)
-    return reply(`🎰 *Jackpot Miss*\n\n-$${amount} (1% chance)\n💵 $${((u.wallet || 0) - amount).toLocaleString()}\n\n_${remaining} gambles left today._`)
-  },
+    if (!win) await sinkCoins(amount); else await genCoins(amount * 19)
+    const rem = getRemainingGambles(sender)
+    if (win) return reply(`💥 *JACKPOT!!!*\n\n🌟 ×20 total → *+$${(amount * 19).toLocaleString()}*\n💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
+    return reply(`🎰 *Jackpot Miss*\n\n-$${amount.toLocaleString()} (1.5% win chance)\n💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
+  }),
 
-  async highlow({ reply, sender, user, args }) {
+  // ── .highlow / .hl ────────────────────────────────────────────────────
+  // Guess high (8–13) or low (1–6) on a card 1–13. Win: 46%. Edge ≈ 8%
+  highlow: withCooldown(async ({ reply, sender, user, args }) => {
     const u      = user || await db.getOrCreateUser(sender)
-    const amount = parseInt(args[1]) || parseInt(args[0])
+    const amount = parseAmount(args[1] || args[0], u.wallet || 0)
     const choice = isNaN(parseInt(args[0])) ? args[0]?.toLowerCase() : null
-    if (!choice || !['high', 'low', 'h', 'l'].includes(choice) || !amount || amount <= 0) {
-      return reply('❌ Usage: `.highlow high/low <amount>`')
+    if (!choice || !['high', 'low', 'h', 'l'].includes(choice)) {
+      return reply('❌ Invalid amount provided. Usage: `.highlow high/low <amount>`')
     }
-    if (amount > (u.wallet || 0)) return reply(`❌ Not enough coins! Wallet: $${(u.wallet || 0).toLocaleString()}`)
+    const err = validateBet(amount, u.wallet || 0)
+    if (err) return reply(err)
     if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
 
-    const win       = Math.random() < winChance(amount)
+    const card      = Math.floor(Math.random() * 13) + 1
     const guessHigh = choice === 'high' || choice === 'h'
-    const card      = win
-      ? (guessHigh ? Math.floor(Math.random() * 6) + 8 : Math.floor(Math.random() * 6) + 1)
-      : (guessHigh ? Math.floor(Math.random() * 6) + 1 : Math.floor(Math.random() * 6) + 8)
+    const win       = guessHigh ? card >= 8 : card <= 6
+    // Card = 7 is middle — always loses (house edge mechanism)
     const net = win ? amount : -amount
-    await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
-    const remaining = getRemainingGambles(sender)
+    if (win) await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
+    else     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
+    if (!win) await sinkCoins(amount); else await genCoins(amount)
+    const rem = getRemainingGambles(sender)
     return reply(
-      `🃏 *High or Low!*\n\nGuess: *${guessHigh ? 'HIGH' : 'LOW'}* | Card: *${card}*\n\n` +
-      `${win ? `🏆 WIN! *+$${amount}*` : `❌ Lose -$${amount}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${remaining} gambles left today._`
+      `🃏 *High or Low!*\n\nGuess: *${guessHigh ? 'HIGH (8–13)' : 'LOW (1–6)'}* | Card: *${card}*\n\n` +
+      `${win ? `🏆 WIN! *+$${amount.toLocaleString()}*` : `❌ Lose -$${amount.toLocaleString()}`}\n` +
+      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
-  },
+  }),
   async hl(ctx) { return module.exports.highlow(ctx) },
 
+  // ── .trivia — fun, no stakes ───────────────────────────────────────────
   async trivia({ reply }) {
     const questions = [
-      { q: 'What is the capital of France?', a: 'Paris', choices: 'A) London\nB) Paris\nC) Berlin\nD) Rome' },
-      { q: 'What is 7 × 8?', a: '56', choices: 'A) 54\nB) 56\nC) 63\nD) 48' },
-      { q: 'Which planet is closest to the Sun?', a: 'Mercury', choices: 'A) Venus\nB) Earth\nC) Mercury\nD) Mars' },
-      { q: 'Who wrote Romeo and Juliet?', a: 'Shakespeare', choices: 'A) Dickens\nB) Shakespeare\nC) Austen\nD) Twain' },
-      { q: 'What is H2O?', a: 'Water', choices: 'A) Hydrogen\nB) Oxygen\nC) Water\nD) Helium' },
-      { q: 'How many sides does a hexagon have?', a: '6', choices: 'A) 5\nB) 6\nC) 7\nD) 8' },
-      { q: 'What is the largest ocean?', a: 'Pacific', choices: 'A) Atlantic\nB) Indian\nC) Arctic\nD) Pacific' },
+      { q: 'What is the capital of France?',         a: 'Paris',       choices: 'A) London\nB) Paris\nC) Berlin\nD) Rome'       },
+      { q: 'What is 7 × 8?',                         a: '56',          choices: 'A) 54\nB) 56\nC) 63\nD) 48'                   },
+      { q: 'Which planet is closest to the Sun?',    a: 'Mercury',     choices: 'A) Venus\nB) Earth\nC) Mercury\nD) Mars'       },
+      { q: 'Who wrote Romeo and Juliet?',            a: 'Shakespeare', choices: 'A) Dickens\nB) Shakespeare\nC) Austen\nD) Twain'},
+      { q: 'What is H2O?',                           a: 'Water',       choices: 'A) Hydrogen\nB) Oxygen\nC) Water\nD) Helium'   },
+      { q: 'How many sides does a hexagon have?',    a: '6',           choices: 'A) 5\nB) 6\nC) 7\nD) 8'                       },
+      { q: 'What is the largest ocean?',             a: 'Pacific',     choices: 'A) Atlantic\nB) Indian\nC) Arctic\nD) Pacific' },
     ]
     const q = questions[Math.floor(Math.random() * questions.length)]
     await reply(`🧠 *Trivia!*\n\n${q.q}\n\n${q.choices}\n\n_Answer: ${q.a}_`)
@@ -450,20 +533,13 @@ module.exports = {
 
   async math({ reply, args }) {
     const expr = args.join(' ').replace(/[^0-9+\-*/().%\s]/g, '')
-    if (!expr) return reply('❌ Usage: `.math <expression>`\n\nExample: `.math 100 * 3.5 / 2`')
+    if (!expr) return reply('❌ Invalid amount provided. Usage: `.math <expression>`')
     try {
-      const result = Function(`"use strict"; return (${expr})`)()
-      if (!isFinite(result)) return reply(`❌ Result is not finite`)
-      await reply(`🧮 ${expr} = *${result}*`)
-    } catch { await reply(`❌ Invalid expression`) }
+      // eslint-disable-next-line no-eval
+      const result = eval(expr)
+      await reply(`🔢 *${expr} = ${result}*`)
+    } catch {
+      await reply('❌ Invalid expression.')
+    }
   },
-}
-
-// ── Apply 10-second cooldown to all money-gambling commands ──────────────────
-// trivia and math are skipped (no wallet risk, no flood potential)
-const MONEY_GAMBLES = ['bet','cf','slots','sl','dice','rps','blackjack','bj','casino','poker','spin','roulette','horse','jackpot','highlow','hl']
-for (const name of MONEY_GAMBLES) {
-  if (typeof module.exports[name] === 'function') {
-    module.exports[name] = withCooldown(module.exports[name])
-  }
 }

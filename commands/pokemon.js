@@ -369,16 +369,21 @@ module.exports = {
       const mins = Math.floor((cd % 3600000) / 60000)
       return reply(`⏳ *POKÉMON DAILY ALREADY CLAIMED*\n\n⏰ Come back in *${hrs}h ${mins}m*\n\n_The Pokémon world refreshes each day._ 🖤`)
     }
-    const coins = randInt(3, 8)
-    const balls = randInt(2, 5)
-    await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
+    // pdaily: modest daily for Pokémon players — Pokéballs are the main reward
+    const coins = randInt(20, 50)   // was 3–8 (too stingy)
+    const balls = randInt(3, 7)     // 3–7 Poké Balls per day
+    const streak = (u.streak || 0) + 1
+    // Bonus balls on streak milestones
+    const bonusBalls = streak % 7 === 0 ? 3 : 0  // +3 on every 7-day streak
+    await db.updateUser(sender, { wallet: (u.wallet || 0) + coins, streak })
+    await db.trackCurrencyGenerated(coins).catch(() => {})
     await db.setCooldown(sender, 'pdaily', CD_PDAILY)
     await reply(
       `🎁 *POKÉMON DAILY REWARDS*\n\n` +
       `👤 *Trainer:* ${u.name || sender}\n\n` +
       `💰 *+${coins} coins* added to wallet\n` +
-      `🔴 *+${balls} Poké Balls* added to bag\n\n` +
-      `🔥 *Streak:* ${(u.streak || 0) + 1} days\n\n` +
+      `🔴 *+${balls + bonusBalls} Poké Balls* added to bag${bonusBalls > 0 ? ` (includes +${bonusBalls} streak bonus!)` : ''}\n\n` +
+      `🔥 *Streak:* ${streak} days\n\n` +
       `⏳ Come back in *24 hours*\n\n` +
       `_Keep training, Trainer!_ 🖤`
     )
@@ -531,19 +536,49 @@ module.exports = {
 
     battleLog.push(`✅ *${poke.name}* was caught!`)
 
-    const xpGained = Math.floor(Math.random() * 56) + 210  // 210–265
-    const newXp    = (u.xp || 0) + xpGained
-    const oldLvl   = u.level || 1
-    const xpNeeded = oldLvl * 5000   // very hard — 5000 XP per user level
-    const levelUp  = newXp >= xpNeeded
-    const newLvl   = levelUp ? oldLvl + 1 : oldLvl
-
-    await db.updateUser(sender, { xp: levelUp ? newXp - xpNeeded : newXp, level: newLvl })
+    // ── Player XP: minimal (1–3 XP) — catching does NOT level up the trainer quickly ──
+    // Full XP progression happens through .work, .fish, .daily, etc.
+    const trainerXpGain = Math.floor(Math.random() * 3) + 1  // 1–3 XP
+    const oldLvl        = u.level || 1
+    const trainerXpNeeded = oldLvl * 300  // matches economy.js xpForLevel formula
+    const newTrainerXp  = (u.xp || 0) + trainerXpGain
+    const levelUp       = newTrainerXp >= trainerXpNeeded
+    const newLvl        = levelUp ? oldLvl + 1 : oldLvl
+    await db.updateUser(sender, {
+      xp:    levelUp ? newTrainerXp - trainerXpNeeded : newTrainerXp,
+      level: newLvl,
+    })
 
     const currentParty = await db.getUserPokemon(sender).catch(() => [])
     const partyCount   = (currentParty || []).filter(p => p.in_party).length
     const partyFull    = partyCount >= 6
     const inParty      = !partyFull
+
+    // ── Pokémon XP: award to the lead/buddy party Pokémon (slot 1) ──
+    // This keeps Pokémon XP progression separate from player XP.
+    // Pokémon XP scales with the caught Pokémon's rarity.
+    let buddyPokeXpLine = ''
+    const buddy = currentParty.find(p => p.in_party)
+    if (buddy) {
+      const pokeXpByRarity = {
+        legendary: Math.floor(Math.random() * 241) + 240,  // 240–480
+        epic:      Math.floor(Math.random() * 121) + 120,  // 120–240
+        rare:      Math.floor(Math.random() * 61)  + 60,   // 60–120
+        common:    Math.floor(Math.random() * 31)  + 30,   // 30–60
+      }
+      const pokeXpGain   = pokeXpByRarity[rarity] || pokeXpByRarity.common
+      const buddyNewXp   = (buddy.xp || 0) + pokeXpGain
+      const POKE_LVL_XP  = (buddy.level || 1) * 100   // 100 XP per current level to level up
+      const pokeLevelUp  = buddyNewXp >= POKE_LVL_XP
+      const newPokeLevel = pokeLevelUp ? (buddy.level || 1) + 1 : (buddy.level || 1)
+      await db.updatePokemon(buddy._id, {
+        xp:    pokeLevelUp ? buddyNewXp - POKE_LVL_XP : buddyNewXp,
+        level: newPokeLevel,
+      }).catch(() => {})
+      console.log(`[pokemon] catch XP: ${buddy.name} +${pokeXpGain}XP (rarity=${rarity})`)
+      buddyPokeXpLine = `\n⭐ *${buddy.name}* gained *+${pokeXpGain} XP*!` +
+        (pokeLevelUp ? ` (Lv.${buddy.level || 1} → ${newPokeLevel} 🎊)` : '')
+    }
 
     try {
       await db.addPokemon(sender, {
@@ -563,8 +598,8 @@ module.exports = {
       `⚡ *Type:* ${poke.types.join(' / ')}\n` +
       `🎯 *Ball Used:* ${ballData.emoji} ${ballData.name}\n` +
       (inParty ? `📍 *Party Slot:* #${slot}\n` : `📦 *Sent to PC* (party full 6/6)\n`) + '\n' +
-      `⭐ *+${xpGained} XP gained!*\n` +
-      (levelUp ? `\n🆙 *LEVEL UP!* ${oldLvl} → ${newLvl} 🎊\n` : '') +
+      buddyPokeXpLine +
+      (levelUp ? `\n🆙 *TRAINER LEVEL UP!* ${oldLvl} → ${newLvl} 🎊\n` : '') +
       `\n_Konosuba grows stronger._ 🖤`
 
     if (poke.imageUrl) {
@@ -705,19 +740,87 @@ module.exports = {
 
   // ── #dex ──────────────────────────────────────────────────────
   async dex({ sock, jid, msg, reply, args }) {
+    const NATURES = [
+      'Hardy','Lonely','Brave','Adamant','Naughty',
+      'Bold','Docile','Relaxed','Impish','Lax',
+      'Timid','Hasty','Serious','Jolly','Naive',
+      'Modest','Mild','Quiet','Bashful','Rash',
+      'Calm','Gentle','Sassy','Careful','Quirky',
+    ]
+
     const query = args[0]?.toLowerCase()
     if (!query) return reply(`📘 *POKÉDEX*\n\nUsage: *#dex <name or id>*`)
-    await sock.sendMessage(jid, { text: `🔍 Searching Pokédex for *${query}*...` }, { quoted: msg })
+
+    await sock.sendMessage(jid, { text: `🔍 *Searching Pokédex for* *${query}*...` }, { quoted: msg })
+
     const data = await fetchPokeData(query).catch(() => null)
     if (!data) return reply(`❌ *${query}* not found in the Pokédex.`)
-    const caption = buildDexCaption(data)
-    if (data.imageUrl) {
-      try {
-        await sock.sendMessage(jid, { image: { url: data.imageUrl }, caption }, { quoted: msg })
-        return
-      } catch {}
+
+    // ── Species-stable nature & level (seeded by pokemon_id for consistency) ──
+    const nature    = NATURES[data.id % NATURES.length]
+    const wildLevel = 5 + (data.id % 56)          // deterministic wild level 5–60
+    const ability   = data.abilities?.[0] || 'Unknown'
+    const typeStr   = (data.types || []).join(' / ')
+
+    // ── Fetch owners who have caught this species ──────────────────────────
+    const owners   = await db.getPokemonOwnersBySpeciesId(data.id, 5).catch(() => [])
+    const ownerJids = owners.map(o => `${o.phone}@s.whatsapp.net`)
+
+    let ownersBlock
+    if (!owners.length) {
+      ownersBlock = `*👥 Owners:* None yet`
+    } else {
+      const lines = owners.map((o, i) => {
+        const isLast  = i === owners.length - 1
+        const prefix  = isLast ? '   └' : '   ├'
+        const display = o.name && o.name !== o.phone && !/^\d{6,}$/.test(o.name)
+          ? o.name
+          : `@${o.phone}`
+        return `${prefix} 👤 ${display}`
+      })
+      ownersBlock = `*👥 Owners:*\n${lines.join('\n')}`
     }
-    await sock.sendMessage(jid, { text: caption }, { quoted: msg })
+
+    // ── Build caption (user's exact template) ──────────────────────────────
+    const caption =
+      `📘 *Pokémon Info* 📘\n\n` +
+      `*🧧 Name:* ${data.name}\n` +
+      `*⚡ Type:* ${typeStr}\n` +
+      `*⭐ Level:* ${wildLevel}\n` +
+      `*❤️ HP:* ${data.hp}\n` +
+      `*✨ Nature:* ${nature}\n` +
+      `*🎯 Ability:* ${ability}\n\n` +
+      ownersBlock
+
+    // ── Download image as buffer for full-quality (upscaled) send ──────────
+    let imgBuf = null
+    if (data.imageUrl) {
+      // Prefer official artwork (up to 475×475 PNG — highest quality available)
+      imgBuf = await downloadBuffer(data.imageUrl, 18000).catch(() => null)
+    }
+
+    if (imgBuf) {
+      await sock.sendMessage(jid, {
+        image:    imgBuf,
+        caption,
+        mimetype: 'image/png',
+        mentions: ownerJids,
+      }, { quoted: msg })
+    } else {
+      // Fallback: send via URL (no buffer download available)
+      if (data.imageUrl) {
+        try {
+          await sock.sendMessage(jid, {
+            image:    { url: data.imageUrl },
+            caption,
+            mentions: ownerJids,
+          }, { quoted: msg })
+          return
+        } catch {}
+      }
+      // Final fallback: text only
+      await sock.sendMessage(jid, { text: caption, mentions: ownerJids }, { quoted: msg })
+    }
   },
 
   // ── #heal ─────────────────────────────────────────────────────

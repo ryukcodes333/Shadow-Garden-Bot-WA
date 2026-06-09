@@ -22,6 +22,27 @@ const TIER_PRICES  = { T1: 17500, T2: 27500, T3: 37500, T4: 50000, T5: 62500, T6
 const TIERS        = { T1: '🥉', T2: '🔵', T3: '🟢', T4: '🔴', T5: '🟣', T6: '🟡', TS: '✨', TZ: '🌌', C: '⚪', R: '🔵', SR: '🟣', SSR: '🟡', UR: '🔴' }
 const SPAWN_TIERS  = ['T1','T1','T1','T1','T2','T2','T2','T3','T3','T4','T4','T5','T6','TS']
 const pendingCards = {}
+const pendingGives = {}  // key: senderPhone, value: { toPhone, toJid, cardIndex, uc, expiresAt }
+
+// ── Weighted auto-spawn tier picker ───────────────────────────────────────
+// T1/T2/T3 are common; T4/T5/T6/TS are increasingly scarce.
+// Weights calibrated so T4≈7/month, T5≈2/month, T6≈1/month, TS≈1/2months
+// at the 7-spawns-per-day cap.
+const AUTO_SPAWN_WEIGHTS = [
+  { tier: 'T1', w: 5000 },
+  { tier: 'T2', w: 3000 },
+  { tier: 'T3', w: 1500 },
+  { tier: 'T4', w: 340  },
+  { tier: 'T5', w: 100  },
+  { tier: 'T6', w: 50   },
+  { tier: 'TS', w: 10   },
+]
+const TOTAL_WEIGHT = AUTO_SPAWN_WEIGHTS.reduce((s, e) => s + e.w, 0)
+function pickAutoSpawnTier() {
+  let r = Math.random() * TOTAL_WEIGHT
+  for (const e of AUTO_SPAWN_WEIGHTS) { r -= e.w; if (r <= 0) return e.tier }
+  return 'T1'
+}
 
 // Shoob numeric tier → label
 const LOCAL_TO_LABEL = { '1':'T1','2':'T2','3':'T3','4':'T4','5':'T5','6':'T6','S':'TS','Z':'TZ' }
@@ -474,11 +495,25 @@ module.exports = {
     if (cardIdArg && pending.card.id !== cardIdArg) return reply(`❌ Wrong card ID! Current card is \`${pending.card.id}\``)
     await react('⏳')
     const { card } = pending
+
+    // ── Coin cost check (price = tier price) ───────────────────────────────
+    const price = TIER_PRICES[card.tier] || 0
+    if (price > 0) {
+      const u = await db.getOrCreateUser(sender)
+      if ((u.wallet || 0) < price) {
+        return reply(
+          `❌ *Not enough coins!*\n\n` +
+          `*${card.name}* [${card.tier}] costs *$${price.toLocaleString()}* to claim.\n` +
+          `Your wallet: *$${(u.wallet || 0).toLocaleString()}*`
+        )
+      }
+      await db.updateUser(sender, { wallet: (u.wallet || 0) - price })
+      await db.trackCurrencyRemoved(price)
+    }
+
     delete pendingCards[jid]
 
     // ── Resolve LID to real phone before storing ownership ──────────────────
-    // If index.js LID resolution failed, senderJid is still @lid.
-    // Try harder here using getLidFromJid so we always store a real phone number.
     let realPhone = sender
     if (senderJid?.endsWith('@lid') && isGroup) {
       try {
@@ -494,9 +529,10 @@ module.exports = {
     if (!localCard) return reply('❌ Failed to save card.')
     await db.addUserCard(realPhone, localCard._id)
     await reply(
-      `🎊 Congratulations! You have successfully claimed this card\n\n` +
+      `🎊 *Card Claimed!*\n\n` +
       `*🎴 Name:* ${card.name}\n` +
-      `*⭐ Tier:* ${card.tier}`
+      `*⭐ Tier:* ${card.tier}\n` +
+      (price > 0 ? `*💰 Paid:* $${price.toLocaleString()}` : '')
     )
   },
 
@@ -991,5 +1027,124 @@ module.exports = {
     } catch (err) {
       await reply(`❌ Failed to upload card: ${err.message}`)
     }
+  },
+
+  // ─── .cardspawn on/off — enable/disable auto card spawns for this group ──
+  async cardspawn({ reply, args, jid, isGroup, isOwner, isMod, isGuardian }) {
+    if (!isOwner && !isMod && !isGuardian) return reply('⚠️ Only staff can toggle card spawning.')
+    if (!isGroup) return reply('❌ This command only works in group chats.')
+    const toggle = (args[0] || '').toLowerCase()
+    if (toggle !== 'on' && toggle !== 'off') return reply('⚠️ Usage: *.cardspawn on* or *.cardspawn off*')
+    const enabled = toggle === 'on'
+    await db.setGroupCardSpawn(jid, enabled)
+    if (enabled) {
+      await reply(
+        `✅ *Card Auto-Spawn ENABLED* for this group!\n\n` +
+        `📋 *Rules:*\n` +
+        `• Max *7 spawns* per day\n` +
+        `• Spawn times are *completely random* (30min – 5h apart)\n` +
+        `• Claim with *.get <card id>* — costs the card's full tier price\n` +
+        `• Cards expire after *2 minutes* if unclaimed\n\n` +
+        `🎲 *Rarity:* T1 common → TS extremely rare (once in ~2 months)`
+      )
+    } else {
+      await reply(`🛑 *Card Auto-Spawn DISABLED* for this group.`)
+    }
+  },
+
+  // ─── Auto-spawn engine — called on every group message ───────────────────
+  // db.tickCardSpawn returns true when a spawn window has opened.
+  async checkAutoSpawn(sock, jid) {
+    try {
+      const shouldSpawn = await db.tickCardSpawn(jid)
+      if (!shouldSpawn) return
+      const tier = pickAutoSpawnTier()
+      let card = getRandomCardByTier(tier)
+      if (!card) card = getRandomCardByTier('T1')
+      if (!card) return
+      const owners  = await db.getCardOwners(card._rawUrl || card.imageUrl).catch(() => [])
+      const price   = TIER_PRICES[card.tier] || 0
+      const caption =
+        `✨ *A card has appeared!*\n\n` +
+        `*🎴 Name:* ${card.name}\n` +
+        `*⭐ Tier:* ${card.tier}\n` +
+        `*📚 Series:* ${card.series}\n` +
+        `*💰 Price:* $${price.toLocaleString()}\n` +
+        `*🆔 Card ID:* ${card.id}\n` +
+        `*#️⃣ Issues:* #${owners.length}\n\n` +
+        `> Use *.get \`${card.id}\`* to claim! (expires in 2 min)`
+      pendingCards[jid] = { card, expiresAt: Date.now() + 120000 }
+      setTimeout(() => { if (pendingCards[jid]?.card?.id === card.id) delete pendingCards[jid] }, 120000)
+      const sent = await sendCardMedia(sock, jid, null, card.imageUrl, caption)
+      if (!sent) await sock.sendMessage(jid, { text: caption })
+    } catch {}
+  },
+
+  // ─── .cg <index> — give a card to another user ───────────────────────────
+  async cg({ sock, jid, msg, reply, sender, senderJid, args }) {
+    const index = parseInt(args[0])
+    if (!index || index < 1) return reply('⚠️ Usage: *.cg <card number>* (quote or @mention target)')
+
+    // Resolve target from @mention or quoted message
+    const mentioned        = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    const quotedParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant
+    let toJid, toPhone
+    if (mentioned.length) {
+      toJid   = mentioned[0]
+      toPhone = toJid.split('@')[0].split(':')[0]
+    } else if (quotedParticipant) {
+      toJid   = quotedParticipant
+      toPhone = quotedParticipant.split('@')[0].split(':')[0]
+    } else {
+      return reply('❌ Please *@tag* or *quote a message* from the person you want to give the card to.')
+    }
+    if (toPhone === sender) return reply('❌ You cannot give a card to yourself.')
+
+    const cards = await db.getUserCards(sender)
+    if (!cards.length) return reply('📭 Your collection is empty.')
+    if (index > cards.length) return reply(`❌ You only have *${cards.length}* card(s). Use *.coll* to see them.`)
+
+    const uc       = cards[index - 1]
+    const cardData = uc.card_id || uc
+    const name     = cardData?.name || 'Unknown'
+    const tier     = cardData?.tier || '?'
+    const series   = cardData?.series || ''
+
+    // Store pending give (expires in 60s)
+    pendingGives[sender] = { toPhone, toJid, cardIndex: index - 1, ucId: uc._id || uc.id, expiresAt: Date.now() + 60000 }
+    setTimeout(() => { if (pendingGives[sender]) delete pendingGives[sender] }, 60000)
+
+    await sock.sendMessage(jid, {
+      text:
+        `🎁 *Card Give — Confirmation*\n\n` +
+        `*🎴 Card:* ${name}\n` +
+        `*⭐ Tier:* ${tier}\n` +
+        `*📚 Series:* ${series || '—'}\n` +
+        `*📤 To:* @${toPhone}\n\n` +
+        `Reply *.cgconfirm* to send, or *.cgcancel* to abort.\n` +
+        `_(expires in 60 seconds)_`,
+      mentions: [toJid],
+    }, { quoted: msg })
+  },
+
+  // ─── .cgconfirm — execute the pending card give ──────────────────────────
+  async cgconfirm({ reply, sender }) {
+    const p = pendingGives[sender]
+    if (!p || Date.now() > p.expiresAt) return reply('❌ No pending card give, or it expired. Use *.cg* again.')
+    delete pendingGives[sender]
+    try {
+      await db.deleteUserCardById(p.ucId)
+      await db.addUserCard(p.toPhone, p.ucId)
+      await reply(`✅ *Card given to @${p.toPhone} successfully!*`)
+    } catch (err) {
+      await reply(`❌ Failed to transfer card: ${err.message}`)
+    }
+  },
+
+  // ─── .cgcancel — cancel a pending card give ──────────────────────────────
+  async cgcancel({ reply, sender }) {
+    if (!pendingGives[sender]) return reply('❌ No pending card give to cancel.')
+    delete pendingGives[sender]
+    await reply('✅ Card give cancelled.')
   },
 }

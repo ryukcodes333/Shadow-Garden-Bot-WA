@@ -1,6 +1,7 @@
 const db = require('../database')
 const { downloadMediaMessage } = require('@whiskeysockets/baileys')
 
+const econStatsCmds   = require('./economyStats')
 const gtaCmds         = require('./gta')
 const mainCmds        = require('./main')
 const adminCmds       = require('./admin')
@@ -131,6 +132,11 @@ async function handleMessage(sock, msg) {
       }
     }
 
+    // ── Auto card-spawn check (message-event based, no background timers) ────
+    if (groupSettings?.cardspawn_enabled) {
+      setImmediate(() => cardCmds.checkAutoSpawn(sock, jid))
+    }
+
     if (groupSettings?.antibot) {
       const isBot = senderJid?.includes(':') || sender.length > 18
       if (isBot && !isOwner && !isMod) {
@@ -222,18 +228,31 @@ async function handleMessage(sock, msg) {
     } catch {}
   }
 
-  // ── Alpha chat detection (before prefix check) ───────────────
+  // ── AI chat detection (before prefix check) ──────────────────
+  // If a persona name has been trained, it takes over all AI replies.
+  // Otherwise falls back to legacy alphaChatReply / aquaChatReply.
   if (!isSticker && !isReaction && !isBold) {
-    const botPhone = (sock.user?.id || '').split(':')[0].split('@')[0]
-    const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    const botPhone       = (sock.user?.id || '').split(':')[0].split('@')[0]
+    const mentionedJids  = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     const quotedParticipant = (msg.message?.extendedTextMessage?.contextInfo?.participant || '').split('@')[0].split(':')[0]
-    const isReplyToBot = quotedParticipant && botPhone && quotedParticipant === botPhone
+    const isReplyToBot   = quotedParticipant && botPhone && quotedParticipant === botPhone
     const isBotMentioned = botPhone && mentionedJids.some(m => m.split('@')[0].split(':')[0] === botPhone)
-    const mentionsAlpha = /\balpha\b/i.test(textRaw)
-    const mentionsAqua  = /\baqua\b/i.test(textRaw)
 
-    if ((isBotMentioned || isReplyToBot || mentionsAlpha || mentionsAqua) && !textRaw.startsWith(PREFIX) && !textRaw.startsWith(POKE_PREFIX)) {
-      if ((mentionsAqua && !mentionsAlpha) || isReplyToBot) {
+    // Load trained AI persona (fast — Mongo lookup with lean)
+    const persona    = await db.getAiPersona().catch(() => null)
+    const aiName     = (persona?.name || '').trim().toLowerCase()
+    const nameRegex  = aiName ? new RegExp(`\\b${aiName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i') : null
+    const mentionsAiName  = nameRegex ? nameRegex.test(textRaw) : false
+    const mentionsAlpha   = /\balpha\b/i.test(textRaw)
+    const mentionsAqua    = /\baqua\b/i.test(textRaw)
+
+    const triggered = isBotMentioned || isReplyToBot || mentionsAiName || mentionsAlpha || mentionsAqua
+
+    if (triggered && !textRaw.startsWith(PREFIX) && !textRaw.startsWith(POKE_PREFIX)) {
+      // If a persona name is trained — always use the real adaptive AI
+      if (persona?.name && (mentionsAiName || isReplyToBot || isBotMentioned)) {
+        await aiCmds.handleAiPersonaReply(sock, jid, msg, textRaw, persona)
+      } else if ((mentionsAqua && !mentionsAlpha) || isReplyToBot) {
         await aquaChatReply(sock, jid, msg, sender, msg.pushName || sender, textRaw)
       } else {
         await alphaChatReply(sock, jid, msg, sender, msg.pushName || sender, textRaw, isOwner)
@@ -434,7 +453,11 @@ async function handleMessage(sock, msg) {
     // Economy commands
     if (economyCmds[cmd])       return await economyCmds[cmd](ctx)
 
-    // Card commands
+    // Card commands (includes .cardspawn, .cg, .cgconfirm, .cgcancel)
+    if (cmd === 'cardspawn')    return await cardCmds.cardspawn(ctx)
+    if (cmd === 'cg')           return await cardCmds.cg(ctx)
+    if (cmd === 'cgconfirm')    return await cardCmds.cgconfirm(ctx)
+    if (cmd === 'cgcancel')     return await cardCmds.cgcancel(ctx)
     if (cardCmds[cmd])          return await cardCmds[cmd](ctx)
 
     // Game commands
@@ -471,6 +494,9 @@ async function handleMessage(sock, msg) {
 
     // Converter / calc / currency commands
     if (converterCmds[cmd])     return await converterCmds[cmd](ctx)
+
+    // Economy stats (inflation dashboard — staff only)
+    if (cmd === 'ecostats')     return await econStatsCmds.ecostats(ctx)
 
     // Staff commands
     if (cmd === 'resetallusers') return await staffCmds['resetallusers'](ctx)
@@ -512,7 +538,8 @@ async function handleMessage(sock, msg) {
     // Lottery commands
     if (lotteryCmds[cmd])       return await lotteryCmds[cmd](ctx)
 
-    // AI commands (Groq, image gen, anime)
+    // AI commands (Pollinations, image gen, anime, aitrain)
+    if (cmd === 'aitrain')      return await aiCmds.aitrain(ctx)
     if (aiCmds[cmd])            return await aiCmds[cmd](ctx)
 
     // Utility commands (weather, wiki, translate, download, etc.)
