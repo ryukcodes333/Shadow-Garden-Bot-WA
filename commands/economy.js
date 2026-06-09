@@ -4,6 +4,8 @@ const path = require('path')
 
 const BANK_CARD_IMG    = path.join(__dirname, '../assets/bankcard.png')
 const TXN_APPROVED_IMG = path.join(__dirname, '../assets/txnapproved.jpg')
+const DIG_IMG          = path.join(__dirname, '../assets/coin.png')
+const FISH_IMG         = path.join(__dirname, '../assets/fish.png')
 
 // ── Economy constants ──────────────────────────────────────────────────────
 // Daily: small guaranteed reward, tier-scaled by streak
@@ -243,7 +245,7 @@ module.exports = {
 
   // ── .dig ─────────────────────────────────────────────────────────────────
   // Main grinding command — tiered rewards
-  async dig({ reply, sender, user }) {
+  async dig({ sock, msg, jid, reply, replyImage, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
     if (await checkCooldown(sender, 'dig', reply)) return
 
@@ -279,16 +281,30 @@ module.exports = {
     const xpResult = await applyXP(sender, null, digXp)
     await db.setCooldown(sender, 'dig', CD_DIG)
 
-    let msg = `⛏️ *Digging Result*\n\nYou found: ${result}`
-    if (digXp > 0) msg += `\n⭐ +${digXp} XP`
-    if (xpResult.leveledUp) msg += `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊`
-    if (earned === 0 && gems === 0) msg += `\n\n_You did not catch anything this time._`
-    await reply(msg)
+    let caption = `⛏️ *Digging Result*\n\nYou found: ${result}`
+    if (digXp > 0) caption += `\n⭐ +${digXp} XP`
+    if (xpResult.leveledUp) caption += `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊`
+    if (earned === 0 && gems === 0) caption += `\n\n_You did not catch anything this time._`
+    try {
+      const imgBuf = fs.readFileSync(DIG_IMG)
+      await replyImage(imgBuf, caption)
+      await sock.sendMessage(jid, {
+        text: 'https://konosubacommunity.onrender.com',
+        linkPreview: {
+          matchedText: 'https://konosubacommunity.onrender.com',
+          title: '⛏️ Shadow Garden Economy',
+          description: caption,
+          jpegThumbnail: imgBuf,
+        }
+      }, { quoted: msg })
+    } catch {
+      await reply(caption)
+    }
   },
 
   // ── .fish ────────────────────────────────────────────────────────────────
   // Main grinding command — tiered catch rates
-  async fish({ reply, sender, user }) {
+  async fish({ sock, msg, jid, reply, replyImage, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
     if (await checkCooldown(sender, 'fish', reply)) return
 
@@ -318,12 +334,26 @@ module.exports = {
     const xpResult = await applyXP(sender, null, fishXp)
     await db.setCooldown(sender, 'fish', CD_FISH)
 
-    let msg = `🎣 *Fishing Result*\n\nCaught: *${caught.label}*`
-    if (coins > 0) msg += `\n💰 +$${coins}`
-    else msg += `\n\n_You did not catch anything this time._`
-    msg += `\n⭐ +${fishXp} XP`
-    if (xpResult.leveledUp) msg += `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊`
-    await reply(msg)
+    let caption = `🎣 *Fishing Result*\n\nCaught: *${caught.label}*`
+    if (coins > 0) caption += `\n💰 +$${coins}`
+    else caption += `\n\n_You did not catch anything this time._`
+    caption += `\n⭐ +${fishXp} XP`
+    if (xpResult.leveledUp) caption += `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊`
+    try {
+      const imgBuf = fs.readFileSync(FISH_IMG)
+      await replyImage(imgBuf, caption)
+      await sock.sendMessage(jid, {
+        text: 'https://konosubacommunity.onrender.com',
+        linkPreview: {
+          matchedText: 'https://konosubacommunity.onrender.com',
+          title: '🎣 Shadow Garden Economy',
+          description: caption,
+          jpegThumbnail: imgBuf,
+        }
+      }, { quoted: msg })
+    } catch {
+      await reply(caption)
+    }
   },
 
   // ── .beg ─────────────────────────────────────────────────────────────────
