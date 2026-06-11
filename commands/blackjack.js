@@ -3,7 +3,7 @@
 // ║     🃏  BLACKJACK  —  commands/blackjack.js  ║
 // ╚══════════════════════════════════════════════╝
 // .bj <amount> — start a game, bet deducted from wallet.
-// Buttons handled in index.js via interactiveResponseMessage.
+// Uses @dark-yasiya/baileys interactiveButtons for Hit / Stand / Double Down.
 
 const db = require('../database')
 
@@ -50,42 +50,68 @@ function renderHands(game, reveal = false) {
   return `🃏 *Dealer:* ${dealerHand}${dealerVal}\n🎴 *You:*   ${playerHand} = ${playerVal}`
 }
 
-// Quick-reply button helper
-function btn(displayText, id) {
-  return { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: displayText, id }) }
-}
+// ── Send game state with quick-reply action buttons ───────────────────────────
 
 async function sendGameButtons(sock, jid, game, text, quoted) {
   const canDouble = game.player.length === 2 && game.bet * 2 <= game.walletSnapshot
-  const rows = [
-    { title: '🃏 Hit',   description: 'Draw another card',  rowId: `bj_hit_${game.key}`   },
-    { title: '✋ Stand', description: 'Keep your hand',     rowId: `bj_stand_${game.key}` },
+  const interactiveButtons = [
+    {
+      name: 'quick_reply',
+      buttonParamsJson: JSON.stringify({ display_text: '🃏 Hit', id: `bj_hit_${game.key}` })
+    },
+    {
+      name: 'quick_reply',
+      buttonParamsJson: JSON.stringify({ display_text: '✋ Stand', id: `bj_stand_${game.key}` })
+    },
   ]
-  if (canDouble) rows.push({ title: '💰 Double Down', description: `Double bet to $${game.bet * 2}`, rowId: `bj_double_${game.key}` })
+  if (canDouble) {
+    interactiveButtons.push({
+      name: 'quick_reply',
+      buttonParamsJson: JSON.stringify({
+        display_text: `💰 Double ($${(game.bet * 2).toLocaleString()})`,
+        id: `bj_double_${game.key}`
+      })
+    })
+  }
 
-  await sock.sendMessage(jid, {
-    text,
-    footer: '🃏 Blackjack',
-    buttonText: '⚡ Your Move',
-    sections: [{ title: 'Actions', rows }],
-  }, quoted ? { quoted } : undefined)
+  try {
+    await sock.sendMessage(jid, {
+      text,
+      title: '🃏 Blackjack',
+      footer: `Bet: $${game.bet.toLocaleString()}`,
+      interactiveButtons,
+    }, quoted ? { quoted } : undefined)
+  } catch {
+    await sock.sendMessage(jid, { text: text + '\n\n_Reply: bj_hit / bj_stand' + (canDouble ? ' / bj_double' : '') + '_' })
+  }
 }
+
+// ── Send end-of-game result with rematch / leave buttons ──────────────────────
 
 async function sendEndButtons(sock, jid, text, key) {
   await sock.sendMessage(jid, { text })
-  await sock.sendMessage(jid, {
-    text: 'What would you like to do?',
-    footer: '🃏 Blackjack',
-    buttonText: '⚡ Options',
-    sections: [{
-      title: 'Next',
-      rows: [
-        { title: '🔄 Play Again', description: 'Start a new game ($100 bet)', rowId: `bj_again_${key}` },
-        { title: '❌ Leave',      description: 'Leave the table',             rowId: `bj_leave_${key}` },
+  try {
+    await sock.sendMessage(jid, {
+      text: 'What would you like to do?',
+      title: '🃏 Blackjack',
+      footer: 'Game over',
+      interactiveButtons: [
+        {
+          name: 'quick_reply',
+          buttonParamsJson: JSON.stringify({ display_text: '🔄 Play Again ($100)', id: `bj_again_${key}` })
+        },
+        {
+          name: 'quick_reply',
+          buttonParamsJson: JSON.stringify({ display_text: '❌ Leave Table', id: `bj_leave_${key}` })
+        },
       ],
-    }],
-  })
+    })
+  } catch {
+    await sock.sendMessage(jid, { text: 'Type *.bj 100* to play again.' })
+  }
 }
+
+// ── Resolve game (dealer draws, compare hands) ────────────────────────────────
 
 async function resolveGame(sock, jid, game) {
   while (handValue(game.dealer) < 17) game.dealer.push(game.deck.pop())
@@ -114,6 +140,8 @@ async function resolveGame(sock, jid, game) {
   const text = `🃏 *BLACKJACK*\n\n${hands}\n\n━━━━━━━━━━━━\n${result}\n\n💰 New balance: $${Math.max(0, newWallet).toLocaleString()}`
   return sendEndButtons(sock, jid, text, game.key)
 }
+
+// ── Exports ───────────────────────────────────────────────────────────────────
 
 module.exports = {
   bjGames,
@@ -167,12 +195,14 @@ module.exports = {
   async handleButton(sock, msg, buttonId) {
     const jid = msg.key.remoteJid
 
+    // ── Leave table ───────────────────────────────────────────────────────────
     if (buttonId.startsWith('bj_leave_')) {
       const key = buttonId.replace('bj_leave_', '')
       bjGames.delete(key)
       return sock.sendMessage(jid, { text: '👋 You left the Blackjack table.' })
     }
 
+    // ── Play again ────────────────────────────────────────────────────────────
     if (buttonId.startsWith('bj_again_')) {
       const key   = buttonId.replace('bj_again_', '')
       const phone = key.includes(':') ? key.split(':')[1] : key
@@ -187,6 +217,7 @@ module.exports = {
       })
     }
 
+    // ── Hit / Stand / Double ──────────────────────────────────────────────────
     const keyMatch = buttonId.match(/^bj_(hit|stand|double)_(.+)$/)
     if (!keyMatch) return
     const [, action, key] = keyMatch

@@ -35,13 +35,12 @@ const OWNER_LID   = '12232838631673@lid'
 const spamTracker = {}
 
 // ── Button / List response router ────────────────────────────────────────────
-// Detects buttonsResponseMessage and listResponseMessage and routes to the
-// correct game handler.  All game state lives in the handlers' own Map()s.
+// Handles interactiveResponseMessage (quick_reply buttons from @dark-yasiya/baileys),
+// buttonsResponseMessage (classic buttons), and listResponseMessage.
 
 async function handleInteraction(sock, msg) {
   const msgType = Object.keys(msg.message || {})[0]
 
-  // Support both classic and interactive response formats
   let buttonId  = null
   let rowId     = null
   let isButton  = false
@@ -51,14 +50,13 @@ async function handleInteraction(sock, msg) {
     buttonId = msg.message.templateButtonReplyMessage?.selectedId || ''
     isButton = true
   } else if (msgType === 'buttonsResponseMessage') {
-    // fallback for older clients
     buttonId = msg.message.buttonsResponseMessage?.selectedButtonId || ''
     isButton = true
   } else if (msgType === 'listResponseMessage') {
     rowId  = msg.message.listResponseMessage?.singleSelectReply?.selectedRowId || ''
     isList = true
   } else if (msgType === 'interactiveResponseMessage') {
-    // Newer WA clients wrap everything in interactiveResponseMessage
+    // @dark-yasiya/baileys quick_reply & interactive button responses
     try {
       const body = msg.message.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson
       if (body) {
@@ -69,34 +67,42 @@ async function handleInteraction(sock, msg) {
         }
       }
     } catch {}
+    // Also handle single-select list responses wrapped in interactiveResponseMessage
     if (!buttonId) {
       const sel = msg.message.interactiveResponseMessage?.singleSelectReply?.selectedRowId
       if (sel) { rowId = sel; isList = true }
     }
+    // Fallback: some clients send the id directly in the body field
+    if (!buttonId && !rowId) {
+      try {
+        const body = msg.message.interactiveResponseMessage?.body?.text
+        if (body) { buttonId = body; isButton = true }
+      } catch {}
+    }
   } else {
-    return false // not an interaction
+    return false
   }
 
   if (isButton && buttonId) {
-    // ── Chess buttons ──────────────────────────────────────────────────────
+    // ── Chess buttons (square taps, resign, rematch, close) ───────────────
     if (buttonId.startsWith('chess_')) {
       await chessCmds.handleButton(sock, msg, buttonId)
       return true
     }
-    // ── Blackjack buttons ──────────────────────────────────────────────────
+    // ── Blackjack buttons ─────────────────────────────────────────────────
     if (buttonId.startsWith('bj_')) {
       await blackjackCmds.handleButton(sock, msg, buttonId)
       return true
     }
-    // ── UNO buttons ────────────────────────────────────────────────────────
-    if (buttonId.startsWith('uno_')) {
+    // ── UNO buttons ───────────────────────────────────────────────────────
+    if (buttonId.startsWith('uno_') || buttonId.startsWith('play_') || buttonId.startsWith('color_')) {
       await unoCmds.handleButton(sock, msg, buttonId)
       return true
     }
   }
 
   if (isList && rowId) {
-    // ── Game action rows (chess_/bj_/uno_ used as rowId in list menus) ────
+    // ── Game action rows ──────────────────────────────────────────────────
     if (rowId.startsWith('chess_')) {
       await chessCmds.handleButton(sock, msg, rowId)
       return true
@@ -109,12 +115,12 @@ async function handleInteraction(sock, msg) {
       await unoCmds.handleButton(sock, msg, rowId)
       return true
     }
-    // ── Chess piece/move selections ────────────────────────────────────────
+    // ── Chess piece/move selections (legacy list fallback) ────────────────
     if (rowId.startsWith('select_') || rowId.startsWith('move_')) {
       await chessCmds.handleList(sock, msg, rowId)
       return true
     }
-    // ── UNO card/color selections ──────────────────────────────────────────
+    // ── UNO card/color selections ─────────────────────────────────────────
     if (rowId.startsWith('play_') || rowId.startsWith('color_')) {
       await unoCmds.handleList(sock, msg, rowId)
       return true
@@ -231,7 +237,6 @@ async function handleMessage(sock, msg) {
       }
     }
 
-    // ── Auto card-spawn check ─────────────────────────────────────────────
     if (groupSettings?.cardspawn_enabled) {
       setImmediate(() => cardCmds.checkAutoSpawn(sock, jid))
     }
@@ -524,40 +529,28 @@ async function handleMessage(sock, msg) {
 
     // ── . prefix → all other commands ───────────────────────────────────
 
-    // GTA V RP commands
     if (gtaCmds[cmd])           return await gtaCmds[cmd](ctx)
-
-    // Image filter commands
     if (imagesCmds[cmd])        return await imagesCmds[cmd](ctx)
-
-    // Main commands (menu, ping, sticker, etc.)
     if (mainCmds[cmd])          return await mainCmds[cmd](ctx)
-
-    // Admin / group management
     if (adminCmds[cmd])         return await adminCmds[cmd](ctx)
 
-    // Registration
     if (cmd === 'reg' || cmd === 'register') return await profileCmds['reg'](ctx)
     if (cmd === 'link')                      return await profileCmds['link'](ctx)
 
-    // Profile commands
     if (profileCmds[cmd])       return await profileCmds[cmd](ctx)
-
-    // Economy commands
     if (economyCmds[cmd])       return await economyCmds[cmd](ctx)
 
-    // Card commands
     if (cmd === 'cardspawn')    return await cardCmds.cardspawn(ctx)
     if (cmd === 'cg')           return await cardCmds.cg(ctx)
     if (cmd === 'cgconfirm')    return await cardCmds.cgconfirm(ctx)
     if (cmd === 'cgcancel')     return await cardCmds.cgcancel(ctx)
     if (cardCmds[cmd])          return await cardCmds[cmd](ctx)
 
-    // Game commands (ttt, etc.)
     if (gameCmds[cmd])          return await gameCmds[cmd](ctx)
 
     // ── Chess ─────────────────────────────────────────────────────────────
     if (cmd === 'chess')        return await chessCmds.chess(ctx)
+    if (cmd === 'endchess')     return await chessCmds.endchess(ctx)
 
     // ── Blackjack ─────────────────────────────────────────────────────────
     if (cmd === 'bj' || cmd === 'blackjack') return await blackjackCmds.bj(ctx)
@@ -569,7 +562,6 @@ async function handleMessage(sock, msg) {
     if (cmd === 'stopgame' || cmd === 'unostop') return await unoCmds.stopgame(ctx)
     if (cmd === 'caught')       return await unoCmds.caught(ctx)
 
-    // Legacy . prefix Pokémon commands
     if (cmd === 'wb')           return await pokemonCmds.hunt(ctx)
     if (cmd === 'phelp')        return await pokemonCmds.phelp(ctx)
     if (cmd === 'pokemon')      return await pokemonCmds.pokemon(ctx)
@@ -577,74 +569,53 @@ async function handleMessage(sock, msg) {
     if (cmd === 'delms')        return await pokemonCmds.delms(ctx)
     if (pokemonCmds[cmd])       return await pokemonCmds[cmd](ctx)
 
-    // Interactions (hug, kiss, slap, etc.)
     if (interactionCmds[cmd])   return await interactionCmds[cmd](ctx)
-
-    // Fun commands
     if (funCmds[cmd])           return await funCmds[cmd](ctx)
-
-    // RPG commands
     if (rpgCmds[cmd])           return await rpgCmds[cmd](ctx)
-
-    // Gamble commands
     if (gambleCmds[cmd])        return await gambleCmds[cmd](ctx)
-
-    // Summer event commands
     if (summerCmds[cmd])        return await summerCmds[cmd](ctx)
-
-    // Guild commands
     if (guildCmds[cmd])         return await guildCmds[cmd](ctx)
-
-    // Converter / calc / currency commands
     if (converterCmds[cmd])     return await converterCmds[cmd](ctx)
 
-    // Economy stats
     if (cmd === 'ecostats')     return await econStatsCmds.ecostats(ctx)
 
-    // Staff commands
     if (cmd === 'resetallusers') return await staffCmds['resetallusers'](ctx)
     if (staffCmds[cmd])         return await staffCmds[cmd](ctx)
-    if (cmd === 'join')          return await staffCmds['join'] ? staffCmds['join'](ctx) : ctx.reply('❌ .join <invite link>')
-    if (cmd === 'exit')          return await staffCmds['exit'] ? staffCmds['exit'](ctx) : ctx.reply('❌ Groups only.')
-    if (cmd === 'listgc')        return await staffCmds['listgc'] ? staffCmds['listgc'](ctx) : ctx.reply('❌ Access Denied')
+    if (cmd === 'join')          return staffCmds['join'] ? staffCmds['join'](ctx) : ctx.reply('❌ .join <invite link>')
+    if (cmd === 'exit')          return staffCmds['exit'] ? staffCmds['exit'](ctx) : ctx.reply('❌ Groups only.')
+    if (cmd === 'listgc')        return staffCmds['listgc'] ? staffCmds['listgc'](ctx) : ctx.reply('❌ Access Denied')
 
-    // Renamed commands
-    if (cmd === 'lockgroup')     return await adminCmds['close']    ? adminCmds['close'](ctx)   : ctx.reply('❌ Groups only.')
-    if (cmd === 'unlockgroup')   return await adminCmds['open']     ? adminCmds['open'](ctx)    : ctx.reply('❌ Groups only.')
-    if (cmd === 'howgay')        return await funCmds['gay']        ? funCmds['gay'](ctx)       : ctx.reply('❌ Fun cmd missing.')
-    if (cmd === 'market')        return await economyCmds['market'] ? economyCmds['market'](ctx): ctx.reply('❌ Economy cmd missing.')
-    if (cmd === 'wallet')        return await economyCmds['wallet'] ? economyCmds['wallet'](ctx): economyCmds['bal'](ctx)
-    if (cmd === 'bank')          return await economyCmds['bankbal']? economyCmds['bankbal'](ctx): economyCmds['bal'](ctx)
-    if (cmd === 'weekly')        return await economyCmds['weekly'] ? economyCmds['weekly'](ctx): ctx.reply('⏳ Coming soon.')
-    if (cmd === 'monthly')       return await economyCmds['monthly']? economyCmds['monthly'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'crime')         return await economyCmds['crime']  ? economyCmds['crime'](ctx) : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'rob')           return await economyCmds['rob']    ? economyCmds['rob'](ctx)   : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'heist')         return await economyCmds['heist']  ? economyCmds['heist'](ctx) : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'topmoney')      return await economyCmds['topmoney']?economyCmds['topmoney'](ctx):economyCmds['richlist'](ctx)
-    if (cmd === 'topbank')       return await economyCmds['topbank']?economyCmds['topbank'](ctx):economyCmds['richlist'](ctx)
-    if (cmd === 'achievements')  return await economyCmds['achievements']?economyCmds['achievements'](ctx):ctx.reply('🏆 Achievements coming soon!')
-    if (cmd === 'claim')         return await economyCmds['claim']  ? economyCmds['claim'](ctx) : economyCmds['daily'](ctx)
-    if (cmd === 'bonus')         return await economyCmds['bonus']  ? economyCmds['bonus'](ctx) : ctx.reply('⏳ Coming soon.')
-    if (cmd === 'upgrade')       return await economyCmds['upgrade']? economyCmds['upgrade'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'prestige')      return await economyCmds['prestige']?economyCmds['prestige'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'bankupgrade')   return await economyCmds['bankupgrade']?economyCmds['bankupgrade'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'withdrawall')   return await economyCmds['withdrawall']?economyCmds['withdrawall'](ctx):(()=>{ctx.args=['all'];return economyCmds['withdraw'](ctx)})()
-    if (cmd === 'goodbye')       return await adminCmds['leave']    ? adminCmds['leave'](ctx)   : ctx.reply('❌ Usage: .goodbye on/off')
-    if (cmd === 'invitelink')    return await adminCmds['invitelink']?adminCmds['invitelink'](ctx):ctx.reply('⏳ Coming soon.')
-    if (cmd === 'stafflist')     return await staffCmds['mods']     ? staffCmds['mods'](ctx)    : ctx.reply('No staff found.')
-    if (cmd === 'myrole')        return await staffCmds['myrole']   ? staffCmds['myrole'](ctx)  : ctx.reply('⏳ Coming soon.')
+    if (cmd === 'lockgroup')     return adminCmds['close']    ? adminCmds['close'](ctx)   : ctx.reply('❌ Groups only.')
+    if (cmd === 'unlockgroup')   return adminCmds['open']     ? adminCmds['open'](ctx)    : ctx.reply('❌ Groups only.')
+    if (cmd === 'howgay')        return funCmds['gay']        ? funCmds['gay'](ctx)       : ctx.reply('❌ Fun cmd missing.')
+    if (cmd === 'market')        return economyCmds['market'] ? economyCmds['market'](ctx): ctx.reply('❌ Economy cmd missing.')
+    if (cmd === 'wallet')        return economyCmds['wallet'] ? economyCmds['wallet'](ctx): economyCmds['bal'](ctx)
+    if (cmd === 'bank')          return economyCmds['bankbal']? economyCmds['bankbal'](ctx): economyCmds['bal'](ctx)
+    if (cmd === 'weekly')        return economyCmds['weekly'] ? economyCmds['weekly'](ctx): ctx.reply('⏳ Coming soon.')
+    if (cmd === 'monthly')       return economyCmds['monthly']? economyCmds['monthly'](ctx):ctx.reply('⏳ Coming soon.')
+    if (cmd === 'crime')         return economyCmds['crime']  ? economyCmds['crime'](ctx) : ctx.reply('⏳ Coming soon.')
+    if (cmd === 'rob')           return economyCmds['rob']    ? economyCmds['rob'](ctx)   : ctx.reply('⏳ Coming soon.')
+    if (cmd === 'heist')         return economyCmds['heist']  ? economyCmds['heist'](ctx) : ctx.reply('⏳ Coming soon.')
+    if (cmd === 'topmoney')      return economyCmds['topmoney']?economyCmds['topmoney'](ctx):economyCmds['richlist'](ctx)
+    if (cmd === 'topbank')       return economyCmds['topbank']?economyCmds['topbank'](ctx):economyCmds['richlist'](ctx)
+    if (cmd === 'achievements')  return economyCmds['achievements']?economyCmds['achievements'](ctx):ctx.reply('🏆 Achievements coming soon!')
+    if (cmd === 'claim')         return economyCmds['claim']  ? economyCmds['claim'](ctx) : economyCmds['daily'](ctx)
+    if (cmd === 'bonus')         return economyCmds['bonus']  ? economyCmds['bonus'](ctx) : ctx.reply('⏳ Coming soon.')
+    if (cmd === 'upgrade')       return economyCmds['upgrade']? economyCmds['upgrade'](ctx):ctx.reply('⏳ Coming soon.')
+    if (cmd === 'prestige')      return economyCmds['prestige']?economyCmds['prestige'](ctx):ctx.reply('⏳ Coming soon.')
+    if (cmd === 'bankupgrade')   return economyCmds['bankupgrade']?economyCmds['bankupgrade'](ctx):ctx.reply('⏳ Coming soon.')
+    if (cmd === 'withdrawall')   return economyCmds['withdrawall']?economyCmds['withdrawall'](ctx):(()=>{ctx.args=['all'];return economyCmds['withdraw'](ctx)})()
+    if (cmd === 'goodbye')       return adminCmds['leave']    ? adminCmds['leave'](ctx)   : ctx.reply('❌ Usage: .goodbye on/off')
+    if (cmd === 'invitelink')    return adminCmds['invitelink']?adminCmds['invitelink'](ctx):ctx.reply('⏳ Coming soon.')
+    if (cmd === 'stafflist')     return staffCmds['mods']     ? staffCmds['mods'](ctx)    : ctx.reply('No staff found.')
+    if (cmd === 'myrole')        return staffCmds['myrole']   ? staffCmds['myrole'](ctx)  : ctx.reply('⏳ Coming soon.')
 
-    // Poll commands
     if (pollCmds[cmd])          return await pollCmds[cmd](ctx)
-
-    // Lottery commands
     if (lotteryCmds[cmd])       return await lotteryCmds[cmd](ctx)
 
-    // AI commands
     if (cmd === 'aitrain')      return await aiCmds.aitrain(ctx)
     if (aiCmds[cmd])            return await aiCmds[cmd](ctx)
 
-    // Utility commands
     if (utilityCmds[cmd])       return await utilityCmds[cmd](ctx)
 
   } catch (err) {
