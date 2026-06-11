@@ -1,6 +1,5 @@
 const {
   makeWASocket,
-  useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
   isJidBroadcast,
@@ -14,13 +13,18 @@ const readline = require('readline')
 
 require('./web')
 
+// ── MongoDB auth (persists session across Render re-deploys) ─────────────────
+// Uses the existing MongoDB connection from database.js.
+// Auth keys are stored in the `bot_auth` collection instead of local files.
+// This means you NEVER need to re-pair after pushing new code.
+const { useMongoAuthState, clearMongoAuth } = require('./mongoAuth')
+
 const handleMessage = require('./commands/index')
 
 const PREFIX = '.'
 const OWNER_LID = process.env.OWNER_LID || '259683117985842@lid'
 const BOT_NAME = 'Alpha'
 const START_TIME = Date.now()
-const AUTH_DIR = path.join(__dirname, `auth_info_${process.env.PORT || '5000'}`)
 
 global.botStartTime = START_TIME
 global.botName = BOT_NAME
@@ -37,25 +41,11 @@ global.latestBaileysIsLatest = false
 let reconnectAttempts = 0
 let isRestarting = false
 
-function hasExistingSession() {
-  try {
-    if (!fs.existsSync(AUTH_DIR)) return false
-    const files = fs.readdirSync(AUTH_DIR)
-    return files.some(f => f.includes('creds') || f.endsWith('.json'))
-  } catch {
-    return false
-  }
-}
+// ── Session helpers ──────────────────────────────────────────────────────────
+// No more local auth_info folder — everything lives in MongoDB.
 
-function clearSession() {
-  try {
-    if (fs.existsSync(AUTH_DIR)) {
-      fs.rmSync(AUTH_DIR, { recursive: true, force: true })
-      console.log('🗑️  Session cleared.')
-    }
-  } catch (e) {
-    console.error('Error clearing session:', e.message)
-  }
+async function clearSession() {
+  await clearMongoAuth()
   global.pairingCode = null
   global.pairingCodeRequested = false
   global.botConnected = false
@@ -78,7 +68,6 @@ function scheduleRestart(delayMs, label) {
 
 function askForPhoneNumber() {
   return new Promise((resolve) => {
-    // Auto-resolve after 90s (Render / non-interactive environments)
     const timeout = setTimeout(() => { try { rl.close() } catch {} resolve('') }, 90000)
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
     rl.on('close', () => { clearTimeout(timeout); resolve('') })
@@ -100,17 +89,18 @@ async function startBot() {
   reconnectAttempts++
   global.pairingCodeRequested = false
 
-  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR)
+  // ── Load auth state from MongoDB ──────────────────────────────────────────
+  // If MongoDB already has credentials, the bot resumes without re-pairing.
+  // On first run (or after clearSession) it will request a new pairing code.
+  const { state, saveCreds } = await useMongoAuthState()
 
-  // Only ask for phone number if there is no existing session
   if (!state.creds.registered) {
-    // Use env var if set (fastest option — set PHONE_NUMBER on Render)
+    // Need to pair — use env var, interactive prompt, or web panel
     const envPhone = (process.env.PHONE_NUMBER || '').replace(/\D/g, '')
     if (envPhone) {
       global.pendingPairingPhone = envPhone
       console.log('📱 Using PHONE_NUMBER from environment:', envPhone)
     } else {
-      // Ask in console (works locally); on Render use the web panel instead
       const phone = await askForPhoneNumber()
       if (phone) {
         global.pendingPairingPhone = phone
@@ -119,7 +109,8 @@ async function startBot() {
       }
     }
   } else {
-    console.log('🔐 Session found — reconnecting to', state.creds.me?.id || 'WhatsApp', '…')
+    console.log('🔐 MongoDB session found — reconnecting to', state.creds.me?.id || 'WhatsApp', '…')
+    console.log('✅ No re-pairing needed. Session is stored in MongoDB.\n')
   }
 
   const { version, isLatest } = await fetchLatestBaileysVersion()
@@ -137,6 +128,7 @@ async function startBot() {
   })
 
   global.sock = sock
+  // saveCreds writes updated credentials back to MongoDB automatically
   sock.ev.on('creds.update', saveCreds)
 
   sock.ev.on('connection.update', async (update) => {
@@ -167,6 +159,8 @@ async function startBot() {
         console.log('\n🔔 WhatsApp will send you a notification to')
         console.log('   confirm the device pairing. Tap CONFIRM.')
         console.log('⏳ Code expires in 60 seconds.\n')
+        console.log('💡 After pairing, your session saves to MongoDB.')
+        console.log('   Future Render deploys will NOT need re-pairing.\n')
       } catch (err) {
         global.pairingCodeRequested = false
         console.error('❌ Pairing code error:', err.message)
@@ -183,7 +177,7 @@ async function startBot() {
       const botNum = sock.user?.id?.split(':')[0] || sock.user?.id || 'Unknown'
       console.log(`\n✅ Shadow Garden Bot (${BOT_NAME}) is ONLINE! 🌑`)
       console.log(`📱 Bot Number: ${botNum}`)
-      console.log(`💡 If this number is admin in a group, the bot can kick/manage members.\n`)
+      console.log(`💾 Session is saved in MongoDB — safe to redeploy anytime.\n`)
     }
 
     if (connection === 'connecting') {
@@ -207,8 +201,8 @@ async function startBot() {
       const closed    = statusCode === DisconnectReason.connectionClosed
 
       if (loggedOut || forbidden) {
-        console.log('🔴 Logged out / rejected. Clearing session…')
-        clearSession()
+        console.log('🔴 Logged out / rejected. Clearing MongoDB session…')
+        await clearSession()
         scheduleRestart(3000, 'Fresh session after logout')
       } else if (replaced) {
         console.log('⚠️  Session replaced by another device.')
@@ -264,14 +258,7 @@ async function startBot() {
 }
 
 console.log('🌑 Shadow Garden Bot starting…')
-
-if (hasExistingSession()) {
-  console.log('🔐 Existing session found — resuming without clearing.')
-  console.log('💡 Session is preserved across restarts.')
-  console.log('   To re-pair, delete the auth_info folder manually.\n')
-} else {
-  console.log('📱 No session found — will ask for phone number to pair.\n')
-}
+console.log('💾 Auth mode: MongoDB (session survives Render re-deploys)\n')
 
 startBot().catch(err => {
   console.error('Fatal startup error:', err.message)
