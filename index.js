@@ -22,7 +22,7 @@ const { useMongoAuthState, clearMongoAuth } = require('./mongoAuth')
 const handleMessage = require('./commands/index')
 
 const PREFIX = '.'
-const OWNER_LID = process.env.OWNER_LID || '259683117985842@lid'
+const OWNER_LID = process.env.OWNER_LID || '12232838631673@lid'
 const BOT_NAME = 'Alpha'
 const START_TIME = Date.now()
 
