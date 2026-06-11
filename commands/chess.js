@@ -3,8 +3,22 @@
 // ║        ♟️  CHESS  —  commands/chess.js        ║
 // ╚══════════════════════════════════════════════╝
 // Full legal-move chess with image board + interactive quick-reply buttons.
-// Uses @dark-yasiya/baileys interactiveButtons for the chess grid UI.
-// Game state stored in chessGames Map keyed by chatJid.
+// Requires: npm install @ryuu-reinzz/button-helper
+
+const { sendInteractiveMessage } = require('@ryuu-reinzz/button-helper')
+
+async function sendButtons(sock, jid, content, quotedMsg = null) {
+  try {
+    const opts = quotedMsg ? { quoted: quotedMsg } : {}
+    await sendInteractiveMessage(sock, jid, content, opts)
+  } catch {
+    const fallback = content._fallback || ''
+    await sock.sendMessage(jid, {
+      text: (content.text || content.caption || '') + (fallback ? '\n\n' + fallback : ''),
+      mentions: content.mentions || [],
+    })
+  }
+}
 
 const FILES = ['a','b','c','d','e','f','g','h']
 const BACK  = ['R','N','B','Q','K','B','N','R']
@@ -341,64 +355,39 @@ async function sendBoardWithButtons(sock, jid, game, quoted) {
     ? `${sq(...game.pendingSelect)} selected — tap a highlighted square to move`
     : `${turnName}'s turn — tap a piece to select it`
 
-  try {
-    if (imgBuf) {
-      await sock.sendMessage(jid, {
-        image: imgBuf,
-        caption,
-        title: '♟️ CHESS',
-        footer,
-        interactiveButtons,
-        mentions,
-      }, quoted ? { quoted } : undefined)
-    } else {
-      await sock.sendMessage(jid, {
-        text: caption,
-        title: '♟️ CHESS',
-        footer,
-        interactiveButtons,
-        mentions,
-      }, quoted ? { quoted } : undefined)
+  const content = imgBuf
+    ? { image: imgBuf, caption, footer, interactiveButtons, mentions }
+    : { text: caption,           footer, interactiveButtons, mentions }
+
+  // Fallback text board
+  let boardText = '```\n  a b c d e f g h\n'
+  for (let r = 0; r < 8; r++) {
+    boardText += `${8-r} `
+    for (let f = 0; f < 8; f++) {
+      const p = game.board[r][f]
+      boardText += p ? pieceEmoji(p) : (r + f) % 2 === 0 ? '□' : '■'
+      boardText += ' '
     }
-  } catch {
-    // Fallback to text board
-    let board = '```\n  a b c d e f g h\n'
-    for (let r = 0; r < 8; r++) {
-      board += `${8-r} `
-      for (let f = 0; f < 8; f++) {
-        const p = game.board[r][f]
-        board += p ? pieceEmoji(p) : (r + f) % 2 === 0 ? '□' : '■'
-        board += ' '
-      }
-      board += `${8-r}\n`
-    }
-    board += '  a b c d e f g h\n```'
-    await sock.sendMessage(jid, { text: caption + '\n\n' + board + '\n\n_Tap a piece or type the square (e.g. e2)_', mentions })
+    boardText += `${8-r}\n`
   }
+  boardText += '  a b c d e f g h\n```'
+  content._fallback = boardText + '\n\n_Tap a piece or type the square (e.g. e2)_'
+
+  await sendButtons(sock, jid, content, quoted || null)
 }
 
 async function sendEndButtons(sock, jid, text, mentions, jidKey) {
   const key = jidKey || jid
-  try {
-    await sock.sendMessage(jid, {
-      text,
-      title: '♟️ Game Over',
-      footer: 'Chess — what next?',
-      interactiveButtons: [
-        {
-          name: 'quick_reply',
-          buttonParamsJson: JSON.stringify({ display_text: '🔄 Rematch', id: `chess_rematch_${key}` })
-        },
-        {
-          name: 'quick_reply',
-          buttonParamsJson: JSON.stringify({ display_text: '❌ Close', id: `chess_close_${key}` })
-        },
-      ],
-      mentions: mentions || [],
-    })
-  } catch {
-    await sock.sendMessage(jid, { text, mentions: mentions || [] })
-  }
+  await sendButtons(sock, jid, {
+    text,
+    footer: 'Chess — what next?',
+    interactiveButtons: [
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🔄 Rematch', id: `chess_rematch_${key}` }) },
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '❌ Close',   id: `chess_close_${key}`   }) },
+    ],
+    mentions: mentions || [],
+    _fallback: '_Type .chess @user to start a new game_',
+  })
 }
 
 // ── Bot move ────────────────────────────────────────────────────────────────

@@ -3,9 +3,20 @@
 // ║     🃏  BLACKJACK  —  commands/blackjack.js  ║
 // ╚══════════════════════════════════════════════╝
 // .bj <amount> — start a game, bet deducted from wallet.
-// Uses @dark-yasiya/baileys interactiveButtons for Hit / Stand / Double Down.
+// Requires: npm install @ryuu-reinzz/button-helper
 
 const db = require('../database')
+const { sendInteractiveMessage } = require('@ryuu-reinzz/button-helper')
+
+async function sendButtons(sock, jid, content, quotedMsg = null) {
+  try {
+    const opts = quotedMsg ? { quoted: quotedMsg } : {}
+    await sendInteractiveMessage(sock, jid, content, opts)
+  } catch {
+    const fallback = content._fallback || ''
+    await sock.sendMessage(jid, { text: (content.text || '') + (fallback ? '\n\n' + fallback : '') })
+  }
+}
 
 const SUITS  = ['♠','♥','♦','♣']
 const VALUES = ['A','2','3','4','5','6','7','8','9','10','J','Q','K']
@@ -55,60 +66,36 @@ function renderHands(game, reveal = false) {
 async function sendGameButtons(sock, jid, game, text, quoted) {
   const canDouble = game.player.length === 2 && game.bet * 2 <= game.walletSnapshot
   const interactiveButtons = [
-    {
-      name: 'quick_reply',
-      buttonParamsJson: JSON.stringify({ display_text: '🃏 Hit', id: `bj_hit_${game.key}` })
-    },
-    {
-      name: 'quick_reply',
-      buttonParamsJson: JSON.stringify({ display_text: '✋ Stand', id: `bj_stand_${game.key}` })
-    },
+    { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🃏 Hit',    id: `bj_hit_${game.key}`   }) },
+    { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '✋ Stand',  id: `bj_stand_${game.key}` }) },
   ]
   if (canDouble) {
     interactiveButtons.push({
       name: 'quick_reply',
-      buttonParamsJson: JSON.stringify({
-        display_text: `💰 Double ($${(game.bet * 2).toLocaleString()})`,
-        id: `bj_double_${game.key}`
-      })
+      buttonParamsJson: JSON.stringify({ display_text: `💰 Double ($${(game.bet * 2).toLocaleString()})`, id: `bj_double_${game.key}` })
     })
   }
-
-  try {
-    await sock.sendMessage(jid, {
-      text,
-      title: '🃏 Blackjack',
-      footer: `Bet: $${game.bet.toLocaleString()}`,
-      interactiveButtons,
-    }, quoted ? { quoted } : undefined)
-  } catch {
-    await sock.sendMessage(jid, { text: text + '\n\n_Reply: bj_hit / bj_stand' + (canDouble ? ' / bj_double' : '') + '_' })
-  }
+  await sendButtons(sock, jid, {
+    text,
+    footer: `Bet: $${game.bet.toLocaleString()}`,
+    interactiveButtons,
+    _fallback: `_Reply: bj_hit / bj_stand${canDouble ? ' / bj_double' : ''}_`,
+  }, quoted || null)
 }
 
 // ── Send end-of-game result with rematch / leave buttons ──────────────────────
 
 async function sendEndButtons(sock, jid, text, key) {
   await sock.sendMessage(jid, { text })
-  try {
-    await sock.sendMessage(jid, {
-      text: 'What would you like to do?',
-      title: '🃏 Blackjack',
-      footer: 'Game over',
-      interactiveButtons: [
-        {
-          name: 'quick_reply',
-          buttonParamsJson: JSON.stringify({ display_text: '🔄 Play Again ($100)', id: `bj_again_${key}` })
-        },
-        {
-          name: 'quick_reply',
-          buttonParamsJson: JSON.stringify({ display_text: '❌ Leave Table', id: `bj_leave_${key}` })
-        },
-      ],
-    })
-  } catch {
-    await sock.sendMessage(jid, { text: 'Type *.bj 100* to play again.' })
-  }
+  await sendButtons(sock, jid, {
+    text: 'What would you like to do?',
+    footer: 'Game over',
+    interactiveButtons: [
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🔄 Play Again ($100)', id: `bj_again_${key}` }) },
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '❌ Leave Table',       id: `bj_leave_${key}` }) },
+    ],
+    _fallback: '_Type .bj 100 to play again_',
+  })
 }
 
 // ── Resolve game (dealer draws, compare hands) ────────────────────────────────

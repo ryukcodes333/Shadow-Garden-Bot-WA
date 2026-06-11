@@ -3,7 +3,25 @@
 // ║        🎴  UNO  —  commands/uno.js           ║
 // ╚══════════════════════════════════════════════╝
 // Lobby-based multiplayer UNO with interactive quick-reply buttons.
-// Uses @dark-yasiya/baileys interactiveButtons API.
+// Requires: npm install @ryuu-reinzz/button-helper
+// This injects the missing biz/interactive/native_flow binary nodes
+// that WhiskeySockets/Baileys omits, so buttons actually render & fire.
+
+const { sendInteractiveMessage } = require('@ryuu-reinzz/button-helper')
+
+// Wrapper: use sendInteractiveMessage, fall back to plain text on failure
+async function sendButtons(sock, jid, content, quotedMsg = null) {
+  try {
+    const opts = quotedMsg ? { quoted: quotedMsg } : {}
+    await sendInteractiveMessage(sock, jid, content, opts)
+  } catch {
+    const fallback = content._fallback || ''
+    await sock.sendMessage(jid, {
+      text: (content.text || content.caption || '') + (fallback ? '\n\n' + fallback : ''),
+      mentions: content.mentions || [],
+    })
+  }
+}
 
 const COLORS      = ['🔴','🔵','🟡','🟢']
 const COLOR_NAMES = { '🔴':'Red','🔵':'Blue','🟡':'Yellow','🟢':'Green' }
@@ -74,62 +92,42 @@ function gameStatus(game) {
 
 async function sendTurnMessage(sock, jid, game) {
   const cur = game.players[game.turn]
-  try {
-    await sock.sendMessage(jid, {
-      text: gameStatus(game),
-      title: '🎴 UNO',
-      footer: `@${cur.split('@')[0]}'s turn`,
-      interactiveButtons: [
-        {
-          name: 'quick_reply',
-          buttonParamsJson: JSON.stringify({ display_text: '🃏 View My Hand', id: `uno_hand_${jid}` })
-        },
-        {
-          name: 'quick_reply',
-          buttonParamsJson: JSON.stringify({ display_text: '➕ Draw Card', id: `uno_draw_${jid}` })
-        },
-        {
-          name: 'quick_reply',
-          buttonParamsJson: JSON.stringify({ display_text: '🔴 UNO!', id: `uno_call_${jid}` })
-        },
-      ],
-      mentions: game.players,
-    })
-  } catch {
-    await sock.sendMessage(jid, { text: gameStatus(game) + '\n\n_Reply uno_hand, uno_draw, or uno_call_', mentions: game.players })
-  }
+  await sendButtons(sock, jid, {
+    text: gameStatus(game),
+    footer: `@${cur.split('@')[0]}'s turn`,
+    interactiveButtons: [
+      {
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({ display_text: '🃏 View My Hand', id: `uno_hand_${jid}` })
+      },
+      {
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({ display_text: '➕ Draw Card', id: `uno_draw_${jid}` })
+      },
+      {
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({ display_text: '🔴 UNO!', id: `uno_call_${jid}` })
+      },
+    ],
+    mentions: game.players,
+    _fallback: '_Tap a button, or reply: uno_hand | uno_draw | uno_call_',
+  })
 }
 
 // ── Color picker buttons ──────────────────────────────────────────────────────
 
 async function sendColorPicker(sock, jid, msg) {
-  try {
-    await sock.sendMessage(jid, {
-      text: '🌈 *Pick a color for the Wild card:*',
-      title: '🎴 UNO — Choose Color',
-      footer: 'Tap your color',
-      interactiveButtons: [
-        {
-          name: 'quick_reply',
-          buttonParamsJson: JSON.stringify({ display_text: '🔴 Red', id: `color_red` })
-        },
-        {
-          name: 'quick_reply',
-          buttonParamsJson: JSON.stringify({ display_text: '🔵 Blue', id: `color_blue` })
-        },
-        {
-          name: 'quick_reply',
-          buttonParamsJson: JSON.stringify({ display_text: '🟡 Yellow', id: `color_yellow` })
-        },
-        {
-          name: 'quick_reply',
-          buttonParamsJson: JSON.stringify({ display_text: '🟢 Green', id: `color_green` })
-        },
-      ],
-    }, { quoted: msg })
-  } catch {
-    await sock.sendMessage(jid, { text: '🌈 Pick a color: Reply *red*, *blue*, *yellow*, or *green*' })
-  }
+  await sendButtons(sock, jid, {
+    text: '🌈 *Pick a color for the Wild card:*',
+    footer: 'Tap your color',
+    interactiveButtons: [
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🔴 Red',    id: 'color_red'    }) },
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🔵 Blue',   id: 'color_blue'   }) },
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🟡 Yellow', id: 'color_yellow' }) },
+      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🟢 Green',  id: 'color_green'  }) },
+    ],
+    _fallback: '_Reply: red | blue | yellow | green_',
+  }, msg)
 }
 
 // ── Game flow helpers ─────────────────────────────────────────────────────────
@@ -161,25 +159,15 @@ async function checkWin(sock, jid, game, playerJid) {
       text: `🏆 *UNO WINNER!*\n\n🎉 ${winner} has played all their cards!\n\n_The chaos ends…_`,
       mentions,
     })
-    try {
-      await sock.sendMessage(jid, {
-        text: 'Want to play again?',
-        title: '🎴 UNO',
-        footer: 'Game Over',
-        interactiveButtons: [
-          {
-            name: 'quick_reply',
-            buttonParamsJson: JSON.stringify({ display_text: '🔄 Play Again', id: `uno_rematch_${jid}` })
-          },
-          {
-            name: 'quick_reply',
-            buttonParamsJson: JSON.stringify({ display_text: '❌ End Game', id: `uno_end_${jid}` })
-          },
-        ],
-      })
-    } catch {
-      await sock.sendMessage(jid, { text: 'Game over! Type *.uno* to start a new game.' })
-    }
+    await sendButtons(sock, jid, {
+      text: 'Want to play again?',
+      footer: 'Game Over',
+      interactiveButtons: [
+        { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🔄 Play Again', id: `uno_rematch_${jid}` }) },
+        { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '❌ End Game',   id: `uno_end_${jid}`     }) },
+      ],
+      _fallback: '_Type .uno to start a new game_',
+    })
     return true
   }
   return false
@@ -342,26 +330,50 @@ module.exports = {
       if (!isMyTurn) return sock.sendMessage(jid, { text: text + '\n\n⏳ Wait for your turn.' })
       if (!playable.length) return sock.sendMessage(jid, { text: text + '\n\n❌ No playable cards! Use ➕ Draw Card.' })
 
-      // Send each playable card as a quick-reply button (up to 10 at a time)
-      const cardButtons = playable.slice(0, 10).map((c, i) => ({
+      // WhatsApp hard-limits to 3 buttons per message. Show first 2 cards +
+      // a paginator button if there are more than 3 playable cards.
+      const page     = playable.slice(0, 3)
+      const hasMore  = playable.length > 3
+      const btns = page.slice(0, hasMore ? 2 : 3).map((c, i) => ({
         name: 'quick_reply',
-        buttonParamsJson: JSON.stringify({
-          display_text: cardStr(c),
-          id: cardRowId(c) + `_${i}`
-        })
+        buttonParamsJson: JSON.stringify({ display_text: cardStr(c), id: cardRowId(c) + `_${i}` })
       }))
-
-      try {
-        await sock.sendMessage(jid, {
-          text: text + '\n\n✅ Tap a card to play it:',
-          title: '🎴 UNO — Play a Card',
-          footer: `${playable.length} playable card${playable.length !== 1 ? 's' : ''}`,
-          interactiveButtons: cardButtons,
-        }, { quoted: msg })
-      } catch {
-        const list = playable.map(c => `• ${cardStr(c)}`).join('\n')
-        await sock.sendMessage(jid, { text: text + '\n\nPlayable cards:\n' + list })
+      if (hasMore) {
+        btns.push({ name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: `⬇️ More (${playable.length - 2} more)`, id: `uno_more_${jid}` }) })
+        game.pendingHand = game.pendingHand || {}
+        game.pendingHand[senderJid] = playable.slice(2)
       }
+
+      await sendButtons(sock, jid, {
+        text: text + `\n\n✅ *Tap a card to play:*${hasMore ? ` _(${playable.length} playable, showing first 2)_` : ''}`,
+        footer: `${playable.length} playable card${playable.length !== 1 ? 's' : ''}`,
+        interactiveButtons: btns,
+        _fallback: playable.map(c => `• ${cardStr(c)}`).join('\n'),
+      }, msg)
+    }
+
+    // ── Card paginator ("More" button) ────────────────────────────────────────
+    if (buttonId.startsWith('uno_more_')) {
+      if (!game.players.includes(senderJid)) return
+      const remaining = game.pendingHand?.[senderJid] || []
+      if (!remaining.length) return sock.sendMessage(jid, { text: '❌ No more cards.' })
+      const hasMore = remaining.length > 3
+      const btns = remaining.slice(0, hasMore ? 2 : 3).map((c, i) => ({
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({ display_text: cardStr(c), id: cardRowId(c) + `_m${i}` })
+      }))
+      if (hasMore) {
+        btns.push({ name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: `⬇️ More (${remaining.length - 2} more)`, id: `uno_more_${jid}` }) })
+        game.pendingHand[senderJid] = remaining.slice(2)
+      } else {
+        game.pendingHand[senderJid] = []
+      }
+      return sendButtons(sock, jid, {
+        text: '🃏 *More playable cards:*',
+        footer: `${remaining.length} card${remaining.length !== 1 ? 's' : ''} remaining`,
+        interactiveButtons: btns,
+        _fallback: remaining.slice(0, hasMore ? 2 : 3).map(c => `• ${cardStr(c)}`).join('\n'),
+      }, msg)
     }
 
     // ── Color choice (from interactiveButton) ─────────────────────────────────
@@ -399,7 +411,7 @@ module.exports = {
       const cur = game.players[game.turn]
       if (senderJid !== cur) return sock.sendMessage(jid, { text: '⏳ It\'s not your turn!' })
 
-      const cleanRowId = rowId.replace(/_\d+$/, '')
+      const cleanRowId = rowId.replace(/_[m]?\d+$/, '')
       const card       = cardFromRowId(cleanRowId)
       const hand       = game.hands[cur] || []
       const idx        = hand.findIndex(c => c.color === card.color && c.value === card.value)

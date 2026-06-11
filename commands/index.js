@@ -95,7 +95,7 @@ async function handleInteraction(sock, msg) {
       return true
     }
     // ── UNO buttons ───────────────────────────────────────────────────────
-    if (buttonId.startsWith('uno_') || buttonId.startsWith('play_') || buttonId.startsWith('color_')) {
+    if (buttonId.startsWith('uno_') || buttonId.startsWith('play_') || buttonId.startsWith('color_') || buttonId.startsWith('uno_more_')) {
       await unoCmds.handleButton(sock, msg, buttonId)
       return true
     }
