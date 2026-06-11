@@ -56,29 +56,34 @@ function btn(displayText, id) {
 }
 
 async function sendGameButtons(sock, jid, game, text, quoted) {
-  const canDouble  = game.player.length === 2 && game.bet * 2 <= game.walletSnapshot
-  const buttons = [
-    btn('🃏 Hit',   `bj_hit_${game.key}`),
-    btn('✋ Stand', `bj_stand_${game.key}`),
+  const canDouble = game.player.length === 2 && game.bet * 2 <= game.walletSnapshot
+  const rows = [
+    { title: '🃏 Hit',   description: 'Draw another card',  rowId: `bj_hit_${game.key}`   },
+    { title: '✋ Stand', description: 'Keep your hand',     rowId: `bj_stand_${game.key}` },
   ]
-  if (canDouble) buttons.push(btn('💰 Double Down', `bj_double_${game.key}`))
+  if (canDouble) rows.push({ title: '💰 Double Down', description: `Double bet to $${game.bet * 2}`, rowId: `bj_double_${game.key}` })
 
   await sock.sendMessage(jid, {
-    interactive: buttons,
     text,
     footer: '🃏 Blackjack',
+    buttonText: '⚡ Your Move',
+    sections: [{ title: 'Actions', rows }],
   }, quoted ? { quoted } : undefined)
 }
 
 async function sendEndButtons(sock, jid, text, key) {
   await sock.sendMessage(jid, { text })
   await sock.sendMessage(jid, {
-    interactive: [
-      btn('🔄 Play Again', `bj_again_${key}`),
-      btn('❌ Leave',      `bj_leave_${key}`),
-    ],
     text: 'What would you like to do?',
     footer: '🃏 Blackjack',
+    buttonText: '⚡ Options',
+    sections: [{
+      title: 'Next',
+      rows: [
+        { title: '🔄 Play Again', description: 'Start a new game ($100 bet)', rowId: `bj_again_${key}` },
+        { title: '❌ Leave',      description: 'Leave the table',             rowId: `bj_leave_${key}` },
+      ],
+    }],
   })
 }
 

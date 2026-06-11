@@ -77,15 +77,18 @@ function btn(displayText, id) {
 }
 
 async function sendTurnMessage(sock, jid, game) {
-  const mentions = game.players
   await sock.sendMessage(jid, {
-    interactive: [
-      btn('🃏 View My Hand', `uno_hand_${jid}`),
-      btn('➕ Draw Card',    `uno_draw_${jid}`),
-      btn('🔴 UNO!',         `uno_call_${jid}`),
-    ],
     text: gameStatus(game),
     footer: '🎴 UNO',
+    buttonText: '⚡ Your Turn',
+    sections: [{
+      title: 'Actions',
+      rows: [
+        { title: '🃏 View My Hand', description: 'See your cards & play one', rowId: `uno_hand_${jid}` },
+        { title: '➕ Draw Card',    description: 'Draw from the pile',         rowId: `uno_draw_${jid}` },
+        { title: '🔴 UNO!',         description: 'Call UNO (1 card left)',     rowId: `uno_call_${jid}` },
+      ],
+    }],
   })
 }
 
@@ -119,12 +122,16 @@ async function checkWin(sock, jid, game, playerJid) {
       mentions,
     })
     await sock.sendMessage(jid, {
-      interactive: [
-        btn('🔄 Play Again', `uno_rematch_${jid}`),
-        btn('❌ End Game',   `uno_end_${jid}`),
-      ],
       text: 'Want to play again?',
       footer: '🎴 UNO',
+      buttonText: '⚡ Options',
+      sections: [{
+        title: 'Next Steps',
+        rows: [
+          { title: '🔄 Play Again', description: 'Start a new lobby',   rowId: `uno_rematch_${jid}` },
+          { title: '❌ End Game',   description: 'Close the session',   rowId: `uno_end_${jid}`     },
+        ],
+      }],
     })
     return true
   }

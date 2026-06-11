@@ -323,28 +323,34 @@ async function sendBoardWithButtons(sock, jid, game, quoted) {
     await sock.sendMessage(jid, { text: caption + '\n\n' + board, mentions })
   }
 
-  // Interactive action buttons
+  // Action list (list messages work on all WA versions)
   await sock.sendMessage(jid, {
-    interactive: [
-      btn('♟️ Select Piece', `chess_select_piece_${jid}`),
-      btn('🏳️ Resign',       `chess_resign_${jid}`),
-    ],
-    text: 'Choose an action:',
+    text: '⬇️ What do you want to do?',
     footer: '♟️ Chess',
+    buttonText: '⚡ Actions',
+    sections: [{
+      title: 'Game Actions',
+      rows: [
+        { title: '♟️ Select Piece', description: 'Pick a piece to move', rowId: `chess_select_piece_${jid}` },
+        { title: '🏳️ Resign',       description: 'Give up this game',    rowId: `chess_resign_${jid}`       },
+      ],
+    }],
   })
 }
 
 async function sendEndButtons(sock, jid, text, mentions) {
-  if (mentions?.length) {
-    await sock.sendMessage(jid, { text, mentions })
-  }
+  await sock.sendMessage(jid, { text, ...(mentions?.length ? { mentions } : {}) })
   await sock.sendMessage(jid, {
-    interactive: [
-      btn('🔄 Rematch', `chess_rematch_${jid}`),
-      btn('❌ Close',   `chess_close_${jid}`),
-    ],
-    text: 'Game over. What next?',
+    text: 'Game over — what next?',
     footer: '♟️ Chess',
+    buttonText: '⚡ Options',
+    sections: [{
+      title: 'Next Steps',
+      rows: [
+        { title: '🔄 Rematch', description: 'Play again (colors swap)', rowId: `chess_rematch_${jid}` },
+        { title: '❌ Close',   description: 'End this session',         rowId: `chess_close_${jid}`   },
+      ],
+    }],
   })
 }
 

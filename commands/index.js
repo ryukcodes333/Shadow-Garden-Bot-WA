@@ -96,12 +96,25 @@ async function handleInteraction(sock, msg) {
   }
 
   if (isList && rowId) {
-    // ── Chess list selections ──────────────────────────────────────────────
+    // ── Game action rows (chess_/bj_/uno_ used as rowId in list menus) ────
+    if (rowId.startsWith('chess_')) {
+      await chessCmds.handleButton(sock, msg, rowId)
+      return true
+    }
+    if (rowId.startsWith('bj_')) {
+      await blackjackCmds.handleButton(sock, msg, rowId)
+      return true
+    }
+    if (rowId.startsWith('uno_')) {
+      await unoCmds.handleButton(sock, msg, rowId)
+      return true
+    }
+    // ── Chess piece/move selections ────────────────────────────────────────
     if (rowId.startsWith('select_') || rowId.startsWith('move_')) {
       await chessCmds.handleList(sock, msg, rowId)
       return true
     }
-    // ── UNO list selections (play_ / color_) ──────────────────────────────
+    // ── UNO card/color selections ──────────────────────────────────────────
     if (rowId.startsWith('play_') || rowId.startsWith('color_')) {
       await unoCmds.handleList(sock, msg, rowId)
       return true
