@@ -28,6 +28,7 @@ const utilityCmds     = require('./utility')
 const imagesCmds      = require('./images')
 const { alphaChatReply, aquaChatReply } = require('./chat')
 const vibeCmds = require('./vibe')
+const amongusCmds = require('./amongus')
 
 const PREFIX      = global.prefix   || '.'
 const POKE_PREFIX = '#'
@@ -499,7 +500,7 @@ async function handleMessage(sock, msg) {
         `🌑 *Account Required*\n\n` +
         `You need to register before using this command!\n\n` +
         `Type *.signup* to get started, or *.register <name>* to create your profile.\n\n` +
-        `> 🖤 Shadow Garden awaits.`
+        `> 🖤 Konosuba awaits.`
       )
     }
   }
@@ -581,7 +582,33 @@ async function handleMessage(sock, msg) {
     if (gameCmds[cmd])          return await gameCmds[cmd](ctx)
 
     // ── Chess ─────────────────────────────────────────────────────────────
-    if (cmd === 'chess')        return await chessCmds.chess(ctx)
+
+      // ── Among Us ──────────────────────────────────────────────────────────────
+      if (cmd === 'amongus') return await amongusCmds['amongus'](ctx)
+
+      // Unique AU commands (no conflicts with other systems)
+      const AU_ONLY = new Set([
+        'go','move','room','tasks','task','vent','sabotage','fix','repair',
+        'report','meeting','vote','skip','observe','vitals','protect','shift',
+        'track','map','crewcard','locker','cosmetics','buyau','colours','colors',
+        'colour','color','titles','austats','aulb','crate','spin','pet'
+      ])
+      if (AU_ONLY.has(cmd) && amongusCmds[cmd]) return await amongusCmds[cmd](ctx)
+
+      // .kill — route to Among Us when in active game; otherwise falls through
+      if (cmd === 'kill' && amongusCmds.activeGames[jid]) return await amongusCmds['kill'](ctx)
+
+      // .join / .leave / .players / .start — route to Among Us when game exists in group
+      const AU_LOBBY = new Set(['join','leave','players'])
+      if (AU_LOBBY.has(cmd) && amongusCmds.activeGames[jid]) return await amongusCmds[cmd](ctx)
+
+      // .equip — try AU cosmetic first; if no cosmetic matched (returns null), fall through to rpg
+      if (cmd === 'equip') {
+        const auResult = await amongusCmds['equip'](ctx).catch(() => null)
+        if (auResult !== null && auResult !== undefined) return
+      }
+
+          if (cmd === 'chess')        return await chessCmds.chess(ctx)
     if (cmd === 'endchess')     return await chessCmds.endchess(ctx)
 
     // ── Blackjack ─────────────────────────────────────────────────────────

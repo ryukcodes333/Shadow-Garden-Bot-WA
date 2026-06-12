@@ -79,7 +79,7 @@ module.exports = {
       `┃ ⤷ .goodbye on/off\n` +
       `┃ ⤷ .autoreply on/off\n` +
       `┃ ⤷ .active\n` +
-      `┃ ⤷ .resetlink\n` +
+      `┃ �� .resetlink\n` +
       `┃ ⤷ .revoke\n` +
       `┃ ⤷ .invitelink\n` +
       `┃ ⤷ .stafflist\n` +
@@ -308,7 +308,7 @@ module.exports = {
       `┃ ⤷ .slay\n` +
       `┃ ⤷ .ghost\n` +
       `┃ ⤷ .toxic\n` +
-      `┃ ⤷ .real\n` +
+      `┃ ��� .real\n` +
       `┃ ⤷ .sus\n` +
       `┃ ⤷ .caught\n` +
       `┃ ⤷ .clout\n` +
@@ -363,18 +363,18 @@ module.exports = {
 
   async repo({ reply }) {
     await reply(
-      `🌑 *Shadow Garden Bot*\n\n` +
+      `🌑 *Konosuba Bot*\n\n` +
       `📦 *Script:* Konosuba Community Bot v${BOT_VERSION}\n` +
       `🌐 *Website:* konosubacommunity.onrender.com\n` +
       `💬 *Community:* https://chat.whatsapp.com/FlpibcQWh3027KRBGTctc8\n\n` +
-      `> Made with 🖤 by Shadow Garden`
+      `> Made with 🖤 by Konosuba`
     )
   },
 
   async signup({ reply, sock, jid, msg }) {
     await sock.sendMessage(jid, {
       text:
-        `🌑 *Welcome to Shadow Garden!*\n\n` +
+        `🌑 *Welcome to Konosuba!*\n\n` +
         `To get started, follow the steps below:\n\n` +
         `*Step 1 — Join the Community*\n` +
         `👉 https://chat.whatsapp.com/FlpibcQWh3027KRBGTctc8\n\n` +
@@ -384,7 +384,7 @@ module.exports = {
         `Type *.register <your name>* to create your bot profile\n\n` +
         `*Step 4 — Start Playing!*\n` +
         `Type *.menu* to see all available commands\n\n` +
-        `> 🖤 Welcome to the Shadow Garden, traveller.`,
+        `> 🖤 Welcome to the Konosuba, traveller.`,
     }, { quoted: msg })
   },
 
