@@ -152,9 +152,11 @@ async function handleMessage(sock, msg) {
 
   const sender = senderJid?.split('@')[0]?.split(':')[0] || ''
 
-  const isOwner = senderJid === OWNER_LID ||
-    senderJid?.replace('@s.whatsapp.net', '') === OWNER_LID.replace('@lid', '') ||
-    sender === OWNER_LID.replace('@lid', '')
+  const isOwner = 
+  senderJid === OWNER_LID ||
+  senderJid === global.ownerLid ||
+  senderJid?.split(':')[0] + '@lid' === OWNER_LID ||
+  sender === OWNER_LID.replace('@lid', '')
 
   let isMod = false
   let isGuardian = false
