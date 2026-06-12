@@ -87,7 +87,7 @@ const {
       const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
       rl.on('close', () => { clearTimeout(timeout); resolve('') })
       console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-      console.log('📱  SHADOW GARDEN BOT - PAIR A NEW DEVICE')
+      console.log('📱  KONOSUBA BOT - PAIR A NEW DEVICE')
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
       console.log('Enter your WhatsApp number with country code.')
       console.log('Example: 27821234567  (no + sign, no spaces)')
@@ -180,7 +180,7 @@ const {
         global.pendingPairingPhone = null
         global.botConnected = true
         const botNum = sock.user?.id?.split(':')[0] || sock.user?.id || 'Unknown'
-        console.log(`\n✅ Shadow Garden Bot (${BOT_NAME}) is ONLINE! 🌑`)
+        console.log(`\n✅ Konosuba Bot (${BOT_NAME}) is ONLINE! 🌑`)
         console.log(`📱 Bot Number: ${botNum}\n`)
         try {
           const { autoStartLottery } = require('./commands/lottery')
@@ -271,7 +271,7 @@ const {
     })
   }
 
-  console.log('🌑 Shadow Garden Bot starting…')
+  console.log('🌑 Konosuba Bot starting…')
 
   startBot().catch(err => {
     console.error('Fatal startup error:', err.message)
