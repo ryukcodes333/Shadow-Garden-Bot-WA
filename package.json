@@ -10,7 +10,7 @@
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "mongoose": "^8.5.0",
-    "@whiskeysockets/baileys": "npm:@dark-yasiya/baileys",
+    "@whiskeysockets/baileys": "7.0.0-rc.9",
     "axios": "^1.7.9",
     "express": "^4.21.2",
     "jimp": "^1.6.0",
