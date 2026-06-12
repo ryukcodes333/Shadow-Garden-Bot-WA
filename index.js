@@ -2,19 +2,23 @@ const {
     makeWASocket,
     DisconnectReason,
     fetchLatestBaileysVersion,
+    useMultiFileAuthState,
     isJidBroadcast,
     Browsers,
   } = require('@whiskeysockets/baileys')
   const { Boom } = require('@hapi/boom')
   const pino = require('pino')
   const readline = require('readline')
+  const path = require('path')
+  const fs = require('fs')
 
   require('./web')
 
   const handleMessage = require('./commands/index')
-  const { useMongoAuthState, clearMongoAuth } = require('./mongoAuth')
 
-  // ── Global safety net: never let an unhandled rejection kill the process ──
+  const AUTH_FOLDER = path.join(__dirname, 'auth_info_baileys')
+  if (!fs.existsSync(AUTH_FOLDER)) fs.mkdirSync(AUTH_FOLDER, { recursive: true })
+
   process.on('unhandledRejection', (reason) => {
     console.error('[unhandledRejection]', reason?.message || reason)
   })
@@ -45,8 +49,10 @@ const {
 
   async function clearSession() {
     try {
-      await clearMongoAuth()
-      console.log('🗑️  Session cleared from MongoDB.')
+      for (const file of fs.readdirSync(AUTH_FOLDER)) {
+        fs.rmSync(path.join(AUTH_FOLDER, file), { force: true })
+      }
+      console.log('🗑️  Session cleared.')
     } catch (e) {
       console.error('Error clearing session:', e.message)
     }
@@ -59,7 +65,7 @@ const {
   function scheduleRestart(delayMs, label) {
     if (isRestarting) return
     if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
-      console.error(`🛑 Too many reconnect attempts (${reconnectAttempts}). Waiting 60s before retrying…`)
+      console.error(`🛑 Too many reconnect attempts (${reconnectAttempts}). Cooling down 60s…`)
       reconnectAttempts = 0
       delayMs = 60000
     }
@@ -98,7 +104,7 @@ const {
     reconnectAttempts++
     global.pairingCodeRequested = false
 
-    const { state, saveCreds } = await useMongoAuthState()
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER)
 
     if (!state.creds.registered) {
       const envPhone = (process.env.PHONE_NUMBER || '').replace(/\D/g, '')
@@ -114,7 +120,7 @@ const {
         }
       }
     } else {
-      console.log('🔐 Session found in MongoDB - reconnecting to', state.creds.me?.id || 'WhatsApp', '…')
+      console.log('🔐 Session found - reconnecting to', state.creds.me?.id || 'WhatsApp', '…')
     }
 
     const { version, isLatest } = await fetchLatestBaileysVersion()
@@ -127,7 +133,7 @@ const {
       auth: state,
       printQRInTerminal: false,
       logger: pino({ level: 'silent' }),
-      browser: Browsers.macOS('Desktop'),
+      browser: Browsers.ubuntu('Chrome'),
       markOnlineOnConnect: false,
       connectTimeoutMs: 30000,
       keepAliveIntervalMs: 15000,
@@ -158,12 +164,9 @@ const {
           console.log('╚══════════════════════════════════════════╝')
           console.log('\n📲 HOW TO PAIR:')
           console.log('   1. Open WhatsApp on your phone')
-          console.log('   2. Tap ⋮ (three dots) → Linked Devices')
-          console.log('   3. Tap "Link a Device"')
-          console.log('   4. Tap "Link with phone number instead"')
-          console.log(`   5. Enter code: ${fmt}`)
-          console.log('\n🔔 WhatsApp will send you a notification to')
-          console.log('   confirm the device pairing. Tap CONFIRM.')
+          console.log('   2. Tap ⋮ → Linked Devices → Link a Device')
+          console.log('   3. Tap "Link with phone number instead"')
+          console.log(`   4. Enter code: ${fmt}`)
           console.log('⏳ Code expires in 60 seconds.\n')
         } catch (err) {
           global.pairingCodeRequested = false
@@ -180,12 +183,11 @@ const {
         global.botConnected = true
         const botNum = sock.user?.id?.split(':')[0] || sock.user?.id || 'Unknown'
         console.log(`\n✅ Shadow Garden Bot (${BOT_NAME}) is ONLINE! 🌑`)
-        console.log(`📱 Bot Number: ${botNum}`)
-        console.log(`💡 If this number is admin in a group, the bot can kick/manage members.\n`)
+        console.log(`📱 Bot Number: ${botNum}\n`)
         try {
           const { autoStartLottery } = require('./commands/lottery')
           autoStartLottery('$100,000 Cash', 10)
-          console.log('🎰 Auto-lottery started! Prize: $100,000 Cash — first 10 participants.')
+          console.log('🎰 Auto-lottery started!')
         } catch (e) { console.error('Auto-lottery error:', e.message) }
       }
 
@@ -214,9 +216,8 @@ const {
           await clearSession()
           scheduleRestart(5000, 'Fresh session after logout')
         } else if (replaced) {
-          // Another instance took over — do NOT immediately reconnect or you get an infinite fight.
-          // Clear the in-memory state and wait a long time before retrying.
-          console.log('⚠️  Session replaced by another instance. Waiting 30s before reconnecting…')
+          // DO NOT reconnect immediately — causes infinite loop between two instances
+          console.log('⚠️  Session replaced by another instance. Waiting 30s…')
           console.log('💡 Make sure only ONE instance of the bot is running at a time.')
           global.botConnected = false
           global.sock = null
@@ -258,7 +259,7 @@ const {
           const pushName = participant.split('@')[0]
           if (action === 'add' && groupSettings.welcome) {
             const text = (groupSettings.welcome_msg ||
-              `Hello there @${pushName} we are happy to have you in our group. Don't forget to introduce yourself too thank you.`)
+              `Hello there @${pushName} we are happy to have you in our group!`)
               .replace('<user>', `@${pushName}`).replace('<group>', groupMeta.subject)
             await sock.sendMessage(id, { text, mentions: [participant] })
           } else if (action === 'remove' && groupSettings.leave) {
@@ -272,7 +273,7 @@ const {
     })
   }
 
-  console.log('🌑 Shadow Garden Bot starting… (auth stored in MongoDB)')
+  console.log('🌑 Shadow Garden Bot starting…')
 
   startBot().catch(err => {
     console.error('Fatal startup error:', err.message)
