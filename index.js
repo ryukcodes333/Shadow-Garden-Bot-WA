@@ -2,7 +2,7 @@ const {
   makeWASocket,
   DisconnectReason,
   fetchLatestBaileysVersion,
-  isJidBroadcast,
+  isJidBr⁵oadcast,
   Browsers,
 } = require('@whiskeysockets/baileys')
 const { Boom } = require('@hapi/boom')
