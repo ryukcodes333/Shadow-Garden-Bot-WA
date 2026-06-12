@@ -566,4 +566,7 @@ module.exports = {
       await reply(`⏸️ *Suspended Users (${active.length})*\n\n${list}`)
     } catch (e) { await reply(`❌ Error: ${e.message}`) }
   },
+
+  async del(ctx) { return module.exports.delete(ctx) },
+  async d(ctx)   { return module.exports.delete(ctx) },
 }

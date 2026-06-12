@@ -124,7 +124,7 @@ module.exports = {
 
   async bankbal({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
-    await reply(`🏦 *Bank Balance*\n\n\`\`\`\n🏦 Bank  : $${(u.bank||0).toLocaleString()}\n💵 Wallet: $${(u.wallet||0).toLocaleString()}\n\`\`\``)
+    await reply(`🏦 *Bank Balance*\n\n\`\`\`\n🏦 Bank  : £${(u.bank||0).toLocaleString()}\n💵 Wallet: £${(u.wallet||0).toLocaleString()}\n\`\`\``)
   },
 
   async gems({ reply, sender, user }) {
@@ -153,11 +153,11 @@ module.exports = {
     })
     const xpResult = await applyXP(sender, null, DAILY_XP)
     await db.setCooldown(sender, 'daily', CD_DAILY)
-    console.log(`[economy] daily: ${sender} +$${coins} +${DAILY_XP}XP streak=${newStreak}`)
+    console.log(`[economy] daily: ${sender} +£${coins} +${DAILY_XP}XP streak=${newStreak}`)
     await db.trackCurrencyGenerated(coins)
     await reply(
       `🌟 *Daily Reward Claimed!*\n\n` +
-      `💰 +$${coins}\n` +
+      `💰 +£${coins}\n` +
       `💎 +${gems} gems\n` +
       `⭐ +${DAILY_XP} XP\n` +
       `🔥 Streak: ${newStreak} days\n` +
@@ -183,10 +183,10 @@ module.exports = {
     const xpResult = await applyXP(sender, null, weeklyXp)
     await db.setCooldown(sender, 'weekly', 7 * 24 * 3600)
     await db.trackCurrencyGenerated(coins)
-    console.log(`[economy] weekly: ${sender} +$${coins} +${weeklyXp}XP`)
+    console.log(`[economy] weekly: ${sender} +£${coins} +${weeklyXp}XP`)
     await reply(
       `📅 *Weekly Reward!*\n\n` +
-      `💰 +$${coins.toLocaleString()}\n` +
+      `💰 +£${coins.toLocaleString()}\n` +
       `⭐ +${weeklyXp} XP\n` +
       (xpResult.leveledUp ? `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊\n` : '') +
       `\n_Come back in 7 days!_`
@@ -209,10 +209,10 @@ module.exports = {
     const xpResult = await applyXP(sender, null, monthlyXp)
     await db.setCooldown(sender, 'monthly', 30 * 24 * 3600)
     await db.trackCurrencyGenerated(coins)
-    console.log(`[economy] monthly: ${sender} +$${coins} +${monthlyXp}XP`)
+    console.log(`[economy] monthly: ${sender} +£${coins} +${monthlyXp}XP`)
     await reply(
       `🗓️ *Monthly Reward!*\n\n` +
-      `💰 +$${coins.toLocaleString()}\n` +
+      `💰 +£${coins.toLocaleString()}\n` +
       `⭐ +${monthlyXp} XP\n` +
       (xpResult.leveledUp ? `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊\n` : '') +
       `\n_Come back in 30 days!_`
@@ -232,11 +232,11 @@ module.exports = {
     const xpResult = await applyXP(sender, null, workXp)
     await db.setCooldown(sender, 'work', CD_WORK)
     await db.trackCurrencyGenerated(earned)
-    console.log(`[economy] work: ${sender} +$${earned} +${workXp}XP`)
+    console.log(`[economy] work: ${sender} +£${earned} +${workXp}XP`)
     await reply(
       `💼 *Work Complete!*\n\n` +
       `You ${job}\n` +
-      `💰 +$${earned}\n` +
+      `💰 +£${earned}\n` +
       `⭐ +${workXp} XP\n` +
       (xpResult.leveledUp ? `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊\n` : '') +
       `\n⏳ Next work in *20 minutes*`
@@ -254,7 +254,7 @@ module.exports = {
 
     if (roll < 0.02) {
       // Legendary (2%): Shadow Crystal
-      earned = Math.floor(Math.random() * 151) + 100  // 100–250
+      earned = Math.floor(Math.random() * 1301) + 200  // 200–1500
       gems   = 2
       result = `a *Shadow Crystal* ✨ (legendary find!)`
     } else if (roll < 0.08) {
@@ -269,7 +269,7 @@ module.exports = {
     } else if (roll < 0.55) {
       // Common (30%): small coins
       earned = Math.floor(Math.random() * 11) + 5    // 5–15
-      result = `a rusty coin worth $${earned}`
+      result = `a rusty coin worth £${earned}`
     } else {
       // Nothing (45%)
       result = 'nothing useful 😐'
@@ -309,7 +309,7 @@ module.exports = {
       { label: '🌿 Seaweed',         weight: 7,  coins: [0, 0]    },
       { label: '🦈 Shark!',          weight: 4,  coins: [50, 100] },
       { label: '💎 Shadow Pearl',    weight: 2,  coins: [120, 200] },
-      { label: '🐉 Sea Serpent Egg', weight: 1,  coins: [200, 350] },
+      { label: '🐉 Sea Serpent Egg', weight: 1,  coins: [500, 1500] },
     ]
     const totalWeight = catches.reduce((a, c) => a + c.weight, 0)
     let rand = Math.random() * totalWeight, caught = catches[catches.length - 1]
@@ -326,7 +326,7 @@ module.exports = {
     await db.setCooldown(sender, 'fish', CD_FISH)
 
     let caption = `🎣 *Fishing Result*\n\nCaught: *${caught.label}*`
-    if (coins > 0) caption += `\n💰 +$${coins}`
+    if (coins > 0) caption += `\n💰 +£${coins} Eris`
     else caption += `\n\n_You did not catch anything this time._`
     caption += `\n⭐ +${fishXp} XP`
     if (xpResult.leveledUp) caption += `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊`
@@ -343,13 +343,13 @@ module.exports = {
     const u = user || await db.getOrCreateUser(sender)
     if (await checkCooldown(sender, 'beg', reply)) return
     const success = Math.random() < 0.5
-    const coins   = success ? Math.floor(Math.random() * 6) + 2 : 0
+    const coins   = success ? Math.floor(Math.random() * 1499) + 2 : 0
     if (success) {
       await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
       await db.trackCurrencyGenerated(coins)
     }
     await db.setCooldown(sender, 'beg', CD_BEG)
-    await reply(success ? `🙏 Someone felt generous — *+$${coins}*` : `🙏 Nobody gave you anything. Get a job! 😭`)
+    await reply(success ? `🙏 Someone felt generous — *+£${coins} Eris*` : `🙏 Nobody gave you anything. Get a job! 😭`)
   },
 
   // ── .crime ───────────────────────────────────────────────────────────────
@@ -376,7 +376,7 @@ module.exports = {
       await reply(
         `🦹 *Crime Successful!*\n\n` +
         `You ${acts[Math.floor(Math.random() * acts.length)]}.\n` +
-        `💰 +$${gain}\n` +
+        `💰 +£${gain}\n` +
         `⭐ +${crimeXp} XP` +
         (xpResult.leveledUp ? `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊` : '')
       )
@@ -384,7 +384,7 @@ module.exports = {
       const fine = Math.min(Math.floor(Math.random() * 31) + 20, u.wallet || 0)  // 20–50 coins fine
       await db.updateUser(sender, { wallet: Math.max(0, (u.wallet || 0) - fine) })
       await db.trackCurrencyRemoved(fine)
-      await reply(`👮 *Caught!*\n\nYou were caught and fined *$${fine}*. Better luck next time.`)
+      await reply(`👮 *Caught!*\n\nYou were caught and fined *£${fine}*. Better luck next time.`)
     }
   },
 
@@ -448,9 +448,9 @@ module.exports = {
       const stolen = Math.max(1, Math.floor(targetWallet * pct))
       await db.updateUser(tp,     { wallet: (tu.wallet || 0) - stolen })
       await db.updateUser(sender, { wallet: (u.wallet  || 0) + stolen })
-      console.log(`[economy] rob: ${sender} stole $${stolen} (${(pct*100).toFixed(1)}%) from ${tp}`)
+      console.log(`[economy] rob: ${sender} stole £${stolen} (${(pct*100).toFixed(1)}%) from ${tp}`)
       await sock.sendMessage(jid, {
-        text: `🦹 *Rob Successful!*\n\nYou stole *$${stolen.toLocaleString()}* from @${tp}!\n_(${(pct*100).toFixed(1)}% of their wallet)_`,
+        text: `🦹 *Rob Successful!*\n\nYou stole *£${stolen.toLocaleString()}* from @${tp}!\n_(${(pct*100).toFixed(1)}% of their wallet)_`,
         mentions: [mentionJid],
       }, { quoted: msg })
     } else {
@@ -458,7 +458,7 @@ module.exports = {
       await db.updateUser(sender, { wallet: Math.max(0, (u.wallet || 0) - fine) })
       await db.trackCurrencyRemoved(fine)
       await sock.sendMessage(jid, {
-        text: `👮 *Your robbery attempt failed.*\n\nYou failed to rob @${tp} and paid a *$${fine}* fine.`,
+        text: `👮 *Your robbery attempt failed.*\n\nYou failed to rob @${tp} and paid a *£${fine}* fine.`,
         mentions: [mentionJid],
       }, { quoted: msg })
     }
@@ -487,7 +487,7 @@ module.exports = {
       const targets = ['Shadow Bank vault', 'merchant convoy', 'guild treasury', 'noble estate', 'forbidden archive']
       await reply(
         `💰 *Heist Successful!*\n\n` +
-        `Your crew cracked the ${targets[Math.floor(Math.random() * targets.length)]} and got away with *$${reward.toLocaleString()}*!\n` +
+        `Your crew cracked the ${targets[Math.floor(Math.random() * targets.length)]} and got away with *£${reward.toLocaleString()}*!\n` +
         `⭐ +${heistXp} XP` +
         (xpResult.leveledUp ? `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊` : '')
       )
@@ -499,7 +499,7 @@ module.exports = {
       if (loss > 0) await db.trackCurrencyRemoved(loss)
       await reply(
         `🚨 *The heist failed.*\n\n` +
-        `The guards caught your crew. You lost *$${loss.toLocaleString()}* in the chaos.\n\n` +
+        `The guards caught your crew. You lost *£${loss.toLocaleString()}* in the chaos.\n\n` +
         `_Lay low for 90 minutes before trying again._`
       )
     }
@@ -518,7 +518,7 @@ module.exports = {
     await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
     await db.setCooldown(sender, 'bonus', CD_BONUS)
     await db.trackCurrencyGenerated(coins)
-    await reply(`🎁 *Bonus Collected!*\n\n💰 +$${coins}\n\n_Next bonus in 4 hours._`)
+    await reply(`🎁 *Bonus Collected!*\n\n💰 +£${coins}\n\n_Next bonus in 4 hours._`)
   },
 
   // ── .pay / .donate ────────────────────────────────────────────────────────
@@ -544,14 +544,14 @@ module.exports = {
 
     const amount = parseInt(args.find(a => !isNaN(parseInt(a))))
     if (!amount || amount <= 0) return reply('❌ Invalid amount provided.')
-    if (amount > (u.wallet || 0)) return reply(`❌ You do not have enough coins. Wallet: $${(u.wallet || 0).toLocaleString()}`)
+    if (amount > (u.wallet || 0)) return reply(`❌ You do not have enough coins. Wallet: £${(u.wallet || 0).toLocaleString()}`)
 
     pendingPay[sender] = { toPhone: targetPhone, toJid: targetJid, amount, expiresAt: Date.now() + 60000 }
     setTimeout(() => { if (pendingPay[sender]?.toPhone === targetPhone) delete pendingPay[sender] }, 60000)
 
     const senderJid = msg.key.participant || msg.key.remoteJid || `${sender}@s.whatsapp.net`
     await sock.sendMessage(jid, {
-      text: `⚠️ You are about to transfer $${amount.toLocaleString()} to @${targetPhone}. Kindly reply with *Yes* to continue transaction, or *No* to cancel this transaction`,
+      text: `⚠️ You are about to transfer £${amount.toLocaleString()} to @${targetPhone}. Kindly reply with *Yes* to continue transaction, or *No* to cancel this transaction`,
       mentions: [senderJid, targetJid],
     }, { quoted: msg })
   },
@@ -576,7 +576,7 @@ module.exports = {
 
     const u = await db.getOrCreateUser(sender)
     if (amount > (u.wallet || 0)) {
-      await sock.sendMessage(jid, { text: `❌ You do not have enough coins. You have $${(u.wallet || 0).toLocaleString()}` }, { quoted: msg })
+      await sock.sendMessage(jid, { text: `❌ You do not have enough coins. You have £${(u.wallet || 0).toLocaleString()}` }, { quoted: msg })
       return true
     }
 
@@ -589,7 +589,7 @@ module.exports = {
       `*💸 TRANSACTION APPROVED ✅*\n\n` +
       `*From:* @${sender}\n` +
       `*To:* @${toPhone}\n` +
-      `*Amount:* $${amount.toLocaleString()}\n\n` +
+      `*Amount:* £${amount.toLocaleString()}\n\n` +
       `_Processed by Konosuba Bank_ 🖤`
 
     const mentions = [senderJid, toJid]
@@ -607,9 +607,9 @@ module.exports = {
     const u = user || await db.getOrCreateUser(sender)
     const amount = args[0]?.toLowerCase() === 'all' ? u.bank : parseInt(args[0])
     if (!amount || amount <= 0) return reply('❌ Invalid amount provided. Usage: `.withdraw <amount>` or `.withdraw all`')
-    if (amount > (u.bank || 0)) return reply(`❌ Your bank is insufficient. Bank: $${(u.bank || 0).toLocaleString()}`)
+    if (amount > (u.bank || 0)) return reply(`❌ Your bank is insufficient. Bank: £${(u.bank || 0).toLocaleString()}`)
     await db.updateUser(sender, { wallet: (u.wallet || 0) + amount, bank: (u.bank || 0) - amount })
-    await reply(`🏧 Withdrew *$${amount.toLocaleString()}* from your bank.\n\n💵 Wallet: $${((u.wallet||0)+amount).toLocaleString()} | 🏦 Bank: $${((u.bank||0)-amount).toLocaleString()}`)
+    await reply(`🏧 Withdrew *£${amount.toLocaleString()}* from your bank.\n\n💵 Wallet: £${((u.wallet||0)+amount).toLocaleString()} | 🏦 Bank: £${((u.bank||0)-amount).toLocaleString()}`)
   },
   async wid(ctx) { return module.exports.withdraw(ctx) },
 
@@ -618,26 +618,26 @@ module.exports = {
     const amount = u.bank || 0
     if (amount <= 0) return reply('❌ Your bank is empty.')
     await db.updateUser(sender, { wallet: (u.wallet || 0) + amount, bank: 0 })
-    await reply(`🏧 Withdrew *$${amount.toLocaleString()}* from your bank.\n\n💵 Wallet: $${((u.wallet||0)+amount).toLocaleString()} | 🏦 Bank: $0`)
+    await reply(`🏧 Withdrew *£${amount.toLocaleString()}* from your bank.\n\n💵 Wallet: £${((u.wallet||0)+amount).toLocaleString()} | 🏦 Bank: $0`)
   },
 
   async deposit({ reply, sender, user, args }) {
     const u = user || await db.getOrCreateUser(sender)
     const amount = args[0]?.toLowerCase() === 'all' ? u.wallet : parseInt(args[0])
     if (!amount || amount <= 0) return reply('❌ Invalid amount provided. Usage: `.deposit <amount>` or `.deposit all`')
-    if (amount > (u.wallet || 0)) return reply(`❌ You do not have enough coins. Wallet: $${(u.wallet || 0).toLocaleString()}`)
+    if (amount > (u.wallet || 0)) return reply(`❌ You do not have enough coins. Wallet: £${(u.wallet || 0).toLocaleString()}`)
     const bankLimit = u.bank_limit || 50000
     if ((u.bank || 0) + amount > bankLimit) {
       const space = Math.max(0, bankLimit - (u.bank || 0))
       return reply(
         `❌ *Your bank is full!*\n\n` +
-        `🏦 Bank: $${(u.bank||0).toLocaleString()} / $${bankLimit.toLocaleString()}\n` +
-        `📥 Space remaining: $${space.toLocaleString()}\n\n` +
+        `🏦 Bank: £${(u.bank||0).toLocaleString()} / £${bankLimit.toLocaleString()}\n` +
+        `📥 Space remaining: £${space.toLocaleString()}\n\n` +
         `💵 Buy a *Bank Note* from *.shop* to increase your limit!`
       )
     }
     await db.updateUser(sender, { wallet: (u.wallet || 0) - amount, bank: (u.bank || 0) + amount })
-    await reply(`🎉 Deposited *$${amount.toLocaleString()}* to your bank.\n\n💵 Wallet: $${((u.wallet||0)-amount).toLocaleString()} | 🏦 Bank: $${((u.bank||0)+amount).toLocaleString()}`)
+    await reply(`🎉 Deposited *£${amount.toLocaleString()}* to your bank.\n\n💵 Wallet: £${((u.wallet||0)-amount).toLocaleString()} | 🏦 Bank: £${((u.bank||0)+amount).toLocaleString()}`)
   },
   async dep(ctx) { return module.exports.deposit(ctx) },
 
@@ -653,12 +653,12 @@ module.exports = {
     const typeLabels = { weapon:'Weapons', armor:'Armor', consumable:'Consumables', tool:'Tools', accessory:'Accessories', banking:'Banking' }
     let sections = ''
     for (const [type, entries] of Object.entries(byType)) {
-      const lines = entries.map(([k, v]) => `  ${v.emoji} *${v.name}* - $${v.price.toLocaleString()}  \`.buy ${k}\``).join('\n')
+      const lines = entries.map(([k, v]) => `  ${v.emoji} *${v.name}* - £${v.price.toLocaleString()}  \`.buy ${k}\``).join('\n')
       sections += `\n${typeEmojis[type]||'🛒'} *${typeLabels[type]||type}*\n${lines}\n`
     }
     await reply(
       `🏪 *Konosuba Market*\n\n` +
-      `💰 Wallet: $${(u.wallet||0).toLocaleString()} | 💎 Gems: ${u.gems||0}\n` +
+      `💰 Wallet: £${(u.wallet||0).toLocaleString()} | 💎 Gems: ${u.gems||0}\n` +
       `━━━━━━━━━━━━━━━━━━━━` +
       sections +
       `━━━━━━━━━━━━━━━━━━━━\n` +
@@ -679,7 +679,7 @@ module.exports = {
       await db.updateUser(sender, { gems: (u.gems || 0) - data.price })
       await db.trackCurrencyRemoved(0)  // gem sink (gem not coin)
     } else {
-      if ((u.wallet || 0) < data.price) return reply(`❌ You do not have enough coins. Need $${data.price.toLocaleString()}. You have $${(u.wallet || 0).toLocaleString()}`)
+      if ((u.wallet || 0) < data.price) return reply(`❌ You do not have enough coins. Need £${data.price.toLocaleString()}. You have £${(u.wallet || 0).toLocaleString()}`)
       await db.updateUser(sender, { wallet: (u.wallet || 0) - data.price })
       await db.trackCurrencyRemoved(data.price)
     }
@@ -707,7 +707,7 @@ module.exports = {
     const u = user || await db.getOrCreateUser(sender)
     await db.updateUser(sender, { wallet: (u.wallet || 0) + sellPrice })
     await db.trackCurrencyGenerated(sellPrice)
-    await reply(`💸 Sold *${found.item}* for $${sellPrice}`)
+    await reply(`💸 Sold *${found.item}* for £${sellPrice}`)
   },
 
   async use({ reply, sender, args }) {
@@ -731,8 +731,8 @@ module.exports = {
       await db.removeItem(sender, found.item)
       return reply(
         `✅ *Bank Note Used!*\n\n` +
-        `🏦 Bank limit increased by *$${increase.toLocaleString()}*\n` +
-        `💳 New limit: *$${(current + increase).toLocaleString()}*`
+        `🏦 Bank limit increased by *£${increase.toLocaleString()}*\n` +
+        `💳 New limit: *£${(current + increase).toLocaleString()}*`
       )
     }
     await db.removeItem(sender, found.item)
@@ -793,7 +793,7 @@ module.exports = {
     await reply(
       `👤 *${u.name || targetPhone}*\n\n` +
       `📊 Lv.${u.level || 1} | ⭐ ${u.xp || 0}/${xpNeeded} XP | 🎖️ ${u.role || 'Member'}\n` +
-      `💰 $${(u.wallet || 0).toLocaleString()} | 🏦 $${(u.bank || 0).toLocaleString()} | 💎 ${u.gems || 0}\n` +
+      `💰 £${(u.wallet || 0).toLocaleString()} | 🏦 £${(u.bank || 0).toLocaleString()} | 💎 ${u.gems || 0}\n` +
       `🔥 Streak: ${u.streak || 0} days`
     )
   },
@@ -833,9 +833,9 @@ module.exports = {
       return (
         `═══════════════\n` +
         `║ *#${i + 1}  🔖 ${display}*\n` +
-        `║ *💰 Wallet:* $${(u.wallet || 0).toLocaleString()}\n` +
-        `║ *🏦 Bank:* $${(u.bank || 0).toLocaleString()}\n` +
-        `║ *💫 Total:* $${total.toLocaleString()}\n` +
+        `║ *💰 Wallet:* £${(u.wallet || 0).toLocaleString()}\n` +
+        `║ *🏦 Bank:* £${(u.bank || 0).toLocaleString()}\n` +
+        `║ *💫 Total:* £${total.toLocaleString()}\n` +
         `═══════════════`
       )
     })
@@ -921,8 +921,8 @@ module.exports = {
         `🏦 *ACTIVE LOAN*\n\n` +
         `You already have an outstanding loan!\n\n` +
         `*Tier:* ${existing.tier}\n` +
-        `*Original:* $${(existing.amount || 0).toLocaleString()}\n` +
-        `*Remaining:* $${(existing.total_due || 0).toLocaleString()}\n` +
+        `*Original:* £${(existing.amount || 0).toLocaleString()}\n` +
+        `*Remaining:* £${(existing.total_due || 0).toLocaleString()}\n` +
         `*Due:* ${due}\n\n` +
         `Use *.repay <amount>* to pay it back.`
       )
@@ -934,7 +934,7 @@ module.exports = {
       return reply(
         `🏦 *KONOSUBA BANK — LOAN*\n\n` +
         `*Your Tier:* ${tier}\n` +
-        `*Max Loan:* $${max.toLocaleString()}\n` +
+        `*Max Loan:* £${max.toLocaleString()}\n` +
         `*Interest Rate:* ${(interest * 100).toFixed(0)}%\n\n` +
         `━━━━━━━━━━━━━━━━\n\n` +
         `🥉 *Bronze* (Lv 1–9) — Max $5,000 | 10%\n` +
@@ -946,7 +946,7 @@ module.exports = {
     }
     const tier = db.getLoanTierForLevel(u.level || 1)
     const { max, interest } = db.LOAN_TIERS[tier]
-    if (amount > max) return reply(`❌ Your *${tier}* tier max loan is $${max.toLocaleString()}.`)
+    if (amount > max) return reply(`❌ Your *${tier}* tier max loan is £${max.toLocaleString()}.`)
     const total_due = Math.ceil(amount * (1 + interest))
     const loan = await db.createLoan(sender, amount, tier)
     await db.updateUser(sender, { wallet: (u.wallet || 0) + amount })
@@ -955,11 +955,11 @@ module.exports = {
       `✅ *LOAN APPROVED!*\n\n` +
       `🏦 *Konosuba Bank*\n\n` +
       `*Tier:* ${tier}\n` +
-      `*Amount:* $${amount.toLocaleString()}\n` +
+      `*Amount:* £${amount.toLocaleString()}\n` +
       `*Interest:* ${(interest * 100).toFixed(0)}%\n` +
-      `*Total Due:* $${total_due.toLocaleString()}\n` +
+      `*Total Due:* £${total_due.toLocaleString()}\n` +
       `*Due Date:* ${new Date(loan.due_date).toLocaleDateString('en-GB')}\n\n` +
-      `💵 $${amount.toLocaleString()} added to your wallet.\n\n` +
+      `💵 £${amount.toLocaleString()} added to your wallet.\n\n` +
       `Use *.repay <amount>* to pay back your loan. 🖤`
     )
   },
@@ -973,12 +973,12 @@ module.exports = {
       return reply(
         `🏦 *YOUR LOAN*\n\n` +
         `*Tier:* ${existing.tier}\n` +
-        `*Remaining:* $${(existing.total_due || 0).toLocaleString()}\n` +
+        `*Remaining:* £${(existing.total_due || 0).toLocaleString()}\n` +
         `*Due:* ${new Date(existing.due_date).toLocaleDateString('en-GB')}\n\n` +
         `Usage: *.repay <amount>* or *.repay all*`
       )
     }
-    if (inputAmt > (u.wallet || 0)) return reply(`❌ You do not have enough coins. You have $${(u.wallet || 0).toLocaleString()}.`)
+    if (inputAmt > (u.wallet || 0)) return reply(`❌ You do not have enough coins. You have £${(u.wallet || 0).toLocaleString()}.`)
     const result = await db.repayLoan(sender, inputAmt)
     if (!result) return reply(`❌ Loan not found.`)
     await db.updateUser(sender, { wallet: (u.wallet || 0) - inputAmt })
@@ -989,15 +989,15 @@ module.exports = {
       await reply(
         `🎉 *LOAN FULLY REPAID!*\n\n` +
         `✅ You've cleared your debt!\n` +
-        `💵 Paid: $${inputAmt.toLocaleString()}\n` +
-        (refund > 0 ? `💰 Overpayment refunded: $${refund.toLocaleString()}\n` : '') +
+        `💵 Paid: £${inputAmt.toLocaleString()}\n` +
+        (refund > 0 ? `💰 Overpayment refunded: £${refund.toLocaleString()}\n` : '') +
         `\n_Your credit record is clean._ 🖤`
       )
     } else {
       await reply(
         `💳 *PARTIAL REPAYMENT*\n\n` +
-        `✅ Paid: $${inputAmt.toLocaleString()}\n` +
-        `💳 Remaining: $${(result.remaining || 0).toLocaleString()}\n\n` +
+        `✅ Paid: £${inputAmt.toLocaleString()}\n` +
+        `💳 Remaining: £${(result.remaining || 0).toLocaleString()}\n\n` +
         `_Keep paying to clear your debt!_ 🖤`
       )
     }

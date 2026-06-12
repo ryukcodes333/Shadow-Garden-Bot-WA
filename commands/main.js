@@ -190,20 +190,6 @@ module.exports = {
       `┃\n` +
       `╰━━━━━━━━━━━━━━━━\n\n` +
 
-      `*💜 VIBE 💜*\n` +
-      `┃\n` +
-      `┃ ⤷ .hornycheck\n` +
-      `┃ ⤷ .simp\n` +
-      `┃ ⤷ .rizz\n` +
-      `┃ ⤷ .pickupline\n` +
-      `┃ ⤷ .relationship\n` +
-      `┃ ⤷ .confess\n` +
-      `┃ ⤷ .match\n` +
-      `┃ ⤷ .waifu\n` +
-      `┃ ⤷ .husbando\n` +
-      `┃\n` +
-      `╰━━━━━━━━━━━━━━━━\n\n` +
-
       `*🎮 GAMES 🎮*\n` +
       `┃\n` +
       `┃ ⤷ .tictactoe @user\n` +
@@ -302,6 +288,30 @@ module.exports = {
       `┃ ⤷ .stardust\n` +
       `┃ ⤷ .tc @user\n` +
       `┃ ⤷ .dc <number>\n` +
+      `┃ ⤷ .cg <number>\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
+
+      `*🔥 VIBE 🔥*\n` +
+      `┃\n` +
+      `┃ ⤷ .vibe\n` +
+      `┃ ⤷ .vibecheck\n` +
+      `┃ ⤷ .energy\n` +
+      `┃ ⤷ .aura\n` +
+      `┃ ⤷ .rizz\n` +
+      `┃ ⤷ .sigma\n` +
+      `┃ ⤷ .ratio\n` +
+      `┃ ⤷ .npc\n` +
+      `┃ ⤷ .cope\n` +
+      `┃ ⤷ .mood\n` +
+      `┃ ⤷ .lowkey\n` +
+      `┃ ⤷ .slay\n` +
+      `┃ ⤷ .ghost\n` +
+      `┃ ⤷ .toxic\n` +
+      `┃ ⤷ .real\n` +
+      `┃ ⤷ .sus\n` +
+      `┃ ⤷ .caught\n` +
+      `┃ ⤷ .clout\n` +
       `┃\n` +
       `╰━━━━━━━━━━━━━━━━\n\n` +
 
@@ -352,7 +362,30 @@ module.exports = {
   },
 
   async repo({ reply }) {
-    await reply(`📦 *Repo*\n\nGitHub: Coming soon`)
+    await reply(
+      `🌑 *Shadow Garden Bot*\n\n` +
+      `📦 *Script:* Konosuba Community Bot v${BOT_VERSION}\n` +
+      `🌐 *Website:* konosubacommunity.onrender.com\n` +
+      `💬 *Community:* https://chat.whatsapp.com/FlpibcQWh3027KRBGTctc8\n\n` +
+      `> Made with 🖤 by Shadow Garden`
+    )
+  },
+
+  async signup({ reply, sock, jid, msg }) {
+    await sock.sendMessage(jid, {
+      text:
+        `🌑 *Welcome to Shadow Garden!*\n\n` +
+        `To get started, follow the steps below:\n\n` +
+        `*Step 1 — Join the Community*\n` +
+        `👉 https://chat.whatsapp.com/FlpibcQWh3027KRBGTctc8\n\n` +
+        `*Step 2 — Create your Account*\n` +
+        `👉 konosubacommunity.onrender.com\n\n` +
+        `*Step 3 — Set your Profile*\n` +
+        `Type *.register <your name>* to create your bot profile\n\n` +
+        `*Step 4 — Start Playing!*\n` +
+        `Type *.menu* to see all available commands\n\n` +
+        `> 🖤 Welcome to the Shadow Garden, traveller.`,
+    }, { quoted: msg })
   },
 
   async script({ reply }) {
@@ -481,10 +514,25 @@ module.exports = {
     await reply(`💾 Heap: ${toMB(mem.heapUsed)} MB | RSS: ${toMB(mem.rss)} MB`)
   },
 
-  async report({ reply, args }) {
+  async report({ sock, msg, jid, senderJid, reply, args, pushName, sender }) {
     const reason = args.join(' ')
-    if (!reason) return reply('⚠️ Usage: .report <reason>')
-    await reply(`✅ Report received! Staff will review it.`)
+    if (!reason) return reply('⚠️ Usage: .report <reason>\n\nExample: .report user is being toxic')
+    const STAFF_GROUP = 'https://chat.whatsapp.com/FlpibcQWh3027KRBGTctc8'
+    const groupName = jid?.endsWith('@g.us')
+      ? ((await sock.groupMetadata(jid).catch(() => null))?.subject || jid)
+      : 'DM'
+    const reportText =
+      `📋 *REPORT RECEIVED*\n\n` +
+      `👤 *From:* ${pushName || sender} (@${sender})\n` +
+      `🏠 *Group:* ${groupName}\n` +
+      `📝 *Reason:* ${reason}\n` +
+      `⏰ *Time:* ${new Date().toLocaleString('en-US', { timeZone: 'UTC', hour12: true })}\n\n` +
+      `> To report directly, join: ${STAFF_GROUP}`
+    await reply(`✅ Report sent to staff!\n\nJoin the staff group for faster response:\n${STAFF_GROUP}`)
+    try {
+      const staffJid = '120363338012008741@g.us'
+      await sock.sendMessage(staffJid, { text: reportText }).catch(() => {})
+    } catch {}
   },
 
   async law({ reply }) {

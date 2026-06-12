@@ -160,7 +160,7 @@ module.exports = {
     const tu     = await db.getOrCreateUser(phone)
     const newBal = (tu.wallet || 0) + amount
     await db.updateUser(phone, { wallet: newBal })
-    await sock.sendMessage(jid, { text: `💰 *CASH ADDED*\n\n✅ +$${amount.toLocaleString()} → @${phone}\n💵 Balance: $${newBal.toLocaleString()}`, mentions: [mentioned[0]] }, { quoted: msg })
+    await sock.sendMessage(jid, { text: `💰 *CASH ADDED*\n\n✅ +£${amount.toLocaleString()} → @${phone}\n💵 Balance: £${newBal.toLocaleString()}`, mentions: [mentioned[0]] }, { quoted: msg })
   },
 
   async rc({ reply, sock, jid, msg, args, isOwner, isMod, isGuardian }) {
@@ -184,7 +184,7 @@ module.exports = {
     const newWallet = (tu.wallet || 0) - fromWallet
     const newBank   = (tu.bank   || 0) - fromBank
     await sock.sendMessage(jid, {
-      text: `🚫 *CASH REMOVED*\n\n-$${totalRemoved.toLocaleString()} from @${phone}\n💵 Wallet: $${newWallet.toLocaleString()}\n🏦 Bank: $${newBank.toLocaleString()}`,
+      text: `🚫 *CASH REMOVED*\n\n-£${totalRemoved.toLocaleString()} from @${phone}\n💵 Wallet: £${newWallet.toLocaleString()}\n🏦 Bank: £${newBank.toLocaleString()}`,
       mentions: [mentioned[0]],
     }, { quoted: msg })
   },
@@ -222,7 +222,7 @@ module.exports = {
     const cards = await db.getCards()
     if (!cards || !cards.length) return reply('❌ No cards in database.')
     const card = cards[Math.floor(Math.random() * cards.length)]
-    const text = `🎴 *CARD SPAWNED!*\n\n📛 *Name:* ${card.name}\n⭐ *Tier:* ${card.tier}\n💰 *Price:* $${(card.price || 0).toLocaleString()}\n\n_First to claim wins it!_ 🖤`
+    const text = `🎴 *CARD SPAWNED!*\n\n📛 *Name:* ${card.name}\n⭐ *Tier:* ${card.tier}\n💰 *Price:* £${(card.price || 0).toLocaleString()}\n\n_First to claim wins it!_ 🖤`
     if (card.image_url) {
       const { sendWithImage } = require('../imageHelper')
       await sendWithImage(sock, jid, msg, card.image_url, text, reply)
@@ -385,7 +385,7 @@ module.exports = {
     const phone = mentioned[0].split('@')[0]
     const tu    = await db.getOrCreateUser(phone)
     await db.updateUser(phone, { wallet: (tu.wallet || 0) + amount })
-    await sock.sendMessage(jid, { text: `💸 *STAFF GRANT*\n\n+$${amount.toLocaleString()} → @${phone}`, mentions: [mentioned[0]] })
+    await sock.sendMessage(jid, { text: `💸 *STAFF GRANT*\n\n+£${amount.toLocaleString()} → @${phone}`, mentions: [mentioned[0]] })
   },
   async givecoins(ctx) { return module.exports.give(ctx) },
 
@@ -399,7 +399,7 @@ module.exports = {
     const tu     = await db.getOrCreateUser(phone)
     const deduct = Math.min(amount, tu.wallet || 0)
     await db.updateUser(phone, { wallet: (tu.wallet || 0) - deduct })
-    await sock.sendMessage(jid, { text: `🚫 *STAFF DEDUCT*\n\n-$${deduct.toLocaleString()} from @${phone}`, mentions: [mentioned[0]] })
+    await sock.sendMessage(jid, { text: `🚫 *STAFF DEDUCT*\n\n-£${deduct.toLocaleString()} from @${phone}`, mentions: [mentioned[0]] })
   },
 
   async resetuser({ reply, msg, isOwner }) {
@@ -423,148 +423,16 @@ module.exports = {
   // ── Staff menu ────────────────────────────────────────────────
   async staffmenu({ reply, isOwner, isMod, isGuardian }) {
     if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
-
-    const staffPart =
-      `╭─『 🛡️ *STAFF MENU* 』\n` +
-      `│\n` +
-      `│ 💰 *ECONOMY*\n` +
-      `│ • .ac <amount> @user\n` +
-      `│ • .rc <amount> @user\n` +
-      `│ • .setbal <amount> @user\n` +
-      `│ • .addbank <amount> @user\n` +
-      `│ • .removebank <amount> @user\n` +
-      `│ • .addxp <amount> @user\n` +
-      `│ • .removexp <amount> @user\n` +
-      `│ • .addgems <amount> @user\n` +
-      `│ • .removegems <amount> @user\n` +
-      `│ • .addinv @user <item>\n` +
-      `│ • .removeinv @user <item>\n` +
-      `│ • .clearcooldown @user\n` +
-      `│ • .addcooldown @user <cmd> <mins>\n` +
-      `│ • .resetbal @user\n` +
-      `│ • .resetstreak @user\n` +
-      `│ • .setlevel @user <level>\n` +
-      `│ • .ecostats\n` +
-      `│\n` +
-      `│ 👥 *MEMBERS*\n` +
-      `│ • .addmod @user\n` +
-      `│ • .removemod @user\n` +
-      `│ • .addguardian @user\n` +
-      `│ • .removeguardian @user\n` +
-      `│ • .addpremium @user\n` +
-      `│ • .removepremium @user\n` +
-      `│ • .addrole @user <role>\n` +
-      `│ • .addtitle @user <title>\n` +
-      `│ • .mods / .modlist\n` +
-      `│ • .premiumlist\n` +
-      `│ • .userstats\n` +
-      `│\n` +
-      `│ 🎴 *CARDS*\n` +
-      `│ • .spawncard\n` +
-      `│ • .addcard @user <id>\n` +
-      `│ • .removecard @user <id>\n` +
-      `│ • .shoob <name> <tier>\n` +
-      `│ • .cardstats\n` +
-      `│ • .cardspawn on/off\n` +
-      `│ • .listcards\n` +
-      `│ • .recruit @user\n` +
-      `│\n` +
-      `│ 🐾 *POKÉMON*\n` +
-      `│ • #spawnp <name>\n` +
-      `│ • .pokemonon / .pokemonoff\n` +
-      `│ • .addpokemon @user <name>\n` +
-      `│ • .removepokemon @user <slot>\n` +
-      `│ • .giveball @user <amount>\n` +
-      `│ • .setbadges @user <amount>\n` +
-      `│ • .resetpokemon @user\n` +
-      `│\n` +
-      `│ 🚫 *MODERATION*\n` +
-      `│ • .ban @user\n` +
-      `│ • .unban @user\n` +
-      `│ • .banlist\n` +
-      `│ • .suspend @user <hrs> <reason>\n` +
-      `│ • .unsuspend @user\n` +
-      `│ • .suspendlist\n` +
-      `│ • .disable <cmd>\n` +
-      `│ • .enable <cmd>\n` +
-      `│ • .disabledlist\n` +
-      `│ • .warn @user <reason>\n` +
-      `│ • .warnings @user\n` +
-      `│ • .clearwarns @user\n` +
-      `│ • .blacklist <word>\n` +
-      `│ • .unblacklist <word>\n` +
-      `│ • .blacklistlist\n` +
-      `│\n` +
-      `│ 🏠 *GROUP*\n` +
-      `│ • .setname <name>\n` +
-      `│ • .setdesc <desc>\n` +
-      `│ • .setpp (reply img)\n` +
-      `│ • .antilink on/off\n` +
-      `│ • .antispam on/off\n` +
-      `│ • .welcome on/off\n` +
-      `│ • .goodbye on/off\n` +
-      `│ • .lockgroup / .unlockgroup\n` +
-      `│ • .tagall\n` +
-      `│ • .hidetag <msg>\n` +
-      `│\n` +
-      `│ 🤖 *BOT*\n` +
-      `│ • .broadcast <msg>\n` +
-      `│ • .post <message>\n` +
-      `│ • .join <link>\n` +
-      `│ • .exit\n` +
-      `│ • .listgc\n` +
-      `│ • .dbstatus\n` +
-      `│ • .checkdb\n` +
-      `│ • .botstatus\n` +
-      `│ • .logs\n` +
-      `│\n` +
-      `╰━━━━━━━━━━━━━━━━━━━━━━`
-
-    if (!isOwner) return reply(staffPart)
-
-    const ownerPart =
-      `\n╭─『 👑 *OWNER ONLY* 』\n` +
-      `│\n` +
-      `│ 👤 *USER CONTROL*\n` +
-      `│ • .resetuser @user\n` +
-      `│ • .deleteuser @user\n` +
-      `│ • .resetallusers CONFIRM\n` +
-      `│ • .transfer @old @new\n` +
-      `│ • .globalban @user\n` +
-      `│ • .globalunban @user\n` +
-      `│ • .addpremiumdays @user <days>\n` +
-      `│ • .grantowner @user\n` +
-      `│\n` +
-      `│ 🤖 *BOT CONTROL*\n` +
-      `│ • .setprefix <char>\n` +
-      `│ • .setbotname <name>\n` +
-      `│ • .setbotstatus <text>\n` +
-      `│ • .maintenance on/off\n` +
-      `│ • .shutdown\n` +
-      `│ • .restart\n` +
-      `│ • .flushcache\n` +
-      `│ • .togglesystem <system>\n` +
-      `│ • .setmongo <uri>\n` +
-      `│ • .testdb\n` +
-      `│\n` +
-      `│ 💰 *ECONOMY CONTROL*\n` +
-      `│ • .ecoreset\n` +
-      `│ • .wipeinventory @user\n` +
-      `│ • .setbanlimit <amount>\n` +
-      `│\n` +
-      `│ 🏠 *ALL GROUPS*\n` +
-      `│ • .lockall\n` +
-      `│ • .unlockall\n` +
-      `│\n` +
-      `│ 🧹 *CLEANUP*\n` +
-      `│ • .clearchess\n` +
-      `│ • .clearpoll\n` +
-      `│ • .clearlottery\n` +
-      `│ • .deleteuser @user\n` +
-      `│\n` +
-      `╰━━━━━━━━━━━━━━━━━━━━━━`
-
-    await reply(staffPart + ownerPart)
+    await reply(
+      `╭─『 👑 *Staff Menu* 』\n│\n` +
+      `│ 💰 *Economy*\n│ *.ac <amount> @user* - add cash\n│ *.rc <amount> @user* - remove cash\n│ *.resetbal @user* - reset balance\n│ *.reset @user* - full reset\n│ *.addinv @user <item>* - add inventory item\n│\n` +
+      `│ 🎴 *Cards*\n│ *.spawncard* - spawn random card\n│ *.shoob <name> <tier>* - add Shoob card\n│\n` +
+      `│ 🎮 *Pokémon*\n│ *#spawnp <name>* - spawn specific Pokémon\n│ *.pokemon on/off* - toggle Pokémon system\n│\n` +
+      `│ 👥 *Members*\n│ *.addmod @user* - add moderator\n│ *.addguardian @user* - add guardian\n│ *.recruit @user* - add card maker\n│ *.removemod / .removeguardian*\n│ *.addpremium / .removepremium*\n│ *.mods / .modlist* - view staff\n│\n` +
+      `│ 🚫 *Moderation*\n│ *.ban / .unban / .banlist*\n│ *.disable / .enable <cmd>*\n│ *.addrole @user <role>*\n│\n` +
+      `│ 🤖 *Bot*\n│ *.restart* - reboot bot\n│ *.logs* - check logs\n│ *.transfer @old @new*\n│ *.post <message>*\n` +
+      `╰─────────────────────`
+    )
   },
 
   // ── Group management for owner/mod/guardian ─────────────────
@@ -714,6 +582,119 @@ module.exports = {
 
   async gambleon({ reply, isOwner, isMod, isGuardian, isGroup, jid }) {
     return module.exports.genable({ reply, isOwner, isMod, isGuardian, isGroup, jid, args: ['gamble'] })
+  },
+
+  // ── .staffmenu — full staff command reference ──────────────────────────────
+  async staffmenu({ reply, isOwner, isMod, isGuardian }) {
+    if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied* — Staff only.')
+
+    const ownerBlock = isOwner ? (
+      `\n*👑 OWNER COMMANDS*\n` +
+      `┃ .addmod .removemod .addguardian .removeguardian\n` +
+      `┃ .ban .unban .banlist .kick\n` +
+      `┃ .suspend .unsuspend .suspendlist\n` +
+      `┃ .setprefix .resetprefix .setbotname\n` +
+      `┃ .addcoins .removecoins .setcoins .resetcoins\n` +
+      `┃ .addgems .removegems .resetgems\n` +
+      `┃ .resetuser .resetallusers .wipedb\n` +
+      `┃ .setlevel .resetlevel .resetxp\n` +
+      `┃ .forceregister .unregister .deleteuser\n` +
+      `┃ .addcard .removecard .givecard .deletecard\n` +
+      `┃ .cardspawn .seedcards .wipecards\n` +
+      `┃ .setdaily .setweekly .resetdailies\n` +
+      `┃ .broadcast .bcast .announce\n` +
+      `┃ .setmaxbet .setminbet .setlimit\n` +
+      `┃ .disablecmd .enablecmd .disabledlist\n` +
+      `┃ .gdisable .genable .gdisabledlist\n` +
+      `┃ .gamble on/off .pokemon on/off\n` +
+      `┃ .join .exit .listgc .leaveall\n` +
+      `┃ .dbstatus .checkdb .dbstats .health\n` +
+      `┃ .ecostats .econreset .moneywipe\n` +
+      `┃ .lotterystart .lotteryend .lotterydraw\n` +
+      `┃ .lockall .unlockall .shutdown .restart\n` +
+      `╰━━━━━━━━━━━━━━━━\n`
+    ) : ''
+
+    const modBlock = (isOwner || isMod) ? (
+      `\n*🛡️ MOD COMMANDS*\n` +
+      `┃ .kick .mute .unmute .warn .resetwarns\n` +
+      `┃ .suspend @user [time] [reason]\n` +
+      `┃ .unsuspend @user\n` +
+      `┃ .ban @user [reason] .unban @user\n` +
+      `┃ .close (lockgroup) .open (unlockgroup)\n` +
+      `┃ .delete .del .d — delete replied message\n` +
+      `┃ .antispam on/off .antilink on/off\n` +
+      `┃ .antibot on/off .antiword on/off\n` +
+      `┃ .blacklist <word> .unblacklist <word>\n` +
+      `┃ .blacklistlist .clearblacklist\n` +
+      `┃ .welcome on/off .goodbye on/off\n` +
+      `┃ .setdesc .setname .setpic .settopic\n` +
+      `┃ .invitelink .revokelink .promote .demote\n` +
+      `┃ .warnlist .warnings @user\n` +
+      `┃ .mods .modlist .stafflist .modslist\n` +
+      `┃ .myrole .unafk @user\n` +
+      `┃ .addcoins .removecoins (mod-limited)\n` +
+      `┃ .setxp .setlevel (mod-limited)\n` +
+      `╰━━━━━━━━━━━━━━━━\n`
+    ) : ''
+
+    const guardianBlock = (isOwner || isMod || isGuardian) ? (
+      `\n*⚔️ GUARDIAN COMMANDS*\n` +
+      `┃ .warn @user [reason]\n` +
+      `┃ .warnlist .warnings @user\n` +
+      `┃ .delete .del .d — delete replied message\n` +
+      `┃ .report (forward to staff)\n` +
+      `┃ .antispam on/off (view only)\n` +
+      `┃ .myrole .mods .modlist .stafflist\n` +
+      `╰━━━━━━━━━━━━━━━━\n`
+    ) : ''
+
+    const allStaffBlock = (
+      `\n*📋 ALL STAFF — GENERAL*\n` +
+      `┃ .p @user .profile @user .bal @user\n` +
+      `┃ .myid .id .info .status .botstatus\n` +
+      `┃ .ping .uptime .memory .alive .speed\n` +
+      `┃ .dbstatus .checkdb .ecostats\n` +
+      `┃ .lotterystart .lotteryjoin .lotterystatus\n` +
+      `┃ .lotteryend .lotterydraw\n` +
+      `┃ .poll <question> | <a> | <b> ...\n` +
+      `┃ .pollresult .endpoll\n` +
+      `┃ .trivia .math .fact .joke .8ball .flip\n` +
+      `┃ .sticker .s .toimg .take .steal\n` +
+      `┃ .ai .chatgpt .gpt .gemini .llama\n` +
+      `┃ .translate .tr .tts .say .wiki .weather\n` +
+      `┃ .menu .help .repo .signup .script\n` +
+      `┃ .removebg .enhance .remini .upscale\n` +
+      `┃ .waifu .neko .animekill .animebite\n` +
+      `┃ .hug .pat .kiss .slap .cry .wave\n` +
+      `┃ .gay .howgay .ratio .npc .vibe .aura\n` +
+      `┃ .chess @user .chess start bot .endchess\n` +
+      `┃ .bj .blackjack .uno .joinuno .unostart\n` +
+      `┃ .cf heads/tails [amount]\n` +
+      `┃ .slots .slot .rps .dice\n` +
+      `┃ .fish .dig .beg .work .daily .weekly\n` +
+      `┃ .shop .buy .sell .market\n` +
+      `┃ .bal .wallet .bank .deposit .withdraw\n` +
+      `┃ .pay @user [amount] .richlist .topbank\n` +
+      `┃ .rob .crime .heist\n` +
+      `┃ .collection .deck .ci .ss .fs .cardlb\n` +
+      `┃ .get .cg .cgconfirm .cgcancel .dc .tc\n` +
+      `┃ .stardust\n` +
+      `┃ .phelp #start #trainer #party #pc\n` +
+      `┃ #hunt #catch #heal #battle #gym\n` +
+      `┃ #evolve #train #moves #dex #mart\n` +
+      `┃ .guild .gcreate .gjoin .gleave\n` +
+      `┃ .guildinfo .guildtop .gcontribute\n` +
+      `╰━━━━━━━━━━━━━━━━\n`
+    )
+
+    const header = `🌑 *SHADOW GARDEN — STAFF MENU*\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `Role: *${isOwner ? '👑 Owner' : isMod ? '🛡️ Mod' : '⚔️ Guardian'}*\n` +
+      `━━━━━━━━━━━━━━━━━━`
+
+    await reply(header + ownerBlock + modBlock + guardianBlock + allStaffBlock +
+      `\n_Use *.help <cmd>* for details on any command._`)
   },
 
   // ── .seedcards — bulk import all 85k cards from JSON into MongoDB ─────────

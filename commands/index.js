@@ -27,6 +27,7 @@ const aiCmds          = require('./ai')
 const utilityCmds     = require('./utility')
 const imagesCmds      = require('./images')
 const { alphaChatReply, aquaChatReply } = require('./chat')
+const vibeCmds = require('./vibe')
 
 const PREFIX      = global.prefix   || '.'
 const POKE_PREFIX = '#'
@@ -84,9 +85,9 @@ async function handleInteraction(sock, msg) {
   }
 
   if (isButton && buttonId) {
-    // ── Chess buttons (square taps, resign, rematch, close) ───────────────
+    // ── Chess buttons (legacy — now handled via text moves) ───────────────
     if (buttonId.startsWith('chess_')) {
-      await chessCmds.handleButton(sock, msg, buttonId)
+      // Chess is now reply-based; ignore button interactions
       return true
     }
     // ── Blackjack buttons ─────────────────────────────────────────────────
@@ -104,7 +105,7 @@ async function handleInteraction(sock, msg) {
   if (isList && rowId) {
     // ── Game action rows ──────────────────────────────────────────────────
     if (rowId.startsWith('chess_')) {
-      await chessCmds.handleButton(sock, msg, rowId)
+      // Chess is now reply-based; ignore legacy list interactions
       return true
     }
     if (rowId.startsWith('bj_')) {
@@ -115,9 +116,8 @@ async function handleInteraction(sock, msg) {
       await unoCmds.handleButton(sock, msg, rowId)
       return true
     }
-    // ── Chess piece/move selections (legacy list fallback) ────────────────
+    // ── Chess piece/move selections (legacy — now text-based) ────────────
     if (rowId.startsWith('select_') || rowId.startsWith('move_')) {
-      await chessCmds.handleList(sock, msg, rowId)
       return true
     }
     // ── UNO card/color selections ─────────────────────────────────────────
@@ -152,17 +152,15 @@ async function handleMessage(sock, msg) {
 
   const sender = senderJid?.split('@')[0]?.split(':')[0] || ''
 
-  const isOwner = 
-  senderJid === OWNER_LID ||
-  senderJid === global.ownerLid ||
-  senderJid?.split(':')[0] + '@lid' === OWNER_LID ||
-  sender === OWNER_LID.replace('@lid', '')
+  const isOwner = senderJid === OWNER_LID ||
+    senderJid?.replace('@s.whatsapp.net', '') === OWNER_LID.replace('@lid', '') ||
+    sender === OWNER_LID.replace('@lid', '')
 
   let isMod = false
   let isGuardian = false
   if (!isOwner && sender) {
     try {
-      const staffUser = await db.getUser(sender).catch(() => null)
+      const staffUser = await db.getOrCreateUser(sender).catch(() => null)
       isMod      = staffUser?.role === 'mod'
       isGuardian = staffUser?.role === 'guardian'
     } catch {}
@@ -343,20 +341,13 @@ async function handleMessage(sock, msg) {
     }
   }
 
-  // ── Chess text move handler ───────────────────────────────────────────────
-  // Any message matching a move notation is processed when a chess game is active.
-  // Supports: "e2 e4"  "e2e4"  "e2" (select piece) then "e4" (move there)
-  if (isGroup) {
-    const chessGame = chessCmds.chessGames.get(jid)
-    if (chessGame && chessGame.status === 'active') {
-      const rawTrimmed = textRaw.trim()
-      const isChessMove = /^[a-h][1-8]\s+[a-h][1-8]$/i.test(rawTrimmed) ||
-                          /^[a-h][1-8][a-h][1-8]$/i.test(rawTrimmed)  ||
-                          /^[a-h][1-8]$/i.test(rawTrimmed)
-      if (isChessMove) {
-        const handled = await chessCmds.handleChessText({ sock, msg, jid, senderJid, textRaw: rawTrimmed }).catch(() => false)
-        if (handled) return
-      }
+  // ── Chess text-move handler (e.g. "e2 e4" or "resign") ──────────────────
+  if (isGroup && chessCmds.chessGames.has(jid)) {
+    const chessMove = textRaw.trim().match(/^([a-h][1-8])[\s-]?([a-h][1-8])$/i)
+    const isResign  = textLower === 'resign'
+    if (chessMove || isResign) {
+      const handled = await chessCmds.handleMove(sock, jid, senderJid, textRaw.trim()).catch(() => false)
+      if (handled) return
     }
   }
 
@@ -403,8 +394,8 @@ async function handleMessage(sock, msg) {
   const args  = body.split(/\s+/)
   const cmd   = args.shift().toLowerCase()
 
-  // ── Look up user (only if registered — no auto-create) ───────────────────
-  let user = await db.getUser(sender).catch(() => null)
+  // ── Look up user ─────────────────────────────────────────────────────────
+  const user = await db.getOrCreateUser(sender, msg.pushName || sender, senderJid).catch(() => null)
   const canonicalSender = user?.phone || sender
 
   if (user?.banned && !isOwner) return
@@ -474,7 +465,7 @@ async function handleMessage(sock, msg) {
     'suspend','unsuspend','suspendlist',
     'market','wallet','bank','weekly','monthly','crime','rob','heist','topmoney','topbank','howgay','lockgroup','unlockgroup','join','exit','listgc',
     'register','reg','start','p','profile','bal','balance','help','menu',
-    'myid','id',
+    'myid','id','signup',
   ])
 
   const reply = (text) => sock.sendMessage(jid, { text }, { quoted: msg })
@@ -487,11 +478,30 @@ async function handleMessage(sock, msg) {
     )
   }
 
-  // ── Registration gate: unregistered users only get public commands ───────
-  if (isDbReady && !user && !NO_DB_CMDS.has(cmd) && cmd !== 'reg' && cmd !== 'register') {
-    return reply(
-      `📋 *You are not registered yet!*\n\nPlease register first:\n\n*.reg <name> | <password>*\n\nExample:\n*.reg Shadow | secret123*\n\n_Only registered users can use economy, games & Pokémon commands._`
-    )
+  if (isDbReady && !user) {
+    try { user = await db.getOrCreateUser(sender, msg.pushName || sender, senderJid) } catch {}
+  }
+
+  // ── Registration gate — most economy/gamble commands require signup ───────
+  const GATED_CMDS = new Set([
+    'fish','dig','beg','work','daily','weekly','monthly','crime','rob','heist',
+    'cf','coinflip','slots','slot','rps','dice','bj','blackjack',
+    'pay','deposit','withdraw','bank','wallet','bal','balance',
+    'shop','buy','sell','market','topmoney','topbank','richlist',
+    'collection','coll','deck','card','ci','ss','fs','cardlb','get','cg',
+    'cgconfirm','cgcancel','dc','tc','stardust','guild','gcreate','gjoin',
+    'gleave','gcontribute','guildinfo','guildtop',
+  ])
+  if (isDbReady && user && !isOwner && !isMod && !isGuardian && GATED_CMDS.has(cmd)) {
+    if (!user.name && !user.registered) {
+      const replyFn = (text) => sock.sendMessage(jid, { text }, { quoted: msg })
+      return replyFn(
+        `🌑 *Account Required*\n\n` +
+        `You need to register before using this command!\n\n` +
+        `Type *.signup* to get started, or *.register <name>* to create your profile.\n\n` +
+        `> 🖤 Shadow Garden awaits.`
+      )
+    }
   }
 
   const ctx = {
@@ -562,7 +572,6 @@ async function handleMessage(sock, msg) {
     if (profileCmds[cmd])       return await profileCmds[cmd](ctx)
     if (economyCmds[cmd])       return await economyCmds[cmd](ctx)
 
-    if (cmd === 'mypokemon')    return await pokemonCmds.party(ctx)
     if (cmd === 'cardspawn')    return await cardCmds.cardspawn(ctx)
     if (cmd === 'cg')           return await cardCmds.cg(ctx)
     if (cmd === 'cgconfirm')    return await cardCmds.cgconfirm(ctx)
@@ -585,9 +594,10 @@ async function handleMessage(sock, msg) {
     if (cmd === 'stopgame' || cmd === 'unostop') return await unoCmds.stopgame(ctx)
     if (cmd === 'caught')       return await unoCmds.caught(ctx)
 
-    if (cmd === 'wb')           return await pokemonCmds.hunt(ctx)
-    if (cmd === 'phelp')        return await pokemonCmds.phelp(ctx)
-    if (cmd === 'pokemon')      return await pokemonCmds.pokemon(ctx)
+    if (cmd === 'wb')              return await pokemonCmds.hunt(ctx)
+    if (cmd === 'phelp')           return await pokemonCmds.phelp(ctx)
+    if (cmd === 'pokemon')         return await pokemonCmds.pokemon(ctx)
+    if (cmd === 'mypokemon')       return await pokemonCmds.party(ctx)
     if (cmd === 'setms')        return await pokemonCmds.setms(ctx)
     if (cmd === 'delms')        return await pokemonCmds.delms(ctx)
     if (pokemonCmds[cmd])       return await pokemonCmds[cmd](ctx)
@@ -640,6 +650,7 @@ async function handleMessage(sock, msg) {
     if (aiCmds[cmd])            return await aiCmds[cmd](ctx)
 
     if (utilityCmds[cmd])       return await utilityCmds[cmd](ctx)
+    if (vibeCmds[cmd])          return await vibeCmds[cmd](ctx)
 
   } catch (err) {
     console.error(`Command error [${usedPrefix}${cmd}]:`, err.message)

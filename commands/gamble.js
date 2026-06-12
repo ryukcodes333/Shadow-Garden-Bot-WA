@@ -55,7 +55,7 @@ function parseAmount(raw, wallet) {
 
 function validateBet(amount, wallet) {
   if (!amount || amount <= 0) return '❌ Invalid amount provided.'
-  if (amount > wallet) return `❌ You do not have enough coins. Wallet: $${wallet.toLocaleString()}`
+  if (amount > wallet) return `❌ You do not have enough coins. Wallet: £${wallet.toLocaleString()}`
   return null
 }
 
@@ -104,8 +104,8 @@ module.exports = {
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     if (!win) await sinkCoins(amount); else await genCoins(net)
     const rem = getRemainingGambles(sender)
-    if (win) return reply(`🎲 *WIN!*\n\n$${amount.toLocaleString()} → *+$${Math.floor(amount * 0.85)}*\n💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
-    return reply(`🎲 *LOST*\n\n-$${amount.toLocaleString()}\n💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
+    if (win) return reply(`🎲 *WIN!*\n\n£${amount.toLocaleString()} → *+£${Math.floor(amount * 0.85)}*\n💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
+    return reply(`🎲 *LOST*\n\n-£${amount.toLocaleString()}\n💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
   }),
 
   // ── .cf — coin flip ────────────────────────────────────────────────────
@@ -122,7 +122,8 @@ module.exports = {
     if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
 
     const normalised = (choice === 'h') ? 'heads' : (choice === 't') ? 'tails' : choice
-    const playerWins = Math.random() < 0.47   // 47% player win rate → house edge ~6%
+    const highStake  = amount >= 110000
+    const playerWins = Math.random() < (highStake ? 0.07 : 0.47)   // 7% for bets ≥£110000, else 47%
     const flip       = playerWins ? normalised : (normalised === 'heads' ? 'tails' : 'heads')
     const net        = playerWins ? amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
@@ -131,8 +132,8 @@ module.exports = {
     return reply(
       `🪙 *Coin Flip!*\n\n` +
       `Your bet: *${normalised.toUpperCase()}* | Result: *${flip.toUpperCase()}*\n\n` +
-      `${playerWins ? `✅ +$${amount.toLocaleString()}` : `❌ -$${amount.toLocaleString()}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
+      `${playerWins ? `✅ +£${amount.toLocaleString()}` : `❌ -£${amount.toLocaleString()}`}\n` +
+      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
 
@@ -192,8 +193,8 @@ module.exports = {
     return sock.sendMessage(jid, {
       text:
         `⏳ *Stopping...*\n\n│ ${reels[0]} │ ${reels[1]} │ ${reels[2]} │\n\n` +
-        `${net >= 0 ? `🏆 ${label}\n> +$${Math.floor(amount * multiplier)}` : `❌ ${label}\n> -$${amount.toLocaleString()}`}\n\n` +
-        `💵 $${((u.wallet || 0) + net).toLocaleString()}\n_${rem} gambles left today._`,
+        `${net >= 0 ? `🏆 ${label}\n> +£${Math.floor(amount * multiplier)}` : `❌ ${label}\n> -£${amount.toLocaleString()}`}\n\n` +
+        `💵 £${((u.wallet || 0) + net).toLocaleString()}\n_${rem} gambles left today._`,
     }, { quoted: msg })
   }),
   async sl(ctx) { return module.exports.slots(ctx) },
@@ -220,8 +221,8 @@ module.exports = {
     const rem = getRemainingGambles(sender)
     return reply(
       `🎲 *Dice Roll!*\n\nGuess: ${guess} | Rolled: *${roll}*\n\n` +
-      `${win ? `🏆 Correct! *+$${(amount * 4).toLocaleString()}* (×5 total)` : `❌ Wrong! -$${amount.toLocaleString()}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
+      `${win ? `🏆 Correct! *+£${(amount * 4).toLocaleString()}* (×5 total)` : `❌ Wrong! -£${amount.toLocaleString()}`}\n` +
+      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
 
@@ -268,8 +269,8 @@ module.exports = {
     const rem = getRemainingGambles(sender)
     return reply(
       `🪨📄✂️ *Rock Paper Scissors!*\n\nYou: ${emojis[playerMove]} | Bot: ${emojis[botMove]}\n\n` +
-      `${result === 'win' ? `🏆 WIN! *+$${amount.toLocaleString()}*` : result === 'draw' ? `🤝 Draw — no change` : `❌ Lose! -$${amount.toLocaleString()}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
+      `${result === 'win' ? `🏆 WIN! *+£${amount.toLocaleString()}*` : result === 'draw' ? `🤝 Draw — no change` : `❌ Lose! -£${amount.toLocaleString()}`}\n` +
+      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
 
@@ -314,8 +315,8 @@ module.exports = {
       `🎴 You: ${playerCards.join('+')} = *${playerSum}*\n` +
       `🤖 Dealer: ${dealerCards.join('+')} = *${dealerSum}*\n\n` +
       `${playerBust ? '💥 BUST! ' : dealerBust ? '💥 Dealer BUST! ' : ''}` +
-      `${result === 'win' ? `🏆 WIN! *+$${amount.toLocaleString()}*` : result === 'draw' ? `🤝 Push` : `❌ Lose -$${amount.toLocaleString()}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
+      `${result === 'win' ? `🏆 WIN! *+£${amount.toLocaleString()}*` : result === 'draw' ? `🤝 Push` : `❌ Lose -£${amount.toLocaleString()}`}\n` +
+      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
   async bj(ctx)     { return module.exports.blackjack(ctx) },
@@ -361,8 +362,8 @@ module.exports = {
     const rem = getRemainingGambles(sender)
     return reply(
       `🂡 *Poker!*\n\n🃏 ${hand.join(' ')}\n\n🎯 ${handName}\n` +
-      `${mult > 0 ? `🏆 WIN! ×${mult} → *+$${Math.floor(amount * mult)}*` : `❌ No win — -$${amount.toLocaleString()}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
+      `${mult > 0 ? `🏆 WIN! ×${mult} → *+£${Math.floor(amount * mult)}*` : `❌ No win — -£${amount.toLocaleString()}`}\n` +
+      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
 
@@ -393,8 +394,8 @@ module.exports = {
     const rem = getRemainingGambles(sender)
     return reply(
       `🎡 *Wheel Spin!*\n\n🎯 *${result.label}*\n\n` +
-      `${net >= 0 ? `💰 +$${net.toLocaleString()}` : `💸 -$${Math.abs(net).toLocaleString()}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
+      `${net >= 0 ? `💰 +£${net.toLocaleString()}` : `💸 -£${Math.abs(net).toLocaleString()}`}\n` +
+      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
 
@@ -434,8 +435,8 @@ module.exports = {
       `🎰 *Roulette!*\n\n` +
       `${emoji} Ball landed on: *${num}* (${color})\n` +
       `Your bet: *${bet}*\n\n` +
-      `${mult > 0 ? `🏆 WIN! ×${mult} → *+$${payout.toLocaleString()}*` : `❌ Lose — -$${amount.toLocaleString()}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
+      `${mult > 0 ? `🏆 WIN! ×${mult} → *+£${payout.toLocaleString()}*` : `❌ Lose — -£${amount.toLocaleString()}`}\n` +
+      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
 
@@ -463,8 +464,8 @@ module.exports = {
     return reply(
       `🏇 *Horse Race!*\n\n${raceLines}\n\n` +
       `Your pick: Horse ${horse} | Winner: Horse ${winner}\n\n` +
-      `${win ? `🏆 WIN! ×4.5 total → *+$${net.toLocaleString()}*` : `❌ Lose -$${amount.toLocaleString()}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
+      `${win ? `🏆 WIN! ×4.5 total → *+£${net.toLocaleString()}*` : `❌ Lose -£${amount.toLocaleString()}`}\n` +
+      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
 
@@ -482,8 +483,8 @@ module.exports = {
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     if (!win) await sinkCoins(amount); else await genCoins(amount * 19)
     const rem = getRemainingGambles(sender)
-    if (win) return reply(`💥 *JACKPOT!!!*\n\n🌟 ×20 total → *+$${(amount * 19).toLocaleString()}*\n💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
-    return reply(`🎰 *Jackpot Miss*\n\n-$${amount.toLocaleString()} (1.5% win chance)\n💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
+    if (win) return reply(`💥 *JACKPOT!!!*\n\n🌟 ×20 total → *+£${(amount * 19).toLocaleString()}*\n💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
+    return reply(`🎰 *Jackpot Miss*\n\n-£${amount.toLocaleString()} (1.5% win chance)\n💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
   }),
 
   // ── .highlow / .hl ────────────────────────────────────────────────────
@@ -510,8 +511,8 @@ module.exports = {
     const rem = getRemainingGambles(sender)
     return reply(
       `🃏 *High or Low!*\n\nGuess: *${guessHigh ? 'HIGH (8–13)' : 'LOW (1–6)'}* | Card: *${card}*\n\n` +
-      `${win ? `🏆 WIN! *+$${amount.toLocaleString()}*` : `❌ Lose -$${amount.toLocaleString()}`}\n` +
-      `💵 $${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
+      `${win ? `🏆 WIN! *+£${amount.toLocaleString()}*` : `❌ Lose -£${amount.toLocaleString()}`}\n` +
+      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
   async hl(ctx) { return module.exports.highlow(ctx) },

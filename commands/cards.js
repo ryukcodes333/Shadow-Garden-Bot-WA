@@ -1114,8 +1114,8 @@ module.exports = {
     // cardDbId = the Card document's _id (needed by addUserCard to create a new UserCard for the recipient)
     // ucId     = the sender's UserCard document's _id (needed by deleteUserCardById to remove it)
     const cardDbId = cardData?._id || cardData?.id || null
-    pendingGives[sender] = { toPhone, toJid, cardIndex: index - 1, ucId: uc._id || uc.id, cardDbId, expiresAt: Date.now() + 60000 }
-    setTimeout(() => { if (pendingGives[sender]) delete pendingGives[sender] }, 60000)
+    pendingGives[sender] = { toPhone, toJid, cardIndex: index - 1, ucId: uc._id || uc.id, cardDbId, expiresAt: Date.now() + 2820000 }
+    setTimeout(() => { if (pendingGives[sender]) delete pendingGives[sender] }, 2820000)
 
     await sock.sendMessage(jid, {
       text:
@@ -1125,7 +1125,7 @@ module.exports = {
         `*📚 Series:* ${series || '—'}\n` +
         `*📤 To:* @${toPhone}\n\n` +
         `Reply *.cgconfirm* to send, or *.cgcancel* to abort.\n` +
-        `_(expires in 60 seconds)_`,
+        `_(expires in 47 minutes)_`,
       mentions: [toJid],
     }, { quoted: msg })
   },
