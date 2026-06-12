@@ -156,17 +156,15 @@ const {
           const code = await sock.requestPairingCode(phone)
           const fmt = code?.match(/.{1,4}/g)?.join('-') ?? code
           global.pairingCode = fmt
-
           console.log('\n╔══════════════════════════════════════════╗')
           console.log('║       🔑  YOUR PAIRING CODE              ║')
           console.log('╠══════════════════════════════════════════╣')
           console.log(`║          ${fmt.padEnd(34)} ║`)
           console.log('╚══════════════════════════════════════════╝')
           console.log('\n📲 HOW TO PAIR:')
-          console.log('   1. Open WhatsApp on your phone')
-          console.log('   2. Tap ⋮ → Linked Devices → Link a Device')
-          console.log('   3. Tap "Link with phone number instead"')
-          console.log(`   4. Enter code: ${fmt}`)
+          console.log('   1. Open WhatsApp → ⋮ → Linked Devices → Link a Device')
+          console.log('   2. Tap "Link with phone number instead"')
+          console.log(`   3. Enter code: ${fmt}`)
           console.log('⏳ Code expires in 60 seconds.\n')
         } catch (err) {
           global.pairingCodeRequested = false
@@ -216,9 +214,9 @@ const {
           await clearSession()
           scheduleRestart(5000, 'Fresh session after logout')
         } else if (replaced) {
-          // DO NOT reconnect immediately — causes infinite loop between two instances
+          // DO NOT reconnect immediately — causes infinite fight between two instances
           console.log('⚠️  Session replaced by another instance. Waiting 30s…')
-          console.log('💡 Make sure only ONE instance of the bot is running at a time.')
+          console.log('💡 Make sure only ONE instance of the bot is running.')
           global.botConnected = false
           global.sock = null
           reconnectAttempts = 0
