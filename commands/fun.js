@@ -240,4 +240,63 @@ module.exports = {
     const q = questions[Math.floor(Math.random() * questions.length)]
     await reply(`🧠 *Trivia!*\n\n${q.q}\n\n${q.choices}\n\n_Answer: ||${q.a}||_`)
   },
+
+  // ── VIBE commands ──────────────────────────────────────────────────────────
+
+  async hornycheck({ reply, sender, msg }) {
+    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    const target    = mentioned.length ? mentioned[0].split('@')[0].split(':')[0] : sender
+    const pct       = Math.floor(Math.random() * 101)
+    const filled    = Math.ceil(pct / 10)
+    const bar       = '🔥'.repeat(filled) + '⬛'.repeat(10 - filled)
+    await reply(`🌡️ *Horny Meter*\n\n👤 @${target}\n\n${bar}\n\n*${pct}%*`)
+  },
+
+  async rizz({ reply, sender, msg }) {
+    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    const target    = mentioned.length ? mentioned[0].split('@')[0].split(':')[0] : sender
+    const pct       = Math.floor(Math.random() * 101)
+    const levels    = ['No rizz at all 💀', 'Low rizz 😬', 'Mid rizz 😐', 'Some rizz 😏', 'High rizz 🔥', 'Max rizz 👑']
+    const level     = levels[Math.min(Math.floor(pct / 20), 5)]
+    await reply(`😏 *Rizz Check*\n\n👤 @${target}\n\n*${pct}% rizz*\n${level}`)
+  },
+
+  async pickupline({ reply }) {
+    const lines = [
+      'Are you a shadow? Because I can\'t get you out of my head.',
+      'Do you have a map? I keep getting lost in your eyes.',
+      'Are you a parking ticket? Because you\'ve got "fine" written all over you.',
+      'Is your name Google? Because you have everything I\'ve been searching for.',
+      'Do you believe in love at first sight, or should I walk by again?',
+      'Are you a magician? Because whenever I look at you, everyone else disappears.',
+      'Is your name Wi-Fi? Because I\'m feeling a connection.',
+      'Do you have a Band-Aid? I just scraped my knee falling for you.',
+      'Are you a camera? Because every time I look at you, I smile.',
+      'Do you like raisins? How about a date?',
+    ]
+    await reply(`💬 *Pick-up Line*\n\n_"${lines[Math.floor(Math.random() * lines.length)]}"_`)
+  },
+
+  async confess({ reply, args }) {
+    const message = args.join(' ')
+    if (!message) return reply('❌ Usage: `.confess <message>`')
+    await reply(`💌 *Anonymous Confession*\n\n_"${message}"_\n\n> Submitted anonymously 🖤`)
+  },
+
+  async waifu({ reply }) {
+    const waifus = ['Aqua', 'Megumin', 'Darkness', 'Zero Two', 'Rem', 'Emilia', 'Asuna', 'Kurumi', 'Nezuko', 'Mikasa', 'Rias Gremory', 'Tohka', 'Raphtalia', 'Albedo']
+    await reply(`💕 *Your Waifu is...*\n\n💖 *${waifus[Math.floor(Math.random() * waifus.length)]}*`)
+  },
+
+  async husbando({ reply }) {
+    const husbandos = ['Kazuma', 'Kirito', 'Levi', 'Gojo', 'Itachi', 'Guts', 'Killua', 'Todoroki', 'Vegeta', 'Naruto', 'Ainz', 'Subaru', 'Rimuru', 'Anos']
+    await reply(`💙 *Your Husbando is...*\n\n💙 *${husbandos[Math.floor(Math.random() * husbandos.length)]}*`)
+  },
+
+  async relationship({ reply, msg, sender, args }) {
+    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    const target    = mentioned.length ? mentioned[0].split('@')[0].split(':')[0] : (args[0] || '???')
+    const relations = ['Best Friends 💛', 'Rivals ⚔️', 'Siblings 👫', 'Strangers 😶', 'Soulmates 💞', 'Enemies 💢', 'Allies 🤝', 'Secret Crushes 🫣', 'Power Couple 👑', 'Frenemies 😤']
+    await reply(`🔗 *Relationship Status*\n\n@${sender} & @${target}\n\n💫 *${relations[Math.floor(Math.random() * relations.length)]}*`)
+  },
 }

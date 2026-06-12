@@ -160,7 +160,7 @@ async function handleMessage(sock, msg) {
   let isGuardian = false
   if (!isOwner && sender) {
     try {
-      const staffUser = await db.getOrCreateUser(sender).catch(() => null)
+      const staffUser = await db.getUser(sender).catch(() => null)
       isMod      = staffUser?.role === 'mod'
       isGuardian = staffUser?.role === 'guardian'
     } catch {}
@@ -341,6 +341,23 @@ async function handleMessage(sock, msg) {
     }
   }
 
+  // ── Chess text move handler ───────────────────────────────────────────────
+  // Any message matching a move notation is processed when a chess game is active.
+  // Supports: "e2 e4"  "e2e4"  "e2" (select piece) then "e4" (move there)
+  if (isGroup) {
+    const chessGame = chessCmds.chessGames.get(jid)
+    if (chessGame && chessGame.status === 'active') {
+      const rawTrimmed = textRaw.trim()
+      const isChessMove = /^[a-h][1-8]\s+[a-h][1-8]$/i.test(rawTrimmed) ||
+                          /^[a-h][1-8][a-h][1-8]$/i.test(rawTrimmed)  ||
+                          /^[a-h][1-8]$/i.test(rawTrimmed)
+      if (isChessMove) {
+        const handled = await chessCmds.handleChessText({ sock, msg, jid, senderJid, textRaw: rawTrimmed }).catch(() => false)
+        if (handled) return
+      }
+    }
+  }
+
   // ── AI chat detection ────────────────────────────────────────────────────
   if (!isSticker && !isReaction && !isBold) {
     const botPhone       = (sock.user?.id || '').split(':')[0].split('@')[0]
@@ -384,8 +401,8 @@ async function handleMessage(sock, msg) {
   const args  = body.split(/\s+/)
   const cmd   = args.shift().toLowerCase()
 
-  // ── Look up user ─────────────────────────────────────────────────────────
-  const user = await db.getOrCreateUser(sender, msg.pushName || sender, senderJid).catch(() => null)
+  // ── Look up user (only if registered — no auto-create) ───────────────────
+  let user = await db.getUser(sender).catch(() => null)
   const canonicalSender = user?.phone || sender
 
   if (user?.banned && !isOwner) return
@@ -468,8 +485,11 @@ async function handleMessage(sock, msg) {
     )
   }
 
-  if (isDbReady && !user) {
-    try { user = await db.getOrCreateUser(sender, msg.pushName || sender, senderJid) } catch {}
+  // ── Registration gate: unregistered users only get public commands ───────
+  if (isDbReady && !user && !NO_DB_CMDS.has(cmd) && cmd !== 'reg' && cmd !== 'register') {
+    return reply(
+      `📋 *You are not registered yet!*\n\nPlease register first:\n\n*.reg <name> | <password>*\n\nExample:\n*.reg Shadow | secret123*\n\n_Only registered users can use economy, games & Pokémon commands._`
+    )
   }
 
   const ctx = {
@@ -540,6 +560,7 @@ async function handleMessage(sock, msg) {
     if (profileCmds[cmd])       return await profileCmds[cmd](ctx)
     if (economyCmds[cmd])       return await economyCmds[cmd](ctx)
 
+    if (cmd === 'mypokemon')    return await pokemonCmds.party(ctx)
     if (cmd === 'cardspawn')    return await cardCmds.cardspawn(ctx)
     if (cmd === 'cg')           return await cardCmds.cg(ctx)
     if (cmd === 'cgconfirm')    return await cardCmds.cgconfirm(ctx)

@@ -190,6 +190,20 @@ module.exports = {
       `┃\n` +
       `╰━━━━━━━━━━━━━━━━\n\n` +
 
+      `*💜 VIBE 💜*\n` +
+      `┃\n` +
+      `┃ ⤷ .hornycheck\n` +
+      `┃ ⤷ .simp\n` +
+      `┃ ⤷ .rizz\n` +
+      `┃ ⤷ .pickupline\n` +
+      `┃ ⤷ .relationship\n` +
+      `┃ ⤷ .confess\n` +
+      `┃ ⤷ .match\n` +
+      `┃ ⤷ .waifu\n` +
+      `┃ ⤷ .husbando\n` +
+      `┃\n` +
+      `╰━━━━━━━━━━━━━━━━\n\n` +
+
       `*🎮 GAMES 🎮*\n` +
       `┃\n` +
       `┃ ⤷ .tictactoe @user\n` +

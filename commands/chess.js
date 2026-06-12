@@ -1,24 +1,8 @@
 'use strict'
 // ╔══════════════════════════════════════════════╗
-// ║        ♟️  CHESS  —  commands/chess.js        ║
+// ║  ♟️  CHESS  —  commands/chess.js              ║
+// ║  Dark-themed board | text-based moves        ║
 // ╚══════════════════════════════════════════════╝
-// Full legal-move chess with image board + interactive quick-reply buttons.
-// Requires: npm install @ryuu-reinzz/button-helper
-
-const { sendInteractiveMessage } = require('@ryuu-reinzz/button-helper')
-
-async function sendButtons(sock, jid, content, quotedMsg = null) {
-  try {
-    const opts = quotedMsg ? { quoted: quotedMsg } : {}
-    await sendInteractiveMessage(sock, jid, content, opts)
-  } catch {
-    const fallback = content._fallback || ''
-    await sock.sendMessage(jid, {
-      text: (content.text || content.caption || '') + (fallback ? '\n\n' + fallback : ''),
-      mentions: content.mentions || [],
-    })
-  }
-}
 
 const FILES = ['a','b','c','d','e','f','g','h']
 const BACK  = ['R','N','B','Q','K','B','N','R']
@@ -50,9 +34,9 @@ function cloneBoard(board) {
 function sq(r, f) { return `${FILES[f]}${8 - r}` }
 function pieceEmoji(p) { return PIECE_UNICODE[p.c + p.t] || '?' }
 
-// ── Canvas board image generator ─────────────────────────────────────────────
+// ── Canvas board image (dark brown theme) ───────────────────────────────────
 
-function drawChessBoard(board) {
+function drawChessBoard(board, lastMove, pendingSelect, legalDests) {
   try {
     const { createCanvas } = require('canvas')
     const CELL   = 72
@@ -62,18 +46,49 @@ function drawChessBoard(board) {
     const canvas = createCanvas(SIZE, SIZE)
     const ctx    = canvas.getContext('2d')
 
-    ctx.fillStyle = '#1e1e2e'
+    // Dark outer background
+    ctx.fillStyle = '#12111a'
     ctx.fillRect(0, 0, SIZE, SIZE)
 
+    // Board squares — dark-themed with brown palette
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
-        ctx.fillStyle = (r + c) % 2 === 0 ? '#f0d9b5' : '#b58863'
+        const isLight    = (r + c) % 2 === 0
+        const isLastFrom = lastMove && lastMove.from[0] === r && lastMove.from[1] === c
+        const isLastTo   = lastMove && lastMove.to[0]   === r && lastMove.to[1]   === c
+        const isPending  = pendingSelect && pendingSelect[0] === r && pendingSelect[1] === c
+        const isDest     = legalDests && legalDests.has(`${r}_${c}`)
+
+        let color
+        if (isPending)         color = '#c8a800'
+        else if (isLastTo)     color = isLight ? '#f0e84a' : '#c8b818'
+        else if (isLastFrom)   color = isLight ? '#ddd168' : '#b8a230'
+        else if (isLight)      color = '#d4a96a'   // warm tan
+        else                   color = '#8b4513'   // saddle brown (darker square)
+
+        ctx.fillStyle = color
         ctx.fillRect(MARGIN + c * CELL, MARGIN + r * CELL, CELL, CELL)
+
+        // Legal destination dots
+        if (isDest && !isPending) {
+          const target = board[r][c]
+          if (target) {
+            ctx.strokeStyle = 'rgba(0,0,0,0.5)'
+            ctx.lineWidth = 4
+            ctx.strokeRect(MARGIN + c * CELL + 2, MARGIN + r * CELL + 2, CELL - 4, CELL - 4)
+          } else {
+            ctx.fillStyle = 'rgba(0,0,0,0.28)'
+            ctx.beginPath()
+            ctx.arc(MARGIN + c * CELL + CELL / 2, MARGIN + r * CELL + CELL / 2, CELL * 0.2, 0, Math.PI * 2)
+            ctx.fill()
+          }
+        }
       }
     }
 
-    ctx.fillStyle = '#d4af7a'
-    ctx.font = 'bold 15px Arial'
+    // Rank / file labels
+    ctx.fillStyle = '#c9a87a'
+    ctx.font = 'bold 14px Arial'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     for (let c = 0; c < 8; c++) {
@@ -87,6 +102,7 @@ function drawChessBoard(board) {
       ctx.fillText(String(8 - r), SIZE - MARGIN / 2, y)
     }
 
+    // Pieces
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         const piece = board[r][c]
@@ -95,8 +111,8 @@ function drawChessBoard(board) {
         const cy = MARGIN + r * CELL + CELL / 2
         const radius = CELL * 0.36
         ctx.save()
-        ctx.shadowColor = 'rgba(0,0,0,0.5)'
-        ctx.shadowBlur = 6
+        ctx.shadowColor = 'rgba(0,0,0,0.7)'
+        ctx.shadowBlur = 8
         ctx.shadowOffsetX = 2
         ctx.shadowOffsetY = 3
         ctx.beginPath()
@@ -105,14 +121,14 @@ function drawChessBoard(board) {
           ctx.fillStyle = '#fffde7'
           ctx.strokeStyle = '#5d4037'
         } else {
-          ctx.fillStyle = '#1a1a2e'
+          ctx.fillStyle = '#1a0a00'
           ctx.strokeStyle = '#b0bec5'
         }
         ctx.lineWidth = 2.5
         ctx.fill()
         ctx.stroke()
         ctx.restore()
-        ctx.font = `bold ${Math.round(CELL * 0.4)}px Arial`
+        ctx.font = `bold ${Math.round(CELL * 0.38)}px Arial`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         ctx.fillStyle = piece.c === 'w' ? '#3e2723' : '#eceff1'
@@ -272,122 +288,47 @@ function updateCastling(castling, move, board) {
   return c
 }
 
-// ── Display helpers ──────────────────────────────────────────────────────────
+// ── Caption ─────────────────────────────────────────────────────────────────
 
 function boardCaption(game) {
   const { turn, lastMove, white, black } = game
-  const inCheck  = isInCheck(game.board, turn)
-  const turnLabel = (turn === 'w' ? white : black) === 'bot'
-    ? '🤖 Bot'
-    : `@${(turn === 'w' ? white : black).split('@')[0]}`
+  const inCheck   = isInCheck(game.board, turn)
+  const turnPhone = turn === 'w' ? white : black
+  const turnLabel = turnPhone === 'bot' ? '🤖 Bot' : `@${turnPhone.split('@')[0].split(':')[0]}`
   let text = `♟️ *CHESS*\n\n`
-  text += `⬜ White: @${white.split('@')[0]}\n`
-  text += `⬛ Black: ${black === 'bot' ? '🤖 Bot' : '@' + black.split('@')[0]}\n`
+  text += `⬜ White: @${white.split('@')[0].split(':')[0]}\n`
+  text += `⬛ Black: ${black === 'bot' ? '🤖 Bot' : '@' + black.split('@')[0].split(':')[0]}\n`
   text += `\n⚡ *Turn:* ${turnLabel} (${turn === 'w' ? '⬜' : '⬛'})`
   if (lastMove) text += `\n📌 Last: ${sq(...lastMove.from)} → ${sq(...lastMove.to)}`
   if (inCheck)  text += `\n\n⚠️ *CHECK!*`
+  text += `\n\n_Type your move (e.g. *e2 e4*) to play_`
+  if (game.pendingSelect) {
+    text += `\n_Selected: *${sq(...game.pendingSelect)}* — now type destination (e.g. *e4*)_`
+  }
   return text
 }
 
-// ── Build the 8×8 grid of quick-reply buttons ─────────────────────────────
+// ── Send board (image + caption, no buttons) ─────────────────────────────────
 
-function buildBoardButtons(game) {
-  const jid = game._jid
-  const legalMoves = game.pendingSelect
-    ? getLegalMoves(game.board, game.turn, game.ep, game.castling)
-        .filter(m => m.from[0] === game.pendingSelect[0] && m.from[1] === game.pendingSelect[1])
+async function sendBoard(sock, jid, game, quoted) {
+  const legalDests = game.pendingSelect
+    ? new Set(
+        getLegalMoves(game.board, game.turn, game.ep, game.castling)
+          .filter(m => m.from[0] === game.pendingSelect[0] && m.from[1] === game.pendingSelect[1])
+          .map(m => `${m.to[0]}_${m.to[1]}`)
+      )
     : null
-  const validDests = legalMoves
-    ? new Set(legalMoves.map(m => `${m.to[0]}_${m.to[1]}`))
-    : null
 
-  const buttons = []
-  for (let r = 0; r < 8; r++) {
-    for (let f = 0; f < 8; f++) {
-      const p = game.board[r][f]
-      let label
-
-      if (game.pendingSelect) {
-        const [sr, sf] = game.pendingSelect
-        if (r === sr && f === sf) {
-          label = `[${p ? pieceEmoji(p) : '·'}]`
-        } else if (validDests && validDests.has(`${r}_${f}`)) {
-          label = p ? `×${pieceEmoji(p)}` : '●'
-        } else {
-          label = p ? pieceEmoji(p) : (r + f) % 2 === 0 ? '·' : '·'
-        }
-      } else {
-        label = p ? pieceEmoji(p) : (r + f) % 2 === 0 ? '·' : '·'
-      }
-
-      buttons.push({
-        name: 'quick_reply',
-        buttonParamsJson: JSON.stringify({
-          display_text: label,
-          id: `chess_sq_${r}_${f}_${jid}`
-        })
-      })
-    }
-  }
-  buttons.push({
-    name: 'quick_reply',
-    buttonParamsJson: JSON.stringify({
-      display_text: '🏳️ Resign',
-      id: `chess_resign_${jid}`
-    })
-  })
-  return buttons
-}
-
-// ── Send helpers ─────────────────────────────────────────────────────────────
-
-async function sendBoardWithButtons(sock, jid, game, quoted) {
-  game._jid = jid
   const mentions = [game.white, ...(game.black !== 'bot' ? [game.black] : [])]
   const caption  = boardCaption(game)
-  const imgBuf   = drawChessBoard(game.board)
-  const interactiveButtons = buildBoardButtons(game)
+  const imgBuf   = drawChessBoard(game.board, game.lastMove, game.pendingSelect, legalDests)
 
-  const turnName = (game.turn === 'w' ? game.white : game.black) === 'bot'
-    ? '🤖 Bot'
-    : `@${(game.turn === 'w' ? game.white : game.black).split('@')[0]}`
-  const footer = game.pendingSelect
-    ? `${sq(...game.pendingSelect)} selected — tap a highlighted square to move`
-    : `${turnName}'s turn — tap a piece to select it`
-
-  const content = imgBuf
-    ? { image: imgBuf, caption, footer, interactiveButtons, mentions }
-    : { text: caption,           footer, interactiveButtons, mentions }
-
-  // Fallback text board
-  let boardText = '```\n  a b c d e f g h\n'
-  for (let r = 0; r < 8; r++) {
-    boardText += `${8-r} `
-    for (let f = 0; f < 8; f++) {
-      const p = game.board[r][f]
-      boardText += p ? pieceEmoji(p) : (r + f) % 2 === 0 ? '□' : '■'
-      boardText += ' '
-    }
-    boardText += `${8-r}\n`
+  const opts = quoted ? { quoted } : {}
+  if (imgBuf) {
+    await sock.sendMessage(jid, { image: imgBuf, caption, mentions }, opts)
+  } else {
+    await sock.sendMessage(jid, { text: caption, mentions }, opts)
   }
-  boardText += '  a b c d e f g h\n```'
-  content._fallback = boardText + '\n\n_Tap a piece or type the square (e.g. e2)_'
-
-  await sendButtons(sock, jid, content, quoted || null)
-}
-
-async function sendEndButtons(sock, jid, text, mentions, jidKey) {
-  const key = jidKey || jid
-  await sendButtons(sock, jid, {
-    text,
-    footer: 'Chess — what next?',
-    interactiveButtons: [
-      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🔄 Rematch', id: `chess_rematch_${key}` }) },
-      { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '❌ Close',   id: `chess_close_${key}`   }) },
-    ],
-    mentions: mentions || [],
-    _fallback: '_Type .chess @user to start a new game_',
-  })
 }
 
 // ── Bot move ────────────────────────────────────────────────────────────────
@@ -401,7 +342,10 @@ async function doBotMove(sock, jid) {
     const inCheck = isInCheck(game.board, 'b')
     const result  = inCheck ? '🤖 Bot is in *checkmate*! ⬜ White wins!' : '🤝 *Stalemate!* Draw.'
     chessGames.delete(jid)
-    return sendEndButtons(sock, jid, result, [game.white], jid)
+    return sock.sendMessage(jid, {
+      text: result + '\n\n_Type .chess @user to start a new game_',
+      mentions: [game.white],
+    })
   }
   const move = moves[Math.floor(Math.random() * moves.length)]
   game.castling = updateCastling(game.castling, move, game.board)
@@ -418,12 +362,48 @@ async function doBotMove(sock, jid) {
       ? `🤖 Bot played ${sq(...move.from)}→${sq(...move.to)}\n\n♚ *Checkmate!* ⬛ Black (Bot) wins!`
       : `🤖 Bot played ${sq(...move.from)}→${sq(...move.to)}\n\n🤝 *Stalemate!* Draw.`
     chessGames.delete(jid)
-    return sendEndButtons(sock, jid, result, [game.white], jid)
+    return sock.sendMessage(jid, {
+      text: result + '\n\n_Type .chess @user to start a new game_',
+      mentions: [game.white],
+    })
   }
-  await sendBoardWithButtons(sock, jid, game)
+  await sendBoard(sock, jid, game)
 }
 
-// ── Command exports ─────────────────────────────────────────────────────────
+// ── Execute a validated move ─────────────────────────────────────────────────
+
+async function executeMove(sock, jid, game, move, msg) {
+  game.castling = updateCastling(game.castling, move, game.board)
+  game.board    = applyMove(game.board, move)
+  game.ep       = move.double ? [move.to[0] + (game.turn === 'w' ? 1 : -1), move.from[1]] : null
+  game.lastMove = move
+  game.pendingSelect = null
+  const nextTurn = game.turn === 'w' ? 'b' : 'w'
+  game.turn = nextTurn
+
+  const nextMoves = getLegalMoves(game.board, nextTurn, game.ep, game.castling)
+  if (!nextMoves.length) {
+    const inCheck = isInCheck(game.board, nextTurn)
+    const winner  = nextTurn === 'w'
+      ? (game.black === 'bot' ? '🤖 Bot' : `@${game.black.split('@')[0].split(':')[0]}`)
+      : `@${game.white.split('@')[0].split(':')[0]}`
+    const result  = inCheck ? `♚ *Checkmate!*\n\n🏆 ${winner} wins!` : `🤝 *Stalemate!* Draw.`
+    const mentions = [game.white, ...(game.black !== 'bot' ? [game.black] : [])]
+    chessGames.delete(jid)
+    return sock.sendMessage(jid, {
+      text: result + '\n\n_Type .chess @user to start a new game_',
+      mentions,
+    }, msg ? { quoted: msg } : {})
+  }
+
+  if (game.black === 'bot' && nextTurn === 'b') {
+    await sendBoard(sock, jid, game, msg)
+    return doBotMove(sock, jid)
+  }
+  return sendBoard(sock, jid, game, msg)
+}
+
+// ── Module exports ───────────────────────────────────────────────────────────
 
 module.exports = {
   chessGames,
@@ -438,24 +418,28 @@ module.exports = {
         turn: 'w', ep: null,
         castling: { wK:true, wQ:true, bK:true, bQ:true },
         lastMove: null, pendingSelect: null, status: 'active',
-        _jid: jid,
       }
       chessGames.set(jid, game)
-      await sock.sendMessage(jid, { text: `♟️ *Chess vs Bot*\n\n@${sender} is ⬜ White.\nBot is ⬛ Black.`, mentions: [senderJid] })
-      return sendBoardWithButtons(sock, jid, game)
+      await sock.sendMessage(jid, {
+        text: `♟️ *Chess vs Bot started!*\n\n⬜ White: @${sender}\n⬛ Black: 🤖 Bot\n\n_Type your move (e.g. *e2 e4*) to play_`,
+        mentions: [senderJid],
+      })
+      return sendBoard(sock, jid, game, msg)
     }
 
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid ||
                       (msg.message?.extendedTextMessage?.contextInfo?.quotedParticipant
                         ? [msg.message.extendedTextMessage.contextInfo.quotedParticipant] : [])
-    if (!mentioned.length) return reply('Usage:\n• .chess @user — challenge someone\n• .chess start bot — play vs bot')
+    if (!mentioned.length) return reply(
+      '♟️ *Chess*\n\nUsage:\n• *.chess @user* — challenge a player\n• *.chess start bot* — play vs bot\n\n_Moves are made by replying e.g. *e2 e4*_'
+    )
     const opponent = mentioned[0]
     if (opponent === senderJid) return reply('❌ You cannot challenge yourself!')
     if (chessGames.has(jid)) return reply('❌ A chess game is already active here.')
 
-    chessGames.set(jid, { status: 'pending', challenger: senderJid, opponent, board: null, turn: null, _jid: jid })
+    chessGames.set(jid, { status: 'pending', challenger: senderJid, opponent, board: null, turn: null })
     await sock.sendMessage(jid, {
-      text: `♟️ @${opponent.split('@')[0]}, you've been challenged to Chess by @${sender}!\n\nReply *.accept* to play as ⬛ Black.`,
+      text: `♟️ @${opponent.split('@')[0].split(':')[0]}, you've been challenged to Chess by @${sender}!\n\nType *accept* to play as ⬛ Black.`,
       mentions: [opponent, senderJid],
     })
   },
@@ -479,184 +463,141 @@ module.exports = {
       turn: 'w', ep: null,
       castling: { wK:true, wQ:true, bK:true, bQ:true },
       lastMove: null, pendingSelect: null, status: 'active',
-      _jid: jid,
     }
     chessGames.set(jid, ng)
     await sock.sendMessage(jid, {
-      text: `♟️ *Chess Game Started!*\n\n⬜ White: @${ng.white.split('@')[0]}\n⬛ Black: @${ng.black.split('@')[0]}`,
+      text: `♟️ *Chess Game Started!*\n\n⬜ White: @${ng.white.split('@')[0].split(':')[0]}\n⬛ Black: @${ng.black.split('@')[0].split(':')[0]}\n\n_Type moves in chat (e.g. *e2 e4*) to play_`,
       mentions: [ng.white, ng.black],
     })
-    await sendBoardWithButtons(sock, jid, ng)
+    await sendBoard(sock, jid, ng)
   },
 
-  // ── Button handler (chess_sq_, chess_resign_, chess_rematch_, chess_close_) ──
+  // ── Plain-text move handler ────────────────────────────────────────────────
+  // Called from index.js whenever any message arrives in a group with an active game.
+  // Supports: "e2 e4"  "e2e4"  "e2" (select) then "e4" (move)
 
-  async handleButton(sock, msg, buttonId) {
-    const jid       = msg.key.remoteJid
-    const senderJid = msg.key.participant || msg.key.remoteJid
-    const game      = chessGames.get(jid)
+  async handleChessText({ sock, msg, jid, senderJid, textRaw }) {
+    const game = chessGames.get(jid)
+    if (!game || game.status !== 'active') return false
 
-    // ── Close ───────────────────────────────────────────────────────────────
-    if (buttonId.startsWith('chess_close_')) {
-      if (game) chessGames.delete(jid)
-      return sock.sendMessage(jid, { text: '✅ Chess game closed.' })
+    const isPlayerTurn = (game.turn === 'w' && senderJid === game.white) ||
+                         (game.turn === 'b' && senderJid === game.black)
+
+    const moveText = (textRaw || '').trim().toLowerCase()
+
+    // ── Two-square notation: "e2 e4" or "e2e4" ──────────────────────────────
+    let fromSqStr, toSqStr
+    if (/^[a-h][1-8]\s+[a-h][1-8]$/.test(moveText)) {
+      const parts = moveText.split(/\s+/)
+      fromSqStr = parts[0]
+      toSqStr   = parts[1]
+    } else if (/^[a-h][1-8][a-h][1-8]$/.test(moveText)) {
+      fromSqStr = moveText.slice(0, 2)
+      toSqStr   = moveText.slice(2, 4)
     }
 
-    // ── Rematch ─────────────────────────────────────────────────────────────
-    if (buttonId.startsWith('chess_rematch_')) {
-      if (!game) return
-      const ng = {
-        board: initBoard(),
-        white: game.black === 'bot' ? game.white : game.black,
-        black: game.black === 'bot' ? 'bot' : game.white,
-        turn: 'w', ep: null,
-        castling: { wK:true, wQ:true, bK:true, bQ:true },
-        lastMove: null, pendingSelect: null, status: 'active',
-        _jid: jid,
-      }
-      chessGames.set(jid, ng)
-      return sendBoardWithButtons(sock, jid, ng)
-    }
-
-    // ── Resign ──────────────────────────────────────────────────────────────
-    if (buttonId.startsWith('chess_resign_')) {
-      if (!game || game.status !== 'active') return
-      const isWhite = senderJid === game.white
-      const isBlack = senderJid === game.black
-      if (!isWhite && !isBlack) return
-      const winner  = isWhite ? (game.black === 'bot' ? '🤖 Bot' : `@${game.black.split('@')[0]}`) : `@${game.white.split('@')[0]}`
-      const loser   = isWhite ? `@${game.white.split('@')[0]}` : `@${game.black.split('@')[0]}`
-      const mentions = [game.white, ...(game.black !== 'bot' ? [game.black] : [])]
-      chessGames.delete(jid)
-      return sendEndButtons(sock, jid, `🏳️ ${loser} resigned!\n\n🏆 *${winner} wins!*`, mentions, jid)
-    }
-
-    // ── Square tap (chess_sq_R_F_jid) ───────────────────────────────────────
-    if (buttonId.startsWith('chess_sq_')) {
-      if (!game || game.status !== 'active') return
-
-      // Extract row/file — id format: chess_sq_R_F_<jid>
-      const withoutPrefix = buttonId.slice('chess_sq_'.length)
-      const parts = withoutPrefix.split('_')
-      const r = parseInt(parts[0])
-      const f = parseInt(parts[1])
-      if (isNaN(r) || isNaN(f)) return
-
-      const isPlayerTurn = (game.turn === 'w' && senderJid === game.white) ||
-                           (game.turn === 'b' && senderJid === game.black)
+    if (fromSqStr && toSqStr) {
       if (!isPlayerTurn) {
-        return sock.sendMessage(jid, { text: `⏳ It's not your turn!` })
+        await sock.sendMessage(jid, { text: `⏳ It's not your turn!` }, { quoted: msg })
+        return true
+      }
+      const ff = FILES.indexOf(fromSqStr[0])
+      const fr = 8 - parseInt(fromSqStr[1])
+      const tf = FILES.indexOf(toSqStr[0])
+      const tr = 8 - parseInt(toSqStr[1])
+
+      const legalMoves = getLegalMoves(game.board, game.turn, game.ep, game.castling)
+      const move = legalMoves.find(m => m.from[0]===fr && m.from[1]===ff && m.to[0]===tr && m.to[1]===tf)
+
+      if (!move) {
+        await sock.sendMessage(jid, {
+          text: `❌ *${fromSqStr} → ${toSqStr}* is not a legal move.\n_Type your move (e.g. *e2 e4*)_`,
+        }, { quoted: msg })
+        return true
       }
 
-      // ── Case 1: A piece is already selected → try to move to this square ──
+      game.pendingSelect = null
+      await executeMove(sock, jid, game, move, msg)
+      return true
+    }
+
+    // ── Single square: select or move ───────────────────────────────────────
+    if (/^[a-h][1-8]$/.test(moveText)) {
+      if (!isPlayerTurn) return false  // silently ignore non-player single squares
+
+      const f = FILES.indexOf(moveText[0])
+      const r = 8 - parseInt(moveText[1])
+
       if (game.pendingSelect) {
         const [sr, sf] = game.pendingSelect
         const legalMoves = getLegalMoves(game.board, game.turn, game.ep, game.castling)
         const move = legalMoves.find(m => m.from[0]===sr && m.from[1]===sf && m.to[0]===r && m.to[1]===f)
 
         if (move) {
-          // Execute the move
-          game.castling = updateCastling(game.castling, move, game.board)
-          game.board    = applyMove(game.board, move)
-          game.ep       = move.double ? [r + (game.turn === 'w' ? 1 : -1), sf] : null
-          game.lastMove = move
-          const nextTurn = game.turn === 'w' ? 'b' : 'w'
-          game.turn = nextTurn
           game.pendingSelect = null
-
-          const nextMoves = getLegalMoves(game.board, nextTurn, game.ep, game.castling)
-          if (!nextMoves.length) {
-            const inCheck = isInCheck(game.board, nextTurn)
-            const winner  = nextTurn === 'w'
-              ? (game.black === 'bot' ? '🤖 Bot' : `@${game.black.split('@')[0]}`)
-              : `@${game.white.split('@')[0]}`
-            const result  = inCheck ? `♚ *Checkmate!*\n\n🏆 ${winner} wins!` : `🤝 *Stalemate!* Draw.`
-            const mentions = [game.white, ...(game.black !== 'bot' ? [game.black] : [])]
-            chessGames.delete(jid)
-            return sendEndButtons(sock, jid, result, mentions, jid)
-          }
-
-          if (game.black === 'bot' && nextTurn === 'b') {
-            await sendBoardWithButtons(sock, jid, game)
-            return doBotMove(sock, jid)
-          }
-          return sendBoardWithButtons(sock, jid, game)
+          await executeMove(sock, jid, game, move, msg)
+          return true
         }
 
-        // Tapped an invalid dest — if they tapped their own piece, re-select it
-        const tappedPiece = game.board[r][f]
-        if (tappedPiece && tappedPiece.c === game.turn) {
+        // Re-select if own piece tapped
+        const tapped = game.board[r][f]
+        if (tapped && tapped.c === game.turn) {
+          const pieceMoves = getLegalMoves(game.board, game.turn, game.ep, game.castling).filter(m => m.from[0]===r && m.from[1]===f)
+          if (!pieceMoves.length) {
+            await sock.sendMessage(jid, { text: `⚠️ ${pieceEmoji(tapped)} on ${sq(r, f)} has no legal moves!` }, { quoted: msg })
+            return true
+          }
           game.pendingSelect = [r, f]
-          return sendBoardWithButtons(sock, jid, game)
+          await sendBoard(sock, jid, game, msg)
+          return true
         }
 
-        // Not a valid move, not their piece — deselect and show board
         game.pendingSelect = null
-        await sock.sendMessage(jid, { text: `❌ *${sq(sr, sf)} → ${sq(r, f)}* is not a legal move. Tap a piece to try again.` })
-        return sendBoardWithButtons(sock, jid, game)
+        await sock.sendMessage(jid, {
+          text: `❌ *${sq(sr, sf)} → ${sq(r, f)}* is not a legal move. Select a piece again.`,
+        }, { quoted: msg })
+        return true
       }
 
-      // ── Case 2: No piece selected → select this square ─────────────────────
+      // Select a piece
       const piece = game.board[r][f]
-      if (!piece) {
-        return sock.sendMessage(jid, { text: `⬜ ${sq(r, f)} is empty. Tap one of your pieces.` })
-      }
-      if (piece.c !== game.turn) {
-        return sock.sendMessage(jid, { text: `❌ That's your opponent's piece on ${sq(r, f)}.` })
-      }
+      if (!piece) return false
+      if (piece.c !== game.turn) return false
 
-      const legalMoves = getLegalMoves(game.board, game.turn, game.ep, game.castling)
-      const pieceMoves = legalMoves.filter(m => m.from[0] === r && m.from[1] === f)
+      const pieceMoves = getLegalMoves(game.board, game.turn, game.ep, game.castling).filter(m => m.from[0]===r && m.from[1]===f)
       if (!pieceMoves.length) {
-        return sock.sendMessage(jid, { text: `⚠️ ${pieceEmoji(piece)} on ${sq(r, f)} has no legal moves!` })
+        await sock.sendMessage(jid, { text: `⚠️ ${pieceEmoji(piece)} on ${sq(r, f)} has no legal moves!` }, { quoted: msg })
+        return true
       }
 
       game.pendingSelect = [r, f]
-      return sendBoardWithButtons(sock, jid, game)
+      await sendBoard(sock, jid, game, msg)
+      return true
     }
+
+    return false
   },
 
-  // ── Legacy list handler (kept for backward compat) ──────────────────────────
-  async handleList(sock, msg, rowId) {
-    const jid       = msg.key.remoteJid
-    const senderJid = msg.key.participant || msg.key.remoteJid
-    const game      = chessGames.get(jid)
-    if (!game || game.status !== 'active') return
-
-    const isPlayerTurn = (game.turn === 'w' && senderJid === game.white) ||
-                         (game.turn === 'b' && senderJid === game.black)
-    if (!isPlayerTurn) return sock.sendMessage(jid, { text: '⏳ It\'s not your turn!' })
-
-    if (rowId.startsWith('move_')) {
-      const parts = rowId.split('_')
-      const [fr, ff, tr, tf] = [Number(parts[1]), Number(parts[2]), Number(parts[3]), Number(parts[4])]
-      const legalMoves = getLegalMoves(game.board, game.turn, game.ep, game.castling)
-      const move = legalMoves.find(m => m.from[0]===fr && m.from[1]===ff && m.to[0]===tr && m.to[1]===tf)
-      if (!move) return sock.sendMessage(jid, { text: '❌ Invalid move.' })
-
-      game.castling = updateCastling(game.castling, move, game.board)
-      game.board    = applyMove(game.board, move)
-      game.ep       = move.double ? [tr + (game.turn === 'w' ? 1 : -1), ff] : null
-      game.lastMove = move
-      game.pendingSelect = null
-      const nextTurn = game.turn === 'w' ? 'b' : 'w'
-      game.turn = nextTurn
-
-      const nextMoves = getLegalMoves(game.board, nextTurn, game.ep, game.castling)
-      if (!nextMoves.length) {
-        const inCheck = isInCheck(game.board, nextTurn)
-        const winner  = nextTurn === 'w' ? (game.black === 'bot' ? '🤖 Bot' : `@${game.black.split('@')[0]}`) : `@${game.white.split('@')[0]}`
-        const result  = inCheck ? `♚ *Checkmate!*\n\n🏆 ${winner} wins!` : `🤝 *Stalemate!* Draw.`
-        const mentions = [game.white, ...(game.black !== 'bot' ? [game.black] : [])]
-        chessGames.delete(jid)
-        return sendEndButtons(sock, jid, result, mentions, jid)
-      }
-
-      if (game.black === 'bot' && nextTurn === 'b') {
-        await sendBoardWithButtons(sock, jid, game)
-        return doBotMove(sock, jid)
-      }
-      return sendBoardWithButtons(sock, jid, game)
-    }
+  // ── Resign ────────────────────────────────────────────────────────────────
+  async resign({ sock, jid, senderJid, reply }) {
+    const game = chessGames.get(jid)
+    if (!game || game.status !== 'active') return reply('❌ No active chess game.')
+    const isWhite = senderJid === game.white
+    const isBlack = senderJid === game.black
+    if (!isWhite && !isBlack) return reply('❌ You are not in this game.')
+    const winner  = isWhite
+      ? (game.black === 'bot' ? '🤖 Bot' : `@${game.black.split('@')[0].split(':')[0]}`)
+      : `@${game.white.split('@')[0].split(':')[0]}`
+    const loser   = isWhite ? `@${game.white.split('@')[0].split(':')[0]}` : `@${game.black.split('@')[0].split(':')[0]}`
+    const mentions = [game.white, ...(game.black !== 'bot' ? [game.black] : [])]
+    chessGames.delete(jid)
+    await sock.sendMessage(jid, {
+      text: `🏳️ ${loser} resigned!\n\n🏆 *${winner} wins!*\n\n_Type .chess @user to start a new game_`,
+      mentions,
+    })
   },
+
+  // ── Backward-compat stubs (no-op now that buttons are removed) ────────────
+  async handleButton() {},
+  async handleList()  {},
 }

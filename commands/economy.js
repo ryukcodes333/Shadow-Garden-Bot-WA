@@ -288,15 +288,6 @@ module.exports = {
     try {
       const imgBuf = fs.readFileSync(DIG_IMG)
       await replyImage(imgBuf, caption)
-      await sock.sendMessage(jid, {
-        text: 'https://konosubacommunity.onrender.com',
-        linkPreview: {
-          matchedText: 'https://konosubacommunity.onrender.com',
-          title: '⛏️ Shadow Garden Economy',
-          description: caption,
-          jpegThumbnail: imgBuf,
-        }
-      }, { quoted: msg })
     } catch {
       await reply(caption)
     }
@@ -342,15 +333,6 @@ module.exports = {
     try {
       const imgBuf = fs.readFileSync(FISH_IMG)
       await replyImage(imgBuf, caption)
-      await sock.sendMessage(jid, {
-        text: 'https://konosubacommunity.onrender.com',
-        linkPreview: {
-          matchedText: 'https://konosubacommunity.onrender.com',
-          title: '🎣 Shadow Garden Economy',
-          description: caption,
-          jpegThumbnail: imgBuf,
-        }
-      }, { quoted: msg })
     } catch {
       await reply(caption)
     }
