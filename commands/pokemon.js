@@ -637,33 +637,63 @@ module.exports = {
       if (isNaN(idx) || idx < 0) return reply(`⚠️ Usage: *#party <slot>*`)
       const p = party[idx]
       if (!p) return reply(`⚠️ No Pokémon in slot #${idx + 1}`)
-      const moves     = Array.isArray(p.moves) ? p.moves.join(', ') : p.moves || 'N/A'
-      const abilities = Array.isArray(p.abilities) ? p.abilities.join(', ') : p.abilities || 'N/A'
-      const statsText =
-        `*Name:* ${p.name}\n` +
-        `*Capture Rate:* ${p.capture_rate ?? '?'}\n` +
-        `*Gender:* ${p.gender || 'Unknown'}\n` +
-        `*Nature:* ${p.nature || 'Unknown'}\n` +
-        `*Types:* ${Array.isArray(p.types) ? p.types.join(', ') : p.types}\n` +
-        `*Level:* ${p.level || 1}\n` +
-        `*XP:* ${p.xp || 0} / ${(p.level || 1) * 50}\n` +
-        `*State:* ${p.fainted ? 'Fainted' : 'Healthy'}\n` +
-        `*HP:* ${p.current_hp ?? p.hp ?? 0} / ${p.hp || 0}\n` +
-        `*Attack:* ${p.attack || 0}\n` +
-        `*Defense:* ${p.defense || 0}\n` +
-        `*Sp. Atk:* ${p.sp_atk || 0}\n` +
-        `*Sp. Def:* ${p.sp_def || 0}\n` +
-        `*Speed:* ${p.speed || 0}\n` +
-        `*Moves:* ${moves}\n\n` +
-        `_Use .party ${idx + 1} moves to see moves._`
-      const miniCard = await buildMiniPartyCard(p).catch(() => null)
-      if (miniCard) {
-        return await sock.sendMessage(jid, {
-          text: statsText,
-          contextInfo: { externalAdReply: miniCard },
-        }, { quoted: msg })
+      const pMoves = Array.isArray(p.moves) ? p.moves : (p.moves ? [p.moves] : [])
+      const moveLines = pMoves.length
+        ? pMoves.map(m => `├ ${m}`).join('\n').replace(/├ ([^]+)$/, '└ $1')
+        : '└ None'
+      const types   = Array.isArray(p.types) ? p.types.join(' / ') : (p.types || '?')
+      const xpReq   = (p.level || 1) * 50
+      const caption =
+        `📜 *POKÉMON INFO*\n` +
+        `├ *Name:* ${p.name}\n` +
+        `├ *Type:* ${types}\n` +
+        `├ *Level:* ${p.level || 1}\n` +
+        `├ *XP:* ${p.xp || 0}/${xpReq}\n` +
+        `└ *Nature:* ${p.nature || 'Unknown'}\n\n` +
+        `❤️ *Status:* ${p.fainted ? 'Fainted' : 'Healthy'}\n\n` +
+        `📊 *STATS*\n` +
+        `├ HP: ${p.current_hp ?? p.hp ?? 0}/${p.hp || 0}\n` +
+        `├ ATK: ${p.attack || 0}\n` +
+        `├ DEF: ${p.defense || 0}\n` +
+        `├ SP. ATK: ${p.sp_atk || 0}\n` +
+        `├ SP. DEF: ${p.sp_def || 0}\n` +
+        `└ SPD: ${p.speed || 0}\n\n` +
+        `✨ *MOVES*\n` +
+        `${moveLines}\n\n` +
+        `💡 Use *.party ${idx + 1} moves* to view move details.`
+
+      // Build mini link preview card (standard WA linkPreview — visible to everyone)
+      const artUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.pokemon_id}.png`
+      const sprUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.pokemon_id}.png`
+      let thumbnail = null
+      if (p.pokemon_id) {
+        try {
+          const rawBuf = await downloadBuffer(artUrl, 10000).catch(() => null)
+            || await downloadBuffer(sprUrl, 8000).catch(() => null)
+          if (rawBuf) {
+            try {
+              const sharp = require('sharp')
+              thumbnail = await sharp(rawBuf)
+                .resize(128, 128, { fit: 'contain', background: { r: 18, g: 18, b: 40, alpha: 1 } })
+                .jpeg({ quality: 88 })
+                .toBuffer()
+            } catch { thumbnail = rawBuf }
+          }
+        } catch {}
       }
-      return reply(`📊 *POKÉMON STATS — Slot #${idx + 1}*\n\n${statsText}`)
+      const KONO = 'https://konosubacommunity.onrender.com'
+      return await sock.sendMessage(jid, {
+        text: caption,
+        linkPreview: {
+          matchedText:          KONO,
+          canonicalUrl:         KONO,
+          title:                p.name,
+          description:          `Level ${p.level || 1} · ${types}`,
+          jpegThumbnail:        thumbnail || undefined,
+          mediaType:            1,
+          renderLargerThumbnail: false,
+        },
+      }, { quoted: msg })
     }
 
     const partyLines = Array.from({ length: 6 }, (_, i) => {
