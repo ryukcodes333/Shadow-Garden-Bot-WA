@@ -849,9 +849,13 @@ module.exports = {
 
     // ── #battle @user — Issue a challenge ─────────────────────
     if (mentioned.length > 0 && (!subCmd || subCmd.startsWith('@'))) {
-      const opponentJid   = mentioned[0]
-      const opponentPhone = opponentJid.split('@')[0]
-      if (opponentPhone === sender) return reply(`🚫 You can't challenge yourself!`)
+      const opponentJid    = mentioned[0]
+      const opponentJidNum = opponentJid.split('@')[0]
+      if (opponentJidNum === sender) return reply(`🚫 You can't challenge yourself!`)
+
+      // Resolve canonical (web-registered) phone from DB to avoid LID/JID mismatch
+      const opponentUser  = await db.getUserByJid(opponentJid).catch(() => null)
+      const opponentPhone = opponentUser?.phone || opponentJidNum
 
       const [myPoke, theirPoke] = await Promise.all([
         db.getUserPokemon(sender).catch(() => []),

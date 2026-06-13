@@ -627,7 +627,7 @@ async function cmdCreate(ctx) {
     bodies: [],
     meeting: null, _meetingTimer: null,
     sabotage: null, sabotageCD: 0,
-    settings: { maxPlayers: 20, impostorCount: 2, killCooldown: 30, meetings: 1 },
+    settings: { maxPlayers: 15, impostorCount: 2, killCooldown: 30, meetings: 1 },
     meetingsRemaining: { [sender]: 1 },
   }
 
@@ -751,6 +751,14 @@ async function cmdLeave(ctx) {
 
   const game = activeGames[jid] || findPlayerGame(sender)
   if (!game) return reply(`⚠️ You're not in any lobby.`)
+
+  // Dead players cannot leave mid-game (anti-exploit)
+  const player = game.players.find(p => p.phone === sender)
+  if (game.status === 'playing' || game.status === 'meeting') {
+    if (player && !player.alive) {
+      return reply(`💀 Dead players cannot leave during a match.`)
+    }
+  }
 
   const wasHost = game.host === sender
   game.players  = game.players.filter(p => p.phone !== sender)
@@ -1051,6 +1059,7 @@ async function cmdTask(ctx) {
 
 async function cmdKill(ctx) {
   const { reply, sock, jid, sender, args, msg } = ctx
+  if (ctx.isGroup) return sendDM(sock, sender, `🔒 Use *.eliminate* in my DMs — private actions must not be sent in the group.`)
   const game = activeGames[jid] || findPlayerGame(sender)
   if (!game || game.status !== 'playing') return
 
@@ -1132,6 +1141,7 @@ async function cmdKill(ctx) {
 
 async function cmdVent(ctx) {
   const { sock, jid, sender, args } = ctx
+  if (ctx.isGroup) return sendDM(sock, sender, `🔒 Use *.vent* in my DMs — private actions must not be sent in the group.`)
   const game = activeGames[jid] || findPlayerGame(sender)
   if (!game || game.status !== 'playing') return
 
@@ -1171,6 +1181,7 @@ async function cmdVent(ctx) {
 
 async function cmdSabotage(ctx) {
   const { sock, jid, sender, args } = ctx
+  if (ctx.isGroup) return sendDM(sock, sender, `🔒 Use *.sabo* in my DMs — private actions must not be sent in the group.`)
   const game = activeGames[jid] || findPlayerGame(sender)
   if (!game || game.status !== 'playing') return
 
@@ -1392,6 +1403,7 @@ async function cmdObserve(ctx) {
 
 async function cmdVitals(ctx) {
   const { sock, jid, sender } = ctx
+  if (ctx.isGroup) return sendDM(sock, sender, `🔒 Use *.vitals* in my DMs — private actions must not be sent in the group.`)
   const game = activeGames[jid] || findPlayerGame(sender)
   if (!game || game.status === 'lobby') return
 
@@ -1428,8 +1440,77 @@ async function cmdProtect(ctx) {
   await sendDM(sock, sender, `🛡️ *Protection Applied*\n\nProtecting:\n└ ${playerTag(target)}\n\nThey will survive one kill attempt.`)
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// COMMAND: .guard <player>  — Guardian Angel (activates AFTER death)
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function cmdGuard(ctx) {
+  const { sock, jid, sender, args } = ctx
+  if (ctx.isGroup) return sendDM(sock, sender, `🔒 Use *.guard* in my DMs — private actions must not be sent in the group.`)
+  const game = activeGames[jid] || findPlayerGame(sender)
+  if (!game || game.status !== 'playing') return
+
+  const player = game.players.find(p => p.phone === sender)
+  if (!player) return
+  if (player.role !== 'Guardian Angel') return sendDM(sock, sender, `⚠️ Only Guardian Angels can use .guard.`)
+  if (player.alive) return sendDM(sock, sender, `⚠️ Guardian Angel ability unlocks after you die. Stay alive for now!`)
+  if (player.protectUsed) return sendDM(sock, sender, `⚠️ You already used your protection this game.`)
+
+  const colorArg = args.join(' ').trim()
+  if (!colorArg) return sendDM(sock, sender, `⚠️ Usage: .guard <color>\nExample: .guard Red`)
+
+  const target = findPlayerByColor(game, colorArg)
+  if (!target?.alive) return sendDM(sock, sender, `⚠️ Player not found or already dead. Use their color.`)
+  if (target.phone === sender) return sendDM(sock, sender, `⚠️ You cannot guard yourself.`)
+
+  target.protected   = true
+  player.protectUsed = true
+
+  await sendDM(sock, sender,
+    `😇 *Guardian Protection Applied*\n\nProtecting:\n└ ${playerTag(target)}\n\nThey will survive the next kill attempt.\n\n_(One-time use — ability spent)_`
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMMAND: .ventto <room>  — explicit vent-to destination
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function cmdVentTo(ctx) {
+  const { sock, jid, sender, args } = ctx
+  if (ctx.isGroup) return sendDM(sock, sender, `🔒 Use *.ventto* in my DMs — private actions must not be sent in the group.`)
+  const game = activeGames[jid] || findPlayerGame(sender)
+  if (!game || game.status !== 'playing') return
+
+  const player = game.players.find(p => p.phone === sender)
+  if (!player?.alive) return
+
+  if (player.role !== 'Impostor' && player.role !== 'Shapeshifter' && player.role !== 'Engineer') {
+    return sendDM(sock, sender, `⚠️ Only Impostors and Engineers can use vents.`)
+  }
+
+  const opts = VENT_NETWORK[player.room]
+  if (!opts) return sendDM(sock, sender, `⚠️ No vent in *${player.room}*.`)
+
+  const dest = resolveRoom(args.join(' '))
+  if (!dest || !opts.includes(dest)) {
+    return sendDM(sock, sender,
+      `⚠️ Invalid vent destination.\nAvailable from ${player.room}:\n${opts.join(', ')}`
+    )
+  }
+
+  player.room = dest
+
+  try {
+    const profile = await getAuPlayer(sender)
+    if (profile) { profile.vent_count += 1; await profile.save() }
+  } catch {}
+
+  await sendDM(sock, sender, `🕳️ *Vent Travel*\n\nDestination:\n└ ${dest}`)
+}
+
 async function cmdShift(ctx) {
   const { sock, jid, sender, args } = ctx
+  if (ctx.isGroup) return sendDM(sock, sender, `🔒 Use *.shift* in my DMs — private actions must not be sent in the group.`)
   const game = activeGames[jid] || findPlayerGame(sender)
   if (!game || game.status !== 'playing') return
 
@@ -1452,6 +1533,7 @@ async function cmdShift(ctx) {
 
 async function cmdTrack(ctx) {
   const { sock, jid, sender, args } = ctx
+  if (ctx.isGroup) return sendDM(sock, sender, `🔒 Use *.track* in my DMs — private actions must not be sent in the group.`)
   const game = activeGames[jid] || findPlayerGame(sender)
   if (!game || game.status !== 'playing') return
 
@@ -1761,15 +1843,21 @@ module.exports = {
 
   // lobby
   'join':      cmdJoin,
+  'joinau':    cmdJoin,
   'leave':     cmdLeave,
+  'leaveau':   cmdLeave,
   'players':   cmdPlayers,
+  'playersau': cmdPlayers,
   'startau':   cmdStart,
 
-  // gameplay
+  // gameplay — canonical names from master rules
+  'walk':      cmdGo,
   'go':        cmdGo,
   'move':      cmdGo,
   'room':      cmdRoom,
+  'duties':    cmdTasks,
   'tasks':     cmdTasks,
+  'complete':  cmdTask,
   'task':      cmdTask,
 
   // colors
@@ -1782,15 +1870,20 @@ module.exports = {
     return cmdColours(ctx)
   },
 
-  // impostor
+  // impostor actions — canonical names from master rules (DM-only enforced inside)
+  'eliminate': cmdKill,
   'kill':      cmdKill,
+  'ventto':    cmdVentTo,
   'vent':      cmdVent,
+  'sabo':      cmdSabotage,
   'sabotage':  cmdSabotage,
   'fix':       cmdFix,
   'repair':    cmdFix,
 
   // meetings
+  'body':      cmdReport,
   'report':    cmdReport,
+  'emergency': cmdMeeting,
   'meeting':   cmdMeeting,
   'vote':      cmdVote,
   'skip':      cmdSkip,
@@ -1800,12 +1893,14 @@ module.exports = {
 
   // special roles
   'vitals':    cmdVitals,
+  'guard':     cmdGuard,
   'protect':   cmdProtect,
   'shift':     cmdShift,
   'track':     cmdTrack,
 
   // map
   'map':       cmdMap,
+  'ausmap':    cmdMap,
 
   // profile
   'crewcard':  cmdCrewCard,

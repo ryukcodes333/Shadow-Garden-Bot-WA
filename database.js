@@ -1187,10 +1187,20 @@ async function seedAllCards(cardIndex, cardIndex2, cardIndexMazoku) {
   return { inserted, total }
 }
 
+async function getUserByJid(jid) {
+  if (!jid) return null
+  const cleanedJid = String(jid).includes('@') ? jid : `${jid}@s.whatsapp.net`
+  try {
+    return await User.findOne({ jid: cleanedJid }).lean()
+  } catch {
+    return null
+  }
+}
+
 module.exports = {
   supabase,
   // Users
-  getUser, createUser, getOrCreateUser, updateUser,
+  getUser, createUser, getOrCreateUser, updateUser, getUserByJid,
   // Groups
   getGroup, getOrCreateGroup, updateGroup,
   // Warnings

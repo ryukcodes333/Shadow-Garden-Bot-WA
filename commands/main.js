@@ -361,31 +361,49 @@ module.exports = {
     await reply(`⏱️ Uptime: ${uptime()}`)
   },
 
-  async repo({ reply }) {
-    await reply(
-      `🌑 *Konosuba Bot*\n\n` +
-      `📦 *Script:* Konosuba Community Bot v${BOT_VERSION}\n` +
-      `🌐 *Website:* konosubacommunity.onrender.com\n` +
-      `💬 *Community:* https://chat.whatsapp.com/FlpibcQWh3027KRBGTctc8\n\n` +
-      `> Made with 🖤 by Konosuba`
-    )
+  async repo({ sock, jid, msg, reply }) {
+    const text =
+      `This bot is a private project built and maintained by its owner. The source code is not publicly available and there is currently no public repository.\n\n` +
+      `If you encounter bugs, have suggestions, or need assistance, feel free to join the community below. Our moderators are available to help and can forward important reports or feedback directly to the owner.\n\n` +
+      `*🔗 Community:*\n` +
+      `https://chat.whatsapp.com/LooPVxz9JVXLXu9Zk5jp1q\n\n` +
+      `> *Thank you for supporting the project! ❤️*`
+    try {
+      await sock.sendMessage(jid, { image: { url: MENU_IMAGE }, caption: text }, { quoted: msg })
+    } catch {
+      await reply(text)
+    }
   },
 
-  async signup({ reply, sock, jid, msg }) {
-    await sock.sendMessage(jid, {
-      text:
-        `🌑 *Welcome to Konosuba!*\n\n` +
-        `To get started, follow the steps below:\n\n` +
-        `*Step 1 — Join the Community*\n` +
-        `👉 https://chat.whatsapp.com/FlpibcQWh3027KRBGTctc8\n\n` +
-        `*Step 2 — Create your Account*\n` +
-        `👉 konosubacommunity.onrender.com\n\n` +
-        `*Step 3 — Set your Profile*\n` +
-        `Type *.register <your name>* to create your bot profile\n\n` +
-        `*Step 4 — Start Playing!*\n` +
-        `Type *.menu* to see all available commands\n\n` +
-        `> 🖤 Welcome to the Konosuba, traveller.`,
-    }, { quoted: msg })
+  async signup({ reply }) {
+    await reply(
+      `*📝 REGISTRATION GUIDE*\n\n` +
+      `To use all bot features, you must register through the web panel.\n\n` +
+      `*🌐 WEB PANEL:*\n` +
+      `https://konosubacommunity.onrender.com/\n\n` +
+      `*📋 HOW TO REGISTER*\n\n` +
+      `1️⃣ Visit the web panel.\n\n` +
+      `2️⃣ Enter your name and phone number.\n\n` +
+      `3️⃣ The bot will send you a *One-Time Password (OTP)* on WhatsApp.\n\n` +
+      `4️⃣ Enter the OTP on the website.\n\n` +
+      `5️⃣ Once verified, return to WhatsApp and use the \`.reg\` command.\n\n` +
+      `6️⃣ You will be asked to provide your phone number.\n\n` +
+      `7️⃣ Enter the same phone number you used on the website, including your country code (e.g. "234xxxxxxxxxx").\n\n` +
+      `⚠️ *Do not* include the "+" sign.\n\n` +
+      `8️⃣ A second OTP will be sent in the group where the bot is present.\n\n` +
+      `9️⃣ Use \`.link <otp>\` to verify your account.\n\n` +
+      `✅ That's it! You are now registered and ready to use the bot.\n\n` +
+      `*❓ NEED HELP?*\n\n` +
+      `If you encounter any issues during registration, join the community and contact a moderator. They can assist you or forward your report directly to the owner.\n\n` +
+      `*👥 COMMUNITY:*\n` +
+      `https://chat.whatsapp.com/KkaDByYNo4w0SmwIzDGudh\n\n` +
+      `*⚠️ IMPORTANT NOTES*\n\n` +
+      `• Registration is required to access certain features and future updates.\n\n` +
+      `• Keep your OTP private and do not share it with anyone.\n\n` +
+      `• Make sure you use the same phone number for both the website registration and the \`.reg\` command.\n\n` +
+      `• If your OTP expires, simply request a new one and try again.\n\n` +
+      `> *❤️ Thank you for being part of the community and enjoy your adventure!*`
+    )
   },
 
   async script({ reply }) {

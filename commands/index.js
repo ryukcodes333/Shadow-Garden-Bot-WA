@@ -483,24 +483,18 @@ async function handleMessage(sock, msg) {
     try { user = await db.getOrCreateUser(sender, msg.pushName || sender, senderJid) } catch {}
   }
 
-  // ── Registration gate — most economy/gamble commands require signup ───────
-  const GATED_CMDS = new Set([
-    'fish','dig','beg','work','daily','weekly','monthly','crime','rob','heist',
-    'cf','coinflip','slots','slot','rps','dice','bj','blackjack',
-    'pay','deposit','withdraw','bank','wallet','bal','balance',
-    'shop','buy','sell','market','topmoney','topbank','richlist',
-    'collection','coll','deck','card','ci','ss','fs','cardlb','get','cg',
-    'cgconfirm','cgcancel','dc','tc','stardust','guild','gcreate','gjoin',
-    'gleave','gcontribute','guildinfo','guildtop',
+  // ── Registration gate — all commands require a linked account (jid) ──────
+  const PUBLIC_CMDS = new Set([
+    'menu','help','ping','uptime','botstatus','info','status','alive',
+    'repo','script','signup','reg','register','link',
+    'myid','id',
   ])
-  if (isDbReady && user && !isOwner && !isMod && !isGuardian && GATED_CMDS.has(cmd)) {
-    if (!user.name && !user.registered) {
+  if (isDbReady && !isOwner && !isMod && !isGuardian && !PUBLIC_CMDS.has(cmd)) {
+    if (!user?.jid) {
       const replyFn = (text) => sock.sendMessage(jid, { text }, { quoted: msg })
       return replyFn(
-        `🌑 *Account Required*\n\n` +
-        `You need to register before using this command!\n\n` +
-        `Type *.signup* to get started, or *.register <name>* to create your profile.\n\n` +
-        `> 🖤 Konosuba awaits.`
+        `You are not registered, so you cannot use this command. Type \`.signup\` to register.\n\n` +
+        `*Please note:* if you are caught using multiple accounts *(dual accounts)*, you may be banned.`
       )
     }
   }
@@ -588,17 +582,27 @@ async function handleMessage(sock, msg) {
 
       // Unique AU commands (no conflicts with other systems)
       const AU_ONLY = new Set([
-        'go','move','room','tasks','task','vent','sabotage','fix','repair',
-        'report','meeting','vote','skip','observe','vitals','protect','shift',
-        'track','map','crewcard','locker','cosmetics','buyau','colours','colors',
+        'go','move','walk','room','tasks','task','duties','complete',
+        'vent','ventto','sabotage','sabo','fix','repair',
+        'report','body','meeting','emergency','vote','skip','observe',
+        'vitals','protect','guard','shift','track',
+        'map','ausmap','crewcard','locker','cosmetics','buyau','colours','colors',
         'colour','color','titles','austats','aulb','crate','spin','pet'
       ])
       if (AU_ONLY.has(cmd) && amongusCmds[cmd]) return await amongusCmds[cmd](ctx)
 
+      // .eliminate — AU kill alias (always AU, DM-only enforced inside)
+      if (cmd === 'eliminate') return await amongusCmds['eliminate'](ctx)
+
       // .kill — route to Among Us when in active game; otherwise falls through
       if (cmd === 'kill' && amongusCmds.activeGames[jid]) return await amongusCmds['kill'](ctx)
 
-      // .join / .leave / .players / .start — route to Among Us when game exists in group
+      // .joinau / .leaveau / .playersau — explicit Among Us aliases (always route to AU)
+      if (cmd === 'joinau')    return await amongusCmds['joinau'](ctx)
+      if (cmd === 'leaveau')   return await amongusCmds['leaveau'](ctx)
+      if (cmd === 'playersau') return await amongusCmds['playersau'](ctx)
+
+      // .join / .leave / .players — route to Among Us when game exists in group
       const AU_LOBBY = new Set(['join','leave','players'])
       if (AU_LOBBY.has(cmd) && amongusCmds.activeGames[jid]) return await amongusCmds[cmd](ctx)
 
