@@ -1133,8 +1133,7 @@ Moved to inventory.`)
 Use *.selectclass* first.`)
     const sp = u.skillPoints || 0
     const sk = cls.abilities || []
-    const list = sk.map((s, i) => `✨ ${s} Lv.${u.level || 1}`).join('
-') || '—'
+    const list = sk.map((s, i) => `✨ ${s} Lv.${u.level || 1}`).join('\n') || '—'
     await reply(
       `✨ *Skills — ${cls.name}*
 
