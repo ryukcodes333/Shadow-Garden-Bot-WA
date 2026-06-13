@@ -662,7 +662,7 @@ module.exports = {
     const itemKey = args[0]?.toLowerCase()
     if (!itemKey) return reply('⚠️ Usage: `.buy <item>` — check `.shop` for items')
     const item    = Object.entries(SHOP_ITEMS).find(([k, v]) => k === itemKey || v.name.toLowerCase() === itemKey)
-    if (!item) return reply('📦 That item doesn't exist. Check `.shop`')
+    if (!item) return reply("📦 That item doesn't exist. Check `.shop`")
     const [, data] = item
     if (data.gems) {
       if ((u.gems || 0) < data.price) return reply(`⚠️ Not enough gems. Need ${data.price} 💎, you have ${u.gems || 0}.`)
