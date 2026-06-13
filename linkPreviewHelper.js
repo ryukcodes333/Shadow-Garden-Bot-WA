@@ -140,15 +140,13 @@ async function buildMiniPartyCard(p) {
   }
 
   return {
-    url:                  KONO_DOMAIN,
-    matchedText:          KONO_DOMAIN,
-    canonicalUrl:         KONO_DOMAIN,
     title:                name,
     body:                 `Level ${level} · ${types}`,
     thumbnail:            thumbnail || undefined,
+    sourceUrl:            KONO_DOMAIN,
     mediaType:            1,
     renderLargerThumbnail: false,
-    showAdUrl:            false,
+    showAdUrl:            true,
   }
 }
 
