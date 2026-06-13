@@ -221,7 +221,7 @@ module.exports = {
     const rem = getRemainingGambles(sender)
     return reply(
       `🎲 *Dice Roll!*\n\nGuess: ${guess} | Rolled: *${roll}*\n\n` +
-      `${win ? `🎲 Rolled *${roll}*! Won *+£${(amount * 4).toLocaleString()}*` : `🎲 Rolled *${roll}*! Lost *-£${amount.toLocaleString()}*`}`\n` +
+      `${win ? `🎲 Rolled *${roll}*! Won *+£${(amount * 4).toLocaleString()}*` : `🎲 Rolled *${roll}*! Lost *-£${amount.toLocaleString()}*`}\n` +
       `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
@@ -269,7 +269,7 @@ module.exports = {
     const rem = getRemainingGambles(sender)
     return reply(
       `🪨📄✂️ *Rock Paper Scissors!*\n\nYou: ${emojis[playerMove]} | Bot: ${emojis[botMove]}\n\n` +
-      `${result === 'win' ? `🏆 You: ${emojis[playerMove]} | Bot: ${emojis[botMove]} | You Win! *+£${amount.toLocaleString()}*` : result === 'draw' ? `🤝 You: ${emojis[playerMove]} | Bot: ${emojis[botMove]} | Draw!` : `💀 You: ${emojis[playerMove]} | Bot: ${emojis[botMove]} | You Lose! *-£${amount.toLocaleString()}*`}`\n` +
+      `${result === 'win' ? `🏆 You: ${emojis[playerMove]} | Bot: ${emojis[botMove]} | You Win! *+£${amount.toLocaleString()}*` : result === 'draw' ? `🤝 You: ${emojis[playerMove]} | Bot: ${emojis[botMove]} | Draw!` : `💀 You: ${emojis[playerMove]} | Bot: ${emojis[botMove]} | You Lose! *-£${amount.toLocaleString()}*`}\n` +
       `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
