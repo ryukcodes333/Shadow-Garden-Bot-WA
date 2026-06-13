@@ -101,15 +101,53 @@ async function buildLinkPreview(url) {
   }
 
   return {
-    url:          url,
-    title:        (title || url).slice(0, 100),
-    body:         (desc  || '').slice(0, 200),
-    canonicalUrl: url,
-    matchedText:  url,
-    mediaType:    1,
-    showAdUrl:    false,
-    thumbnail:    thumbnail || undefined,
+    url:                  url,
+    title:                (title || url).slice(0, 100),
+    body:                 (desc  || '').slice(0, 200),
+    canonicalUrl:         url,
+    matchedText:          url,
+    mediaType:            1,
+    showAdUrl:            false,
+    renderLargerThumbnail: true,
+    thumbnail:            thumbnail || undefined,
   }
 }
 
-module.exports = { buildLinkPreview }
+const KONO_DOMAIN = 'https://konosubacommunity.onrender.com'
+
+async function buildMiniPartyCard(p) {
+  const raw   = p.name || 'Unknown'
+  const name  = raw.charAt(0).toUpperCase() + raw.slice(1)
+  const level = p.level  || 1
+  const types = Array.isArray(p.types) ? p.types.join(' / ') : (p.types || '?')
+
+  let thumbnail = null
+  if (p.pokemon_id) {
+    const artUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.pokemon_id}.png`
+    const sprUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.pokemon_id}.png`
+    try {
+      const rawBuf = await dlBuf(artUrl).catch(() => null) || await dlBuf(sprUrl).catch(() => null)
+      if (rawBuf) {
+        try {
+          const sharp = require('sharp')
+          thumbnail = await sharp(rawBuf)
+            .resize(128, 128, { fit: 'contain', background: { r: 18, g: 18, b: 40, alpha: 1 } })
+            .jpeg({ quality: 88 })
+            .toBuffer()
+        } catch { thumbnail = rawBuf.slice(0, 60000) }
+      }
+    } catch {}
+  }
+
+  return {
+    title:                name,
+    body:                 `Level ${level} · ${types}`,
+    thumbnail:            thumbnail || undefined,
+    sourceUrl:            KONO_DOMAIN,
+    mediaType:            1,
+    renderLargerThumbnail: false,
+    showAdUrl:            true,
+  }
+}
+
+module.exports = { buildLinkPreview, buildMiniPartyCard }
