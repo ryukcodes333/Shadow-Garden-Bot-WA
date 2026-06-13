@@ -530,7 +530,7 @@ module.exports = {
     }
 
     if (!targetPhone) return reply('Please mention a user or quote their message to pay.')
-    if (targetPhone === sender) return reply('🪞 You can't send money to yourself.')
+    if (targetPhone === sender) return reply("🪞 You can't send money to yourself.")
 
     const amount = parseInt(args.find(a => !isNaN(parseInt(a))))
     if (!amount || amount <= 0) return reply('⚠️ Invalid amount provided.')
