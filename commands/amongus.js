@@ -546,7 +546,7 @@ async function cmdAmongUs(ctx) {
   if (sub === 'join')      return cmdJoin({ ...ctx, args: args.slice(1) })
   if (sub === 'leave')     return cmdLeave(ctx)
   if (sub === 'players')   return cmdPlayers(ctx)
-  if (sub === 'start')     return cmdStart(ctx)
+  if (sub === 'startau')   return cmdStart(ctx)
   if (sub === 'role')      return cmdRole(ctx)
   if (sub === 'status')    return cmdStatus(ctx)
   if (sub === 'code')      return cmdCode(ctx)
@@ -564,7 +564,7 @@ async function cmdAmongUs(ctx) {
 • .join — join lobby
 • .leave
 • .players
-• .start (host only)
+• .startau (host only)
 
 🗺️ *Gameplay*
 • .go <room> — move
@@ -604,9 +604,9 @@ async function cmdAmongUs(ctx) {
 async function cmdCreate(ctx) {
   const { reply, jid, sender, senderJid, pushName, sock, msg } = ctx
 
-  if (!ctx.isGroup) return reply(`❌ Among Us must be played in a group.`)
-  if (playerToGame[sender]) return reply(`❌ You are already in a lobby.`)
-  if (activeGames[jid]) return reply(`❌ A lobby already exists in this group.`)
+  if (!ctx.isGroup) return reply(`⚠️ Among Us can only be played in a group chat.`)
+  if (playerToGame[sender]) return reply(`⚠️ You're already in a lobby.`)
+  if (activeGames[jid]) return reply(`⚠️ A lobby already exists in this group. Join it with *.join*`)
 
   const code  = generateCode()
   const color = pickRandomColor()
@@ -641,7 +641,7 @@ async function cmdCreate(ctx) {
       `Your Color:\n└ ${color.emoji} ${color.name}\n\n` +
       `Players:\n└ 1/${game.settings.maxPlayers}\n\n` +
       `Lobby Code:\n└ \`${code}\`\n\n` +
-      `Type *.join* to enter.\nType *.start* when everyone is in.`,
+      `Type *.join* to enter.\nType *.startau* when everyone is in.`,
     mentions: [senderJid],
   }, { quoted: msg })
 }
@@ -653,13 +653,13 @@ async function cmdCreate(ctx) {
 async function cmdJoin(ctx) {
   const { reply, jid, sender, senderJid, pushName, sock, msg } = ctx
 
-  if (!ctx.isGroup) return reply(`❌ Among Us must be played in a group.`)
-  if (playerToGame[sender]) return reply(`❌ You are already in a lobby.`)
+  if (!ctx.isGroup) return reply(`⚠️ Among Us can only be played in a group chat.`)
+  if (playerToGame[sender]) return reply(`⚠️ You're already in a lobby.`)
 
   const game = activeGames[jid]
-  if (!game)                            return reply(`❌ No active lobby in this group.`)
-  if (game.status !== 'lobby')          return reply(`❌ Match already started.`)
-  if (game.players.length >= game.settings.maxPlayers) return reply(`❌ Lobby is full.`)
+  if (!game)                            return reply(`⚠️ No active lobby here. Create one with *.au create*`)
+  if (game.status !== 'lobby')          return reply(`⚠️ The match has already started.`)
+  if (game.players.length >= game.settings.maxPlayers) return reply(`⚠️ Lobby is full!`)
 
   // Assign a unique color
   const usedColors = game.players.map(p => p.color)
@@ -694,10 +694,10 @@ async function cmdJoin(ctx) {
 async function cmdColours(ctx) {
   const { reply, jid, sender } = ctx
   const game = activeGames[jid] || findPlayerGame(sender)
-  if (!game || game.status !== 'lobby') return reply(`❌ You can only change your color during the lobby phase.`)
+  if (!game || game.status !== 'lobby') return reply(`⚠️ Colors can only be changed during the lobby phase.`)
 
   const player   = game.players.find(p => p.phone === sender)
-  if (!player) return reply(`❌ You are not in this lobby.`)
+  if (!player) return reply(`⚠️ You're not in this lobby.`)
 
   const usedColors = game.players.filter(p => p.phone !== sender).map(p => p.color)
 
@@ -717,21 +717,21 @@ async function cmdColours(ctx) {
 async function cmdColorSwitch(ctx) {
   const { reply, jid, sender, args, sock } = ctx
   const game = activeGames[jid] || findPlayerGame(sender)
-  if (!game || game.status !== 'lobby') return reply(`❌ You can only change color during lobby.`)
+  if (!game || game.status !== 'lobby') return reply(`⚠️ You can only change color during the lobby.`)
 
   const player = game.players.find(p => p.phone === sender)
-  if (!player) return reply(`❌ You are not in this lobby.`)
+  if (!player) return reply(`⚠️ You're not in this lobby.`)
 
   const num = parseInt(args[0])
   if (isNaN(num) || num < 1 || num > PLAYER_COLORS.length) {
-    return reply(`❌ Pick a number between 1 and ${PLAYER_COLORS.length}.`)
+    return reply(`⚠️ Pick a number between 1 and ${PLAYER_COLORS.length}.`)
   }
 
   const chosen     = PLAYER_COLORS[num - 1]
   const usedColors = game.players.filter(p => p.phone !== sender).map(p => p.color)
 
   if (usedColors.includes(chosen.name)) {
-    return reply(`❌ ${chosen.emoji} ${chosen.name} is already taken. Pick another.`)
+    return reply(`⚠️ ${chosen.emoji} ${chosen.name} is already taken. Pick a different color.`)
   }
 
   player.color = chosen.name
@@ -750,7 +750,7 @@ async function cmdLeave(ctx) {
   const { reply, jid, sender, senderJid, sock, msg } = ctx
 
   const game = activeGames[jid] || findPlayerGame(sender)
-  if (!game) return reply(`❌ You are not in a lobby.`)
+  if (!game) return reply(`⚠️ You're not in any lobby.`)
 
   const wasHost = game.host === sender
   game.players  = game.players.filter(p => p.phone !== sender)
@@ -781,7 +781,7 @@ async function cmdLeave(ctx) {
 async function cmdPlayers(ctx) {
   const { reply, jid, sender } = ctx
   const game = activeGames[jid] || findPlayerGame(sender)
-  if (!game) return reply(`❌ No active lobby.`)
+  if (!game) return reply(`⚠️ No active lobby in this group.`)
 
   const list = game.players.map(p => `${playerTag(p)}`).join('\n')
   return reply(`🚀 *LOBBY PLAYERS*\n\n${list}\n\nTotal:\n└ ${game.players.length}/${game.settings.maxPlayers}`)
@@ -795,10 +795,10 @@ async function cmdStart(ctx) {
   const { reply, sock, jid, sender } = ctx
 
   const game = activeGames[jid]
-  if (!game)                      return reply(`❌ No active lobby.`)
-  if (game.host !== sender)       return reply(`❌ Only the host can start.`)
-  if (game.players.length < 4)   return reply(`❌ Need at least 4 players to start.`)
-  if (game.status !== 'lobby')   return reply(`❌ Match already started.`)
+  if (!game)                      return reply(`⚠️ No active lobby in this group.`)
+  if (game.host !== sender)       return reply(`⚠️ Only the host can start the game.`)
+  if (game.players.length < 4)   return reply(`⚠️ Need at least 4 players to start!`)
+  if (game.status !== 'lobby')   return reply(`⚠️ The match has already started.`)
 
   game.status = 'playing'
   assignRoles(game.players, game.settings)
@@ -872,10 +872,10 @@ async function cmdStart(ctx) {
 async function cmdRole(ctx) {
   const { reply, sender, sock } = ctx
   const game = findPlayerGame(sender)
-  if (!game || game.status === 'lobby') return reply(`❌ No active game.`)
+  if (!game || game.status === 'lobby') return reply(`⚠️ No active game right now.`)
 
   const player = game.players.find(p => p.phone === sender)
-  if (!player) return reply(`❌ You are not in this game.`)
+  if (!player) return reply(`⚠️ You're not in this game.`)
 
   const roleEmoji = { Crewmate: '🔵', Impostor: '🔴', Engineer: '🔧', Scientist: '🧪', 'Guardian Angel': '😇', Shapeshifter: '🎭', Tracker: '📍' }
   await sendDM(sock, sender, `${roleEmoji[player.role] || '❓'} *Role: ${player.role}*\n\nColor:\n└ ${playerTag(player)}`)
@@ -885,7 +885,7 @@ async function cmdRole(ctx) {
 async function cmdStatus(ctx) {
   const { reply, jid, sender } = ctx
   const game = activeGames[jid] || findPlayerGame(sender)
-  if (!game || game.status === 'lobby') return reply(`❌ No active match.`)
+  if (!game || game.status === 'lobby') return reply(`⚠️ No active match.`)
 
   const alive    = game.players.filter(p => p.alive).length
   const dead     = game.players.filter(p => !p.alive).length
@@ -899,13 +899,13 @@ async function cmdStatus(ctx) {
 
 async function cmdCode(ctx) {
   const game = activeGames[ctx.jid] || findPlayerGame(ctx.sender)
-  if (!game) return ctx.reply(`❌ No active lobby.`)
+  if (!game) return ctx.reply(`⚠️ No active lobby in this group.`)
   return ctx.reply(`🔑 *Lobby Code*\n\n└ \`${game.code}\``)
 }
 
 async function cmdHost(ctx) {
   const game = activeGames[ctx.jid] || findPlayerGame(ctx.sender)
-  if (!game) return ctx.reply(`❌ No active lobby.`)
+  if (!game) return ctx.reply(`⚠️ No active lobby in this group.`)
   const host = game.players.find(p => p.phone === game.host)
   await ctx.sock.sendMessage(ctx.jid, {
     text: `👑 *Host*\n\n└ @${game.host}`,
@@ -915,7 +915,7 @@ async function cmdHost(ctx) {
 
 async function cmdSettings(ctx) {
   const game = activeGames[ctx.jid] || findPlayerGame(ctx.sender)
-  if (!game) return ctx.reply(`❌ No active lobby.`)
+  if (!game) return ctx.reply(`⚠️ No active lobby in this group.`)
   const s = game.settings
   return ctx.reply(
     `⚙️ *LOBBY SETTINGS*\n\nMax Players:\n└ ${s.maxPlayers}\n\nImpostors:\n└ ${s.impostorCount}\n\nKill Cooldown:\n└ ${s.killCooldown}s\n\nEmergency Meetings:\n└ ${s.meetings}`
@@ -925,10 +925,10 @@ async function cmdSettings(ctx) {
 async function cmdRoom(ctx) {
   const { reply, jid, sender } = ctx
   const game = activeGames[jid] || findPlayerGame(sender)
-  if (!game || game.status === 'lobby') return reply(`❌ No active game.`)
+  if (!game || game.status === 'lobby') return reply(`⚠️ No active game right now.`)
 
   const player = game.players.find(p => p.phone === sender)
-  if (!player) return reply(`❌ You are not in this game.`)
+  if (!player) return reply(`⚠️ You're not in this game.`)
 
   const here  = game.players.filter(p => p.alive && p.room === player.room && p.phone !== sender).map(p => `• ${playerTag(p)}`).join('\n')
   const hasBody = game.bodies.some(b => b.room === player.room)
@@ -950,16 +950,16 @@ async function cmdGo(ctx) {
 
   const player = game.players.find(p => p.phone === sender)
   if (!player) return
-  if (game.status === 'meeting') return reply(`❌ Meeting in progress. Wait for voting to end.`)
+  if (game.status === 'meeting') return reply(`⚠️ Meeting in progress — wait for voting to end.`)
   if (!player.alive) {
     // Ghosts can still roam
   }
 
   const roomInput = args.join(' ')
-  if (!roomInput) return reply(`❌ Usage: .go <room name>`)
+  if (!roomInput) return reply(`⚠️ Usage: .go <room name>`)
 
   const room = resolveRoom(roomInput)
-  if (!room) return reply(`❌ Invalid room.\n\nValid rooms:\n${ROOMS.join(', ')}`)
+  if (!room) return reply(`⚠️ Invalid room.\n\nValid rooms:\n${ROOMS.join(', ')}`)
 
   player.room = room
 
@@ -990,10 +990,10 @@ async function cmdGo(ctx) {
 async function cmdTasks(ctx) {
   const { reply, sender } = ctx
   const game = findPlayerGame(sender)
-  if (!game || game.status === 'lobby') return reply(`❌ No active game.`)
+  if (!game || game.status === 'lobby') return reply(`⚠️ No active game right now.`)
 
   const player = game.players.find(p => p.phone === sender)
-  if (!player) return reply(`❌ You are not in this game.`)
+  if (!player) return reply(`⚠️ You're not in this game.`)
 
   const list = player.tasks.map(t => `${t.done ? '✅' : '□'} ${t.id}. ${t.name} (${t.room})`).join('\n')
   const done = player.tasks.filter(t => t.done).length
@@ -1004,23 +1004,23 @@ async function cmdTasks(ctx) {
 async function cmdTask(ctx) {
   const { reply, sock, jid, sender, args } = ctx
   const game = findPlayerGame(sender)
-  if (!game || game.status === 'lobby') return reply(`❌ No active game.`)
-  if (game.status === 'meeting') return reply(`❌ Wait for the meeting to end.`)
+  if (!game || game.status === 'lobby') return reply(`⚠️ No active game right now.`)
+  if (game.status === 'meeting') return reply(`⚠️ A meeting is in progress — wait for it to end.`)
 
   const player = game.players.find(p => p.phone === sender)
-  if (!player) return reply(`❌ You are not in this game.`)
+  if (!player) return reply(`⚠️ You're not in this game.`)
 
   const taskId = parseInt(args[0]) - 1
   if (isNaN(taskId) || taskId < 0 || taskId >= player.tasks.length) {
-    return reply(`❌ Invalid task number. Use *.tasks* to see your list.`)
+    return reply(`⚠️ Invalid task number. Use *.tasks* to see your list.`)
   }
 
   const task = player.tasks[taskId]
-  if (task.done) return reply(`❌ Task already completed.`)
+  if (task.done) return reply(`✅ That task is already completed.`)
 
   // Crewmates must be in the right room; impostors fake tasks anywhere
   if (player.role !== 'Impostor' && player.role !== 'Shapeshifter' && player.room !== task.room) {
-    return reply(`❌ Go to *${task.room}* to complete this task.\nCurrently in: ${player.room}`)
+    return reply(`⚠️ You need to be in *${task.room}* to do this task.\nCurrently in: ${player.room}`)
   }
 
   task.done = true
@@ -1058,7 +1058,7 @@ async function cmdKill(ctx) {
   if (!player?.alive) return
 
   if (player.role !== 'Impostor' && player.role !== 'Shapeshifter') {
-    return sendDM(sock, sender, `❌ Only Impostors can kill.`)
+    return sendDM(sock, sender, `⚠️ Only Impostors can kill.`)
   }
 
   // Resolve target — by color name, @mention, or phone
@@ -1076,17 +1076,17 @@ async function cmdKill(ctx) {
       target = game.players.find(p => p.phone === tPhone)
     }
   } else {
-    return sendDM(sock, sender, `❌ Usage: .kill <color>\nExample: .kill Red`)
+    return sendDM(sock, sender, `⚠️ Usage: .kill <color>\nExample: .kill Red`)
   }
 
-  if (!target)           return sendDM(sock, sender, `❌ Player not found. Use their color name.`)
-  if (!target.alive)     return sendDM(sock, sender, `❌ ${playerTag(target)} is already dead.`)
-  if (target.phone === sender) return sendDM(sock, sender, `❌ You can't kill yourself.`)
+  if (!target)           return sendDM(sock, sender, `⚠️ Player not found. Use their color name.`)
+  if (!target.alive)     return sendDM(sock, sender, `💀 ${playerTag(target)} is already dead.`)
+  if (target.phone === sender) return sendDM(sock, sender, `⚠️ You can't kill yourself.`)
 
   // Same room check
   if (player.room !== target.room) {
     return sendDM(sock, sender,
-      `❌ ${playerTag(target)} is not in your room.\nThey are in: ${target.room}\nYou are in: ${player.room}`
+      `⚠️ ${playerTag(target)} is not in your room.\nThey are in: ${target.room}\nYou are in: ${player.room}`
     )
   }
 
@@ -1139,11 +1139,11 @@ async function cmdVent(ctx) {
   if (!player?.alive) return
 
   if (player.role !== 'Impostor' && player.role !== 'Shapeshifter' && player.role !== 'Engineer') {
-    return sendDM(sock, sender, `❌ Only Impostors and Engineers can use vents.`)
+    return sendDM(sock, sender, `⚠️ Only Impostors and Engineers can use vents.`)
   }
 
   const opts = VENT_NETWORK[player.room]
-  if (!opts) return sendDM(sock, sender, `❌ No vent in *${player.room}*.`)
+  if (!opts) return sendDM(sock, sender, `⚠️ No vent in *${player.room}*.`)
 
   if (!args[0]) {
     const list = opts.map((r, i) => `${i + 1}. ${r}`).join('\n')
@@ -1152,7 +1152,7 @@ async function cmdVent(ctx) {
 
   const dest = resolveRoom(args.join(' '))
   if (!dest || !opts.includes(dest)) {
-    return sendDM(sock, sender, `❌ Invalid vent destination.\nAvailable from ${player.room}:\n${opts.join(', ')}`)
+    return sendDM(sock, sender, `⚠️ Invalid vent destination.\nAvailable from ${player.room}:\n${opts.join(', ')}`)
   }
 
   player.room = dest
@@ -1178,7 +1178,7 @@ async function cmdSabotage(ctx) {
   if (!player?.alive) return
 
   if (player.role !== 'Impostor' && player.role !== 'Shapeshifter') {
-    return sendDM(sock, sender, `❌ Only Impostors can sabotage.`)
+    return sendDM(sock, sender, `⚠️ Only Impostors can sabotage.`)
   }
 
   const now = Date.now()
@@ -1186,12 +1186,12 @@ async function cmdSabotage(ctx) {
     const left = Math.ceil((game.sabotageCD - now) / 1000)
     return sendDM(sock, sender, `⏳ Sabotage on cooldown. Wait ${left}s.`)
   }
-  if (game.sabotage) return sendDM(sock, sender, `❌ A sabotage is already active.`)
+  if (game.sabotage) return sendDM(sock, sender, `⚠️ A sabotage is already active.`)
 
   const type = (args[0] || '').toLowerCase()
   const valid = { lights: true, reactor: true, o2: true, oxygen: true, doors: true, comms: true, communications: true }
   if (!valid[type]) {
-    return sendDM(sock, sender, `❌ Invalid sabotage.\nOptions: *lights, reactor, o2, doors, comms*`)
+    return sendDM(sock, sender, `⚠️ Invalid sabotage type.\nOptions: *lights, reactor, o2, doors, comms*`)
   }
 
   const canon = type === 'oxygen' ? 'o2' : type === 'communications' ? 'comms' : type
@@ -1224,11 +1224,11 @@ async function cmdSabotage(ctx) {
 async function cmdFix(ctx) {
   const { reply, sock, jid, sender } = ctx
   const game = activeGames[jid] || findPlayerGame(sender)
-  if (!game) return reply(`❌ No active sabotage.`)
-  if (!game.sabotage) return reply(`❌ Nothing to fix right now.`)
+  if (!game) return reply(`⚠️ No sabotage is active right now.`)
+  if (!game.sabotage) return reply(`⚠️ Nothing to fix right now.`)
 
   const player = game.players.find(p => p.phone === sender)
-  if (!player?.alive) return reply(`❌ Ghosts cannot fix sabotages.`)
+  if (!player?.alive) return reply(`💀 Ghosts cannot fix sabotages.`)
 
   const fixRooms = {
     lights: ['Electrical'],
@@ -1239,7 +1239,7 @@ async function cmdFix(ctx) {
   }
   const needed = fixRooms[game.sabotage.type] || []
   if (needed.length > 0 && !ROOMS.every(_ => needed.includes('*')) && !needed.includes(player.room)) {
-    return reply(`❌ Go to *${needed.join('* or *')}* to fix this sabotage.\nCurrently in: ${player.room}`)
+    return reply(`⚠️ Go to *${needed.join('* or *')}* to fix this!\nCurrently in: ${player.room}`)
   }
 
   if (game.sabotage.timer) clearTimeout(game.sabotage.timer)
@@ -1258,14 +1258,14 @@ async function cmdFix(ctx) {
 async function cmdReport(ctx) {
   const { reply, sock, jid, sender } = ctx
   const game = activeGames[jid] || findPlayerGame(sender)
-  if (!game || game.status !== 'playing') return reply(`❌ No active game.`)
+  if (!game || game.status !== 'playing') return reply(`⚠️ No active game right now.`)
 
   const player = game.players.find(p => p.phone === sender)
-  if (!player?.alive) return reply(`❌ Ghosts cannot report bodies.`)
-  if (game.meeting) return reply(`❌ A meeting is already in progress.`)
+  if (!player?.alive) return reply(`💀 Ghosts cannot report bodies.`)
+  if (game.meeting) return reply(`⚠️ A meeting is already in progress.`)
 
   const body = game.bodies.find(b => b.room === player.room)
-  if (!body) return reply(`❌ No body found in ${player.room}.\n\nMove to the body's location first.`)
+  if (!body) return reply(`⚠️ No body found in *${player.room}*.\n\nMove to where the body is first.`)
 
   game.bodies.splice(game.bodies.indexOf(body), 1)
   await startMeeting(sock, game, 'body', sender, body.phone)
@@ -1278,14 +1278,14 @@ async function cmdReport(ctx) {
 async function cmdMeeting(ctx) {
   const { reply, sock, jid, sender } = ctx
   const game = activeGames[jid] || findPlayerGame(sender)
-  if (!game || game.status !== 'playing') return reply(`❌ No active game.`)
+  if (!game || game.status !== 'playing') return reply(`⚠️ No active game right now.`)
 
   const player = game.players.find(p => p.phone === sender)
-  if (!player?.alive) return reply(`❌ Ghosts cannot call meetings.`)
-  if (game.meeting) return reply(`❌ A meeting is already active.`)
+  if (!player?.alive) return reply(`💀 Ghosts cannot call meetings.`)
+  if (game.meeting) return reply(`⚠️ A meeting is already active.`)
 
   const remaining = game.meetingsRemaining[sender] ?? 1
-  if (remaining <= 0) return reply(`❌ No emergency meetings remaining.`)
+  if (remaining <= 0) return reply(`⚠️ No emergency meetings remaining.`)
 
   game.meetingsRemaining[sender] = remaining - 1
 
@@ -1304,11 +1304,11 @@ async function cmdMeeting(ctx) {
 async function cmdVote(ctx) {
   const { reply, sock, jid, sender, args, msg } = ctx
   const game = activeGames[jid] || findPlayerGame(sender)
-  if (!game || game.status !== 'meeting') return reply(`❌ No active meeting.`)
+  if (!game || game.status !== 'meeting') return reply(`⚠️ No meeting is in progress.`)
 
   const player = game.players.find(p => p.phone === sender)
-  if (!player?.alive) return reply(`❌ Dead players cannot vote.`)
-  if (player.voted)   return reply(`❌ You already voted.`)
+  if (!player?.alive) return reply(`💀 Dead players cannot vote.`)
+  if (player.voted)   return reply(`⚠️ You already voted.`)
 
   // Resolve target — by color name or @mention
   const colorArg = args.join(' ').trim()
@@ -1323,9 +1323,9 @@ async function cmdVote(ctx) {
     target = game.players.find(p => p.phone === tPhone)
   }
 
-  if (!target)              return reply(`❌ Player not found. Use their color name or @mention them.`)
-  if (!target.alive)        return reply(`❌ You can't vote for a dead player.`)
-  if (target.phone === sender) return reply(`❌ Can't vote for yourself. Use *.skip* to abstain.`)
+  if (!target)              return reply(`⚠️ Player not found. Use their color name or @mention them.`)
+  if (!target.alive)        return reply(`💀 That player is already dead.`)
+  if (target.phone === sender) return reply(`⚠️ You can't vote for yourself. Use *.skip* to abstain.`)
 
   player.voted       = true
   player.voteTarget  = target.phone
@@ -1343,11 +1343,11 @@ async function cmdVote(ctx) {
 async function cmdSkip(ctx) {
   const { reply, sock, jid, sender } = ctx
   const game = activeGames[jid] || findPlayerGame(sender)
-  if (!game || game.status !== 'meeting') return reply(`❌ No active meeting.`)
+  if (!game || game.status !== 'meeting') return reply(`⚠️ No meeting is in progress.`)
 
   const player = game.players.find(p => p.phone === sender)
-  if (!player?.alive) return reply(`❌ Dead players cannot vote.`)
-  if (player.voted)   return reply(`❌ Already voted.`)
+  if (!player?.alive) return reply(`💀 Dead players cannot vote.`)
+  if (player.voted)   return reply(`⚠️ You already voted.`)
 
   player.voted      = true
   player.voteTarget = 'skip'
@@ -1371,10 +1371,10 @@ async function cmdObserve(ctx) {
   if (!player?.alive) return
 
   const colorArg = args.join(' ').trim()
-  if (!colorArg) return reply(`❌ Usage: .observe <color>`)
+  if (!colorArg) return reply(`⚠️ Usage: .observe <color>`)
 
   const target = findPlayerByColor(game, colorArg)
-  if (!target?.alive) return reply(`❌ Player not found.`)
+  if (!target?.alive) return reply(`⚠️ Player not found.`)
 
   const responses = [
     `👀 ${playerTag(target)} appears to be working.`,
@@ -1397,10 +1397,10 @@ async function cmdVitals(ctx) {
 
   const player = game.players.find(p => p.phone === sender)
   if (!player) return
-  if (player.role !== 'Scientist') return sendDM(sock, sender, `❌ Only Scientists can check vitals.`)
+  if (player.role !== 'Scientist') return sendDM(sock, sender, `⚠️ Only Scientists can check vitals.`)
 
   player.vitalsCharges = player.vitalsCharges ?? 3
-  if (player.vitalsCharges <= 0) return sendDM(sock, sender, `❌ No vitals charges remaining.`)
+  if (player.vitalsCharges <= 0) return sendDM(sock, sender, `⚠️ No vitals charges remaining.`)
 
   player.vitalsCharges -= 1
 
@@ -1415,12 +1415,12 @@ async function cmdProtect(ctx) {
 
   const player = game.players.find(p => p.phone === sender)
   if (!player?.alive) return
-  if (player.role !== 'Guardian Angel') return sendDM(sock, sender, `❌ Only Guardian Angels can protect.`)
-  if (player.protectUsed) return sendDM(sock, sender, `❌ You already used your protection this game.`)
+  if (player.role !== 'Guardian Angel') return sendDM(sock, sender, `⚠️ Only Guardian Angels can protect.`)
+  if (player.protectUsed) return sendDM(sock, sender, `⚠️ You already used your protection this game.`)
 
   const colorArg = args.join(' ').trim()
   const target   = findPlayerByColor(game, colorArg)
-  if (!target?.alive) return sendDM(sock, sender, `❌ Player not found. Use their color.`)
+  if (!target?.alive) return sendDM(sock, sender, `⚠️ Player not found. Use their color.`)
 
   target.protected   = true
   player.protectUsed = true
@@ -1435,14 +1435,14 @@ async function cmdShift(ctx) {
 
   const player = game.players.find(p => p.phone === sender)
   if (!player?.alive) return
-  if (player.role !== 'Shapeshifter') return sendDM(sock, sender, `❌ Only Shapeshifters can shift.`)
+  if (player.role !== 'Shapeshifter') return sendDM(sock, sender, `⚠️ Only Shapeshifters can shift.`)
 
   player.shiftsRemaining = player.shiftsRemaining ?? 3
-  if (player.shiftsRemaining <= 0) return sendDM(sock, sender, `❌ No shifts remaining.`)
+  if (player.shiftsRemaining <= 0) return sendDM(sock, sender, `⚠️ No shifts remaining.`)
 
   const colorArg = args.join(' ').trim()
   const target   = findPlayerByColor(game, colorArg)
-  if (!target?.alive) return sendDM(sock, sender, `❌ Player not found. Use their color.`)
+  if (!target?.alive) return sendDM(sock, sender, `⚠️ Player not found. Use their color.`)
 
   player.shiftsRemaining -= 1
   await sendDM(sock, sender,
@@ -1457,11 +1457,11 @@ async function cmdTrack(ctx) {
 
   const player = game.players.find(p => p.phone === sender)
   if (!player?.alive) return
-  if (player.role !== 'Tracker') return sendDM(sock, sender, `❌ Only Trackers can track players.`)
+  if (player.role !== 'Tracker') return sendDM(sock, sender, `⚠️ Only Trackers can track players.`)
 
   const colorArg = args.join(' ').trim()
   const target   = findPlayerByColor(game, colorArg)
-  if (!target?.alive) return sendDM(sock, sender, `❌ Player not found. Use their color.`)
+  if (!target?.alive) return sendDM(sock, sender, `⚠️ Player not found. Use their color.`)
 
   await sendDM(sock, sender,
     `📍 *TRACKING RESULT*\n\n${playerTag(target)}\nLast seen in:\n└ *${target.room}*`
@@ -1497,7 +1497,7 @@ async function cmdCrewCard(ctx) {
   const { reply, sender, args } = ctx
   const withImage = args.includes('--image')
   const profile   = await getAuPlayer(sender)
-  if (!profile) return reply(`❌ Profile not found. Play a game first.`)
+  if (!profile) return reply(`⚠️ No profile yet. Play a game first.`)
 
   const mainUser = await db.getOrCreateUser(sender).catch(() => null)
   const name     = mainUser?.name || ctx.pushName || sender
@@ -1531,7 +1531,7 @@ async function cmdCrewCard(ctx) {
 async function cmdLocker(ctx) {
   const { reply, sender } = ctx
   const profile = await getAuPlayer(sender)
-  if (!profile) return reply(`❌ Profile not found. Play a game first.`)
+  if (!profile) return reply(`⚠️ No profile yet. Play a game first.`)
 
   const fmt = (ids, list) => ids.length > 0
     ? ids.map(id => { const i = list.find(c => c.id === id); return `✔ ${i?.emoji || ''} ${i?.name || id}` }).join('\n')
@@ -1573,20 +1573,20 @@ async function cmdCosmeticsShop(ctx) {
 
 async function cmdBuyAu(ctx) {
   const { reply, sender, args } = ctx
-  if (!args.length) return reply(`❌ Usage: .buyau <item name>`)
+  if (!args.length) return reply(`⚠️ Usage: .buyau <item name>`)
 
   const itemName = args.join(' ')
   const item     = getAllCosmeticItems().find(i =>
     i.name.toLowerCase() === itemName.toLowerCase() || i.id === itemName.toLowerCase()
   )
-  if (!item) return reply(`❌ Item "${itemName}" not found. Check *.cosmetics* for the list.`)
+  if (!item) return reply(`⚠️ Item "*${itemName}*" not found. Check *.cosmetics* for the full list.`)
 
   const profile = await getAuPlayer(sender)
-  if (!profile) return reply(`❌ Profile not found.`)
+  if (!profile) return reply(`⚠️ Profile not found.`)
 
   const allOwned = [...profile.owned_hats, ...profile.owned_suits, ...profile.owned_visors, ...profile.owned_effects, ...profile.owned_pets, ...profile.owned_nameplates]
-  if (allOwned.includes(item.id)) return reply(`❌ You already own *${item.name}*.`)
-  if (profile.coins < item.price) return reply(`❌ Not enough coins.\nNeed: ${item.price.toLocaleString()}\nHave: ${profile.coins.toLocaleString()}`)
+  if (allOwned.includes(item.id)) return reply(`✅ You already own *${item.name}*.`)
+  if (profile.coins < item.price) return reply(`⚠️ Not enough coins.\nNeed: ${item.price.toLocaleString()} | Have: ${profile.coins.toLocaleString()}`)
 
   profile.coins -= item.price
 
@@ -1605,7 +1605,7 @@ async function cmdBuyAu(ctx) {
 
 async function cmdEquipCosmetic(ctx) {
   const { reply, sender, args } = ctx
-  if (!args.length) return reply(`❌ Usage: .equip <item name>`)
+  if (!args.length) return reply(`⚠️ Usage: .equip <item name>`)
 
   const itemName = args.join(' ')
   const item     = getAllCosmeticItems().find(i =>
@@ -1614,10 +1614,10 @@ async function cmdEquipCosmetic(ctx) {
   if (!item) return null  // Fall through to RPG equip if not a cosmetic
 
   const profile = await getAuPlayer(sender)
-  if (!profile) return reply(`❌ Profile not found.`)
+  if (!profile) return reply(`⚠️ Profile not found.`)
 
   const allOwned = [...profile.owned_hats, ...profile.owned_suits, ...profile.owned_visors, ...profile.owned_effects, ...profile.owned_pets, ...profile.owned_nameplates]
-  if (!allOwned.includes(item.id) && item.price > 0) return reply(`❌ You don't own *${item.name}*. Use *.buyau ${item.name}*`)
+  if (!allOwned.includes(item.id) && item.price > 0) return reply(`⚠️ You don't own *${item.name}*. Buy it with *.buyau ${item.name}*`)
 
   if (COSMETICS.hats.find(i => i.id === item.id))       profile.equipped_hat     = item.id
   else if (COSMETICS.suits.find(i => i.id === item.id)) profile.equipped_suit    = item.id
@@ -1633,7 +1633,7 @@ async function cmdEquipCosmetic(ctx) {
 async function cmdTitles(ctx) {
   const { reply, sender } = ctx
   const profile = await getAuPlayer(sender)
-  if (!profile) return reply(`❌ No profile found. Play a game first.`)
+  if (!profile) return reply(`⚠️ No profile yet. Play a game first.`)
 
   const owned  = SECRET_TITLES.filter(t => profile.titles.includes(t.id))
   const locked = SECRET_TITLES.filter(t => !profile.titles.includes(t.id))
@@ -1647,7 +1647,7 @@ async function cmdTitles(ctx) {
 async function cmdAuStats(ctx) {
   const { reply, sender } = ctx
   const profile = await getAuPlayer(sender)
-  if (!profile) return reply(`❌ No stats yet. Play a game first.`)
+  if (!profile) return reply(`⚠️ No stats yet — play a game first.`)
 
   const wins       = profile.crewmate_wins + profile.impostor_wins
   const survRate   = profile.games_played > 0 ? Math.round((profile.survival_count / profile.games_played) * 100) : 0
@@ -1680,14 +1680,14 @@ async function cmdAuLeaderboard(ctx) {
     }).join('\n\n')
 
     return reply(`🏆 *AMONG US LEADERBOARD*\n\n${list}`)
-  } catch { return reply(`❌ Leaderboard unavailable.`) }
+  } catch { return reply(`⚠️ Leaderboard unavailable right now.`) }
 }
 
 async function cmdCrate(ctx) {
   const { reply, sender } = ctx
   const profile = await getAuPlayer(sender)
-  if (!profile) return reply(`❌ Profile not found.`)
-  if (profile.crates <= 0) return reply(`❌ No crates available.\n\nEarn crates by winning games!`)
+  if (!profile) return reply(`⚠️ Profile not found.`)
+  if (profile.crates <= 0) return reply(`⚠️ No crates available.\n\nWin games to earn crates!`)
 
   profile.crates -= 1
 
@@ -1713,7 +1713,7 @@ async function cmdCrate(ctx) {
 async function cmdSpin(ctx) {
   const { reply, sender } = ctx
   const profile = await getAuPlayer(sender)
-  if (!profile) return reply(`❌ Profile not found.`)
+  if (!profile) return reply(`⚠️ Profile not found.`)
 
   const now    = Date.now()
   const cd     = 6 * 60 * 60 * 1000
@@ -1737,10 +1737,10 @@ async function cmdSpin(ctx) {
 async function cmdPet(ctx) {
   const { reply, sender } = ctx
   const profile = await getAuPlayer(sender)
-  if (!profile?.equipped_pet) return reply(`❌ No pet equipped. Use *.cosmetics* to browse pets, *.buyau <name>* to buy, then *.equip <name>*.`)
+  if (!profile?.equipped_pet) return reply(`⚠️ No pet equipped. Browse *.cosmetics*, buy with *.buyau <name>*, equip with *.equip <name>*`)
 
   const pet  = COSMETICS.pets.find(p => p.id === profile.equipped_pet)
-  if (!pet) return reply(`❌ Pet not found.`)
+  if (!pet) return reply(`⚠️ Pet not found.`)
 
   const bond = Math.min(10, Math.floor(profile.games_played / 5) + 1)
   return reply(`${pet.emoji} *PET*\n\nName:\n└ ${pet.name}\n\nBond Level:\n└ ${bond}/10`)
@@ -1763,7 +1763,7 @@ module.exports = {
   'join':      cmdJoin,
   'leave':     cmdLeave,
   'players':   cmdPlayers,
-  'start':     cmdStart,
+  'startau':   cmdStart,
 
   // gameplay
   'go':        cmdGo,

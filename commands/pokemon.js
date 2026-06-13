@@ -482,7 +482,7 @@ module.exports = {
     if (!nameOrId) return reply('⚠️ Usage: *#spawnp <name or id>*')
     await reply(`🔍 Fetching *${nameOrId}* from PokéAPI...`)
     const data = await fetchPokeData(nameOrId).catch(() => null)
-    if (!data) return reply(`❌ *${nameOrId}* not found on PokéAPI.`)
+    if (!data) return reply(`📭 *${nameOrId}* not found on PokéAPI.`)
     pendingPokemon[jid] = { ...data, spawnedAt: Date.now() }
     const caption = buildSpawnCaption(data)
     try {
@@ -496,7 +496,7 @@ module.exports = {
   // ── #catch / #c ───────────────────────────────────────────────
   async catch({ sock, jid, msg, reply, react, sender, user, args }) {
     const poke = pendingPokemon[jid]
-    if (!poke) return reply(`❌ *No wild Pokémon here!*\n\nUse *#hunt* to search for one.`)
+    if (!poke) return reply(`⚠️ *No wild Pokémon here!*\n\nUse *#hunt* to search for one.`)
     if (Date.now() - poke.spawnedAt > POKE_CATCH_WINDOW) {
       delete pendingPokemon[jid]
       return reply(`⏱️ *Too slow!* The Pokémon fled!\n\n_Be quicker next time._ 🖤`)
@@ -618,7 +618,7 @@ module.exports = {
     const u       = user || await db.getOrCreateUser(sender)
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party).slice(0, 6)
-    if (!party.length) return reply(`❌ *Your team is empty!*\n\nCatch some Pokémon with *#hunt*!`)
+    if (!party.length) return reply(`📭 *Your team is empty!*\n\nCatch some Pokémon with *#hunt*!`)
     const lines = party.map((p, i) =>
       `*#${i + 1}* ${p.name} | Lvl ${p.level || 1} | XP: ${p.xp || 0}\n     Type: ${Array.isArray(p.types) ? p.types.join('/') : p.types || 'N/A'}`
     ).join('\n\n')
@@ -635,7 +635,7 @@ module.exports = {
       const idx = parseInt(args[0]) - 1
       if (isNaN(idx) || idx < 0) return reply(`⚠️ Usage: *#party <slot>*`)
       const p = party[idx]
-      if (!p) return reply(`❌ No Pokémon in slot #${idx + 1}`)
+      if (!p) return reply(`⚠️ No Pokémon in slot #${idx + 1}`)
       const moves     = Array.isArray(p.moves) ? p.moves.join(', ') : p.moves || 'N/A'
       const abilities = Array.isArray(p.abilities) ? p.abilities.join(', ') : p.abilities || 'N/A'
       return reply(
@@ -691,10 +691,10 @@ module.exports = {
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party).slice(0, 6)
     if (party.length <= 1)
-      return reply(`❌ *Can't move your last Pokémon to PC!*\n\nYour party must have at least 1 Pokémon.`)
+      return reply(`🚫 *Can't move your last Pokémon to PC!*\n\nYour party must have at least 1 Pokémon.`)
     const p = party[slot - 1]
-    if (!p) return reply(`❌ No Pokémon in party slot #${slot}.\n\nUse *#party* to see your party.`)
-    try { await db.updatePokemon(p._id, { in_party: false }) } catch (e) { return reply(`❌ Failed: ${e.message}`) }
+    if (!p) return reply(`⚠️ No Pokémon in party slot #${slot}.\n\nUse *#party* to see your party.`)
+    try { await db.updatePokemon(p._id, { in_party: false }) } catch (e) { return reply(`⚠️ Failed: ${e.message}`) }
     await reply(
       `📦 *MOVED TO PC!*\n\n` +
       `*${p.name}* (Lvl ${p.level || 1}) has been stored in the PC.\n\n` +
@@ -711,11 +711,11 @@ module.exports = {
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party).slice(0, 6)
     if (party.length >= 6)
-      return reply(`❌ *Party is full! (6/6)*\n\nUse *#topc <slot>* to move a Pokémon to PC first.`)
+      return reply(`⚠️ *Party is full! (6/6)*\n\nUse *#topc <slot>* to move a Pokémon to PC first.`)
     const stored = (pokemon || []).filter(p => !p.in_party)
     const p      = stored[pcSlot - 1]
-    if (!p) return reply(`❌ No Pokémon in PC slot #${pcSlot}.\n\nUse *#pc* to see your stored Pokémon.`)
-    try { await db.updatePokemon(p._id, { in_party: true }) } catch (e) { return reply(`❌ Failed: ${e.message}`) }
+    if (!p) return reply(`⚠️ No Pokémon in PC slot #${pcSlot}.\n\nUse *#pc* to see your stored Pokémon.`)
+    try { await db.updatePokemon(p._id, { in_party: true }) } catch (e) { return reply(`⚠️ Failed: ${e.message}`) }
     await reply(
       `⚗️ *ADDED TO PARTY!*\n\n` +
       `*${p.name}* (Lvl ${p.level || 1}) has joined your party!\n\n` +
@@ -732,8 +732,8 @@ module.exports = {
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party)
     const pa = party[a - 1], pb = party[b - 1]
-    if (!pa) return reply(`❌ No Pokémon in slot #${a}`)
-    if (!pb) return reply(`❌ No Pokémon in slot #${b}`)
+    if (!pa) return reply(`⚠️ No Pokémon in slot #${a}`)
+    if (!pb) return reply(`⚠️ No Pokémon in slot #${b}`)
     try { await db.updatePokemon(pa._id, { slot: b }); await db.updatePokemon(pb._id, { slot: a }) } catch {}
     await reply(`🔄 *SWAP COMPLETE!*\n\n#${a} ${pa.name} ↔️ #${b} ${pb.name}`)
   },
@@ -754,7 +754,7 @@ module.exports = {
     await sock.sendMessage(jid, { text: `🔍 *Searching Pokédex for* *${query}*...` }, { quoted: msg })
 
     const data = await fetchPokeData(query).catch(() => null)
-    if (!data) return reply(`❌ *${query}* not found in the Pokédex.`)
+    if (!data) return reply(`📭 *${query}* not found in the Pokédex.`)
 
     // ── Species-stable nature & level (seeded by pokemon_id for consistency) ──
     const nature    = NATURES[data.id % NATURES.length]
@@ -851,7 +851,7 @@ module.exports = {
     if (mentioned.length > 0 && (!subCmd || subCmd.startsWith('@'))) {
       const opponentJid   = mentioned[0]
       const opponentPhone = opponentJid.split('@')[0]
-      if (opponentPhone === sender) return reply(`❌ You can't challenge yourself!`)
+      if (opponentPhone === sender) return reply(`🚫 You can't challenge yourself!`)
 
       const [myPoke, theirPoke] = await Promise.all([
         db.getUserPokemon(sender).catch(() => []),
@@ -859,8 +859,8 @@ module.exports = {
       ])
       const myParty    = (myPoke   || []).filter(p => p.in_party)
       const theirParty = (theirPoke || []).filter(p => p.in_party)
-      if (!myParty.length)    return reply(`❌ You need Pokémon in your party! Use *#hunt*.`)
-      if (!theirParty.length) return reply(`❌ @${opponentPhone} has no Pokémon in their party!`)
+      if (!myParty.length)    return reply(`📭 You need at least 1 Pokémon to battle.`)
+      if (!theirParty.length) return reply(`📭 @${opponentPhone} has no Pokémon in their party.`)
 
       // Cancel any existing challenge from this sender in this jid
       for (const key of Object.keys(pendingChallenges)) {
@@ -884,7 +884,7 @@ module.exports = {
       }
 
       const text =
-        `🎊 Battle Request! 🎊\n\n` +
+        `⚔️ *Battle Request!*\n\n` +
         `*@${sender}* has challenged *@${opponentPhone}* to a Pokémon battle! ⚔️\n\n` +
         `⚔️ Match Setup\n\n` +
         `- *Format:* ${battleFmt}\n` +
@@ -910,7 +910,7 @@ module.exports = {
         const c = pendingChallenges[k]
         return c.jid === jid && c.opponentPhone === sender
       })
-      if (!challengeKey) return reply(`❌ No pending battle challenge for you in this group.`)
+      if (!challengeKey) return reply(`⚠️ No pending battle challenge for you in this group.`)
 
       const challenge = pendingChallenges[challengeKey]
       delete pendingChallenges[challengeKey]
@@ -989,11 +989,11 @@ module.exports = {
         const c = pendingChallenges[k]
         return c.jid === jid && c.opponentPhone === sender
       })
-      if (!challengeKey) return reply(`❌ No pending challenge for you to decline.`)
+      if (!challengeKey) return reply(`⚠️ No pending challenge for you to decline.`)
       const challenge = pendingChallenges[challengeKey]
       delete pendingChallenges[challengeKey]
       return await sock.sendMessage(jid, {
-        text: `❌ *@${sender}* declined the battle challenge from *@${challenge.challengerPhone}*.`,
+        text: `⚠️ *@${sender}* declined the battle challenge from *@${challenge.challengerPhone}*.`,
         mentions: [senderJid, challenge.challengerJid],
       }, { quoted: msg })
     }
@@ -1001,7 +1001,7 @@ module.exports = {
     // ── #battle fight — show current pokemon's moves ──────────
     if (subCmd === 'fight') {
       const battle = pvpBattles[sender]
-      if (!battle) return reply(`❌ You're not in a PvP battle.`)
+      if (!battle) return reply(`📭 You're not in a PvP battle.`)
       const isChallenger = sender === battle.challengerPhone
       const myPoke = isChallenger ? battle.challengerPoke : battle.opponentPoke
       const moves  = Array.isArray(myPoke.moves) ? myPoke.moves : ['Tackle']
@@ -1012,12 +1012,12 @@ module.exports = {
     // ── #battle pokemon — show switchable pokemon ─────────────
     if (subCmd === 'pokemon') {
       const battle = pvpBattles[sender]
-      if (!battle) return reply(`❌ You're not in a PvP battle.`)
+      if (!battle) return reply(`📭 You're not in a PvP battle.`)
       const isChallenger = sender === battle.challengerPhone
       const myParty = isChallenger ? battle.challengerParty : battle.opponentParty
       const myPoke  = isChallenger ? battle.challengerPoke  : battle.opponentPoke
       const others  = myParty.filter(p => p.name !== myPoke.name)
-      if (!others.length) return reply(`❌ No other Pokémon to switch to!`)
+      if (!others.length) return reply(`⚠️ No other Pokémon to switch to!`)
       const list = others.map((p, i) => {
         const hp = 200 + (p.level || 1) * 15
         return `*${i + 1}.* ${p.name} Lv.${p.level || 1} | HP: ${hp}`
@@ -1028,17 +1028,17 @@ module.exports = {
     // ── #battle switch <n> — allowed only ONCE per match ────────
     if (subCmd === 'switch') {
       const battle = pvpBattles[sender]
-      if (!battle) return reply(`❌ You're not in a PvP battle.`)
+      if (!battle) return reply(`📭 You're not in a PvP battle.`)
       if (battle.turn !== sender) return reply(`⏳ It's not your turn!`)
       const isChallenger = sender === battle.challengerPhone
       const switchUsedKey = isChallenger ? 'challengerSwitchUsed' : 'opponentSwitchUsed'
-      if (battle[switchUsedKey]) return reply(`❌ You've already used your switch for this match!`)
+      if (battle[switchUsedKey]) return reply(`⚠️ You've already used your switch for this match!`)
       const myParty = isChallenger ? battle.challengerParty : battle.opponentParty
       const myPoke  = isChallenger ? battle.challengerPoke  : battle.opponentPoke
       const others  = myParty.filter(p => p.name !== myPoke.name)
       const idx     = (parseInt(args[1]) || 1) - 1
       const newPoke = others[idx]
-      if (!newPoke) return reply(`❌ Invalid selection.`)
+      if (!newPoke) return reply(`⚠️ Invalid selection.`)
       const newMaxHp = 200 + (newPoke.level || 1) * 15
       battle[switchUsedKey] = true
       if (isChallenger) {
@@ -1057,7 +1057,7 @@ module.exports = {
     // ── #battle forfeit ───────────────────────────────────────
     if (subCmd === 'forfeit') {
       const battle = pvpBattles[sender]
-      if (!battle) return reply(`❌ You're not in a PvP battle.`)
+      if (!battle) return reply(`📭 You're not in a PvP battle.`)
       const winnerId = sender === battle.challengerPhone ? battle.opponentPhone : battle.challengerPhone
       const winnerJid = sender === battle.challengerPhone ? battle.opponentJid : battle.challengerJid
       delete pvpBattles[battle.challengerPhone]
@@ -1119,14 +1119,14 @@ module.exports = {
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party)
     const p       = party[slot - 1]
-    if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
+    if (!p) return reply(`⚠️ No Pokémon in slot #${slot}`)
     const lvl = p.level || 1
-    if (lvl < 16) return reply(`❌ *${p.name}* is only level ${lvl}!\n\n_Pokémon evolve at levels 16 and 36._\n_Keep training with *#train ${slot}*!_ 🖤`)
+    if (lvl < 16) return reply(`⚠️ *${p.name}* is only level ${lvl}!\n\n_Pokémon evolve at levels 16 and 36._\n_Keep training with *#train ${slot}*!_ 🖤`)
     await reply(`✨ *${p.name}* is evolving…`)
     const evoName = await getPokeEvolutionTarget(p.pokemon_id, p.name.toLowerCase()).catch(() => null)
-    if (!evoName) return reply(`❌ *${p.name}* has no further evolution — it's already at its final form! 🌟`)
+    if (!evoName) return reply(`⚠️ *${p.name}* has no further evolution — it's already at its final form! 🌟`)
     const newData = await fetchPokeData(evoName).catch(() => null)
-    if (!newData) return reply(`❌ Could not fetch evolution data. Try again later.`)
+    if (!newData) return reply(`⚠️ Could not fetch evolution data. Try again later.`)
     try {
       await db.updatePokemon(p._id, {
         name:        newData.name,
@@ -1157,7 +1157,7 @@ module.exports = {
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party)
     const p       = party[slot - 1]
-    if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
+    if (!p) return reply(`⚠️ No Pokémon in slot #${slot}`)
 
     // Very hard XP — 1000 XP per pokemon level
     const xpGain = randInt(1, 2)
@@ -1210,7 +1210,7 @@ module.exports = {
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party)
     const p       = party[slot - 1]
-    if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
+    if (!p) return reply(`⚠️ No Pokémon in slot #${slot}`)
     const moveList = Array.isArray(p.moves) ? p.moves : ['Tackle']
     await reply(`🎮 *${p.name.toUpperCase()} — MOVES*\n\n${moveList.map((m, i) => `${i + 1}. *${m}*`).join('\n')}\n\n_Use *#learn ${slot}* to unlock new moves._ 🖤`)
   },
@@ -1221,7 +1221,7 @@ module.exports = {
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party)
     const p       = party[slot - 1]
-    if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
+    if (!p) return reply(`⚠️ No Pokémon in slot #${slot}`)
     const data     = await fetchPokeData(p.pokemon_id).catch(() => null)
     const allMoves = data?.moves || []
     const newMove  = allMoves[Math.floor(Math.random() * allMoves.length)] || 'Hyper Beam'
@@ -1236,7 +1236,7 @@ module.exports = {
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party)
     const p       = party[slot - 1]
-    if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
+    if (!p) return reply(`⚠️ No Pokémon in slot #${slot}`)
     const lvl = p.level || 1
     await reply(
       `📊 *DETAILED STATS — ${p.name.toUpperCase()}*\n\n` +
@@ -1263,13 +1263,13 @@ module.exports = {
     const key = args[0]?.toLowerCase()
     if (!key) return reply(`⚠️ Usage: *#mbuy <item>* — See *#mart* for items.`)
     const entry = Object.entries(SHOP_ITEMS).find(([k, v]) => k === key || v.name.toLowerCase().includes(key))
-    if (!entry) return reply(`❌ Item "*${key}*" not found. Check *#mart*`)
+    if (!entry) return reply(`📭 Item "*${key}*" not found. Check *#mart*`)
     const [itemKey, item] = entry
     if (item.gem) {
-      if ((u.gems || 0) < item.price) return reply(`❌ Need *${item.price} gems*`)
+      if ((u.gems || 0) < item.price) return reply(`⚠️ Need *${item.price} gems*`)
       await db.updateUser(sender, { gems: (u.gems || 0) - item.price })
     } else {
-      if ((u.wallet || 0) < item.price) return reply(`❌ Need *$${item.price}*`)
+      if ((u.wallet || 0) < item.price) return reply(`⚠️ Need *$${item.price}*`)
       await db.updateUser(sender, { wallet: (u.wallet || 0) - item.price })
     }
     try { await db.addItem(sender, itemKey, 1) } catch {}
@@ -1281,7 +1281,7 @@ module.exports = {
     const key  = args[0]?.toLowerCase()
     if (!key) return reply(`⚠️ Usage: *#use <item>*`)
     const item = SHOP_ITEMS[key]
-    if (!item) return reply(`❌ Item not found. Check *#mart*`)
+    if (!item) return reply(`📭 Item not found. Check *#mart*`)
     await reply(
       `✨ *ITEM USED!*\n\n${item.emoji} *${item.name}* activated!\n\n` +
       (item.type === 'heal' ? '💚 Team healed!' :
@@ -1309,7 +1309,7 @@ module.exports = {
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party)
     const p       = party[slot - 1]
-    if (!p) return reply(`❌ No Pokémon in slot #${slot}`)
+    if (!p) return reply(`⚠️ No Pokémon in slot #${slot}`)
     try { await db.updatePokemon(p.id, { phone: targetPhone }) } catch {}
     await sock.sendMessage(jid, {
       text: `🎁 *POKÉMON GIFTED!*\n\n*@${sender}* sent *${p.name}* to *@${targetPhone}*!`,
@@ -1383,7 +1383,7 @@ module.exports = {
       saveMS(ms)
       await reply(`✅ *MENTION STICKER SET!*\n\nWhen someone tags you, the bot will reply with your sticker!\n\nUse *.delms* to remove it. 🖤`)
     } catch (err) {
-      await reply(`❌ Failed to save sticker: ${err.message}`)
+      await reply(`⚠️ Failed to save sticker: ${err.message}`)
     }
   },
 
@@ -1408,7 +1408,7 @@ module.exports = {
       await reply(`✅ *Pokémon System ENABLED!*\n\nUse *#hunt* to start catching.`)
     } else if (toggle === 'off') {
       await db.updateGroup(jid, { pokemon_enabled: false })
-      await reply(`❌ *Pokémon System DISABLED.*`)
+      await reply(`⚠️ *Pokémon System DISABLED.*`)
     } else {
       await reply(`⚠️ Usage: *.pokemon on/off*`)
     }
@@ -1417,10 +1417,10 @@ module.exports = {
   // ── .fight — start wild Pokémon battle ───────────────────────
   async fight({ sock, jid, msg, reply, sender, user }) {
     const wild = pendingPokemon[jid]
-    if (!wild) return reply(`❌ *No wild Pokémon here!*\n\nUse *#hunt* to find one first.`)
+    if (!wild) return reply(`⚠️ *No wild Pokémon here!*\n\nUse *#hunt* to find one first.`)
     if (Date.now() - wild.spawnedAt > POKE_CATCH_WINDOW) {
       delete pendingPokemon[jid]
-      return reply(`❌ *The wild ${wild.name} fled!*\n\nUse *#hunt* to search again.`)
+      return reply(`⚠️ *The wild ${wild.name} fled!*\n\nUse *#hunt* to search again.`)
     }
     if (activeBattles[sender]) {
       const b = activeBattles[sender]
@@ -1435,7 +1435,7 @@ module.exports = {
     const u = user || await db.getOrCreateUser(sender)
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party = (pokemon || []).filter(p => p.in_party)
-    if (!party.length) return reply(`❌ You need Pokémon in your party!\n\nCatch some first with *#hunt*.`)
+    if (!party.length) return reply(`⚠️ You need Pokémon in your party!\n\nCatch some first with *#hunt*.`)
 
     const myPoke    = party[0]
     const myLevel   = myPoke.level || 1
@@ -1608,9 +1608,9 @@ module.exports = {
     // ── Wild battle handling ────────────────────────────────────
     const battle = activeBattles[sender]
     if (!battle) return reply(
-      `❌ *Not in a battle!*\n\nUse *#hunt* to find a wild Pokémon, then *.fight* to battle it.`
+      `📭 *Not in a battle!*\n\nUse *#hunt* to find a wild Pokémon, then *.fight* to battle it.`
     )
-    if (battle.jid !== jid) return reply(`❌ Your active battle is in a different group.`)
+    if (battle.jid !== jid) return reply(`⚠️ Your active battle is in a different group.`)
 
     const moveIdx  = Math.max(0, (parseInt(args[0]) || 1) - 1)
     const moveName = battle.moves[Math.min(moveIdx, battle.moves.length - 1)] || 'Tackle'
@@ -1769,8 +1769,8 @@ module.exports = {
   // ── .flee — escape from wild battle ───────────────────────────
   async flee({ reply, sender, jid }) {
     const battle = activeBattles[sender]
-    if (!battle) return reply(`❌ You're not in a battle.`)
-    if (battle.jid !== jid) return reply(`❌ Your active battle is in a different group.`)
+    if (!battle) return reply(`📭 You're not in a battle.`)
+    if (battle.jid !== jid) return reply(`⚠️ Your active battle is in a different group.`)
 
     // 30% chance the wild blocks escape
     if (Math.random() < 0.30) {

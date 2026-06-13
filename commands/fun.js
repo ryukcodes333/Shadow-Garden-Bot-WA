@@ -55,7 +55,7 @@ module.exports = {
   },
   async ship({ reply, args }) {
     const parts = args.join(' ').split('x').map(s => s.trim()).filter(Boolean)
-    if (parts.length < 2) return reply('❌ Usage: `.ship name1 x name2`')
+    if (parts.length < 2) return reply('⚠️ Usage: `.ship name1 x name2`')
     const pct = Math.floor(Math.random() * 101)
     const ship = parts[0].slice(0, Math.ceil(parts[0].length/2)) + parts[1].slice(Math.floor(parts[1].length/2))
     await reply(`💕 *Ship Name:* *${ship}*\n\n${parts[0]} + ${parts[1]}\n💘 *${pct}%* compatibility`)
@@ -109,7 +109,7 @@ module.exports = {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     const target    = mentioned.length ? mentioned[0].split('@')[0] : sender
     const compliments = ['absolutely brilliant', 'incredibly powerful', 'a true shadow guardian', 'destined for greatness', 'an inspiration to all']
-    await reply(`💬 @${target} is *${compliments[Math.floor(Math.random() * compliments.length)]}*! ✨`)
+    await reply(`✨ @${target}, ${compliments[Math.floor(Math.random() * compliments.length)]}`)
   },
   async wyr({ reply }) {
     const wyrs = [
@@ -156,7 +156,7 @@ module.exports = {
   },
   async '8ball'({ reply, args }) {
     const question = args.join(' ')
-    if (!question) return reply('❌ Usage: `.8ball <question>`')
+    if (!question) return reply('⚠️ Usage: `.8ball <question>`')
     const answers = ['Yes, definitely.', 'No way.', 'Ask again later.', 'It is certain.', "Don't count on it.", 'Most likely.', 'Outlook not so good.', 'Without a doubt.', 'Very doubtful.', 'Signs point to yes.']
     await reply(`🎱 *${question}*\n\n_${answers[Math.floor(Math.random() * answers.length)]}_`)
   },
@@ -169,7 +169,7 @@ module.exports = {
   },
   async choose({ reply, args }) {
     const choices = args.join(' ').split('|').map(c => c.trim()).filter(Boolean)
-    if (!choices.length) return reply('❌ Usage: `.choose a | b | c`')
+    if (!choices.length) return reply('⚠️ Usage: `.choose a | b | c`')
     await reply(`🎯 *The answer is...*\n\n*${choices[Math.floor(Math.random() * choices.length)]}*`)
   },
   async flip({ reply }) {
@@ -177,8 +177,8 @@ module.exports = {
   },
   async reverse({ reply, args }) {
     const text = args.join(' ')
-    if (!text) return reply('❌ Usage: `.reverse <text>`')
-    await reply(text.split('').reverse().join(''))
+    if (!text) return reply('⚠️ Usage: `.reverse <text>`')
+    await reply(`🔄 ${text.split('').reverse().join('')}`)
   },
   async fancy({ reply, args }) {
     const n    = parseInt(args[0])
@@ -279,7 +279,7 @@ module.exports = {
 
   async confess({ reply, args }) {
     const message = args.join(' ')
-    if (!message) return reply('❌ Usage: `.confess <message>`')
+    if (!message) return reply('⚠️ Usage: `.confess <message>`')
     await reply(`💌 *Anonymous Confession*\n\n_"${message}"_\n\n> Submitted anonymously 🖤`)
   },
 

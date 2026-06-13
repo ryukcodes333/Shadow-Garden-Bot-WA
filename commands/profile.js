@@ -594,85 +594,78 @@ module.exports = {
     )
   },
 
-  // ── .reg <phone> | .reg <name> | <password> ────────────────────────────
-  async reg({ reply, sender, senderJid, pushName, args, textRaw }) {
-    const rawInput = textRaw.replace(/^\.\s*reg\s*/i, '').trim()
-    const db = require('../database')
-
-    // Phone-link flow: .reg 60123456789
-    if (/^\d{7,15}$/.test(rawInput)) {
-      const phone = rawInput
-      const effectiveJid = senderJid || `${sender}@s.whatsapp.net`
-      // ── DEBUG LOG ────────────────────────────────────────────────────────
-      const senderRow = await db.getUser(sender).catch(() => null)
-      console.log('[.REG] ── DEBUG ──────────────────────────')
-      console.log('[.REG] effectiveJid:', effectiveJid)
-      console.log('[.REG] sender phone (from JID):', sender)
-      console.log('[.REG] target phone (user typed):', phone)
-      console.log('[.REG] DB row jid field:', senderRow?.jid ?? 'NOT SET')
-      console.log('[.REG] DB row whatsapp_verified:', senderRow?.whatsapp_verified ?? 'N/A')
-      console.log('[.REG] Full DB row:', JSON.stringify(senderRow, null, 2))
-      console.log('[.REG] ─────────────────────────────────────')
-      // ── END DEBUG ────────────────────────────────────────────────────────
-      try {
-        const otp = await db.requestWaLink(effectiveJid, phone)
-        return reply(
-          `🔐 *Web Account Linking*\n\n` +
-          `OTP: *${otp}*\n\n` +
-          `Reply with:\n*.link ${otp}*\n\nto link your WhatsApp to web account *${phone}*.\n\n` +
-          `_Expires in 5 minutes. Do not share this code._`
-        )
-      } catch (err) {
-        return reply(`❌ ${err.message}`)
-      }
-    }
-
-    // Original name | password flow
-    if (!rawInput.includes('|')) {
-      return reply(
-        `📝 *REGISTER / LINK*\n\n` +
-        `*Link your web account:*\n` +
-        `*.reg <phone>* — e.g. _.reg 60123456789_\n\n` +
-        `*Create a new account:*\n` +
-        `*.reg <name> | <password>*\n` +
-        `_.reg Shadow | mypassword123_\n\n` +
-        `> Use your full phone number with country code, no + or spaces.`
-      )
-    }
-
-    const pipeIndex = rawInput.indexOf('|')
-    const name      = rawInput.slice(0, pipeIndex).trim()
-    const password  = rawInput.slice(pipeIndex + 1).trim()
-
-    if (!name || name.length < 2) return reply('❌ Name must be at least 2 characters.')
-    if (name.length > 24)         return reply('❌ Name must be 24 characters or fewer.')
-    if (!password || password.length < 4) return reply('❌ Password must be at least 4 characters.')
-
-    const existing = await db.getUser(sender).catch(() => null)
-    if (existing?.registered && existing?.password) {
-      return reply(
-        `⚠️ *Already Registered*\n\n` +
-        `You already have an account, *${existing.name || 'Adventurer'}*.\n` +
-        `Use *.profile* to view your stats.\n\n` +
-        `> To link your web account use *.reg <phone>*`
-      )
-    }
-
-    await db.updateUser(sender, { name, username: name, password, registered: true })
-
+  // ── .signup — show sign-up guide ────────────────────────────────────────
+  async signup({ reply }) {
+    const WEB_URL = 'https://konosubacommunity.onrender.com/signup'
     return reply(
-      `🌑 *REGISTRATION COMPLETE*\n\n` +
-      `*👤 Name:* ${name}\n` +
-      `*🔐 Password:* ${'*'.repeat(password.length)}\n\n` +
-      `Welcome to Konosuba, *${name}*! 🖤\n\n` +
-      `• *.profile* — view your profile\n` +
-      `• *.bal* — check your balance\n` +
-      `• *.daily* — claim daily coins\n\n` +
-      `_To link your web account, use *.reg <your phone number>*_`
+      `╔═════ ⋆⋅☆⋅⋆ ═════╗\n` +
+      `🌑 *KONOSUBA SIGN UP*\n` +
+      `╚═════ ⋆⋅☆⋅⋆ ═════╝\n\n` +
+      `Follow these steps to join the community:\n\n` +
+      `*Step 1 — Register on the web:*\n` +
+      `> ${WEB_URL}\n\n` +
+      `Enter your WhatsApp number with country code\n` +
+      `_(no + or spaces — e.g. *23470xxxxxxxx*)_\n\n` +
+      `The bot will send an OTP to your WhatsApp.\n` +
+      `Enter it on the website to complete sign up.\n\n` +
+      `*Step 2 — Link here in the group:*\n` +
+      `Type: *.reg <your phone number>*\n` +
+      `e.g. *.reg 23470xxxxxxxx*\n\n` +
+      `*Step 3 — Confirm with OTP:*\n` +
+      `An OTP will be sent here. Then type:\n` +
+      `*.link <otp>*\n\n` +
+      `_That's it — you're in! 🖤_`
     )
   },
 
-  // ── .link <otp> — verify and link WhatsApp to web account ───────────────
+  // ── .reg <phone> — link WhatsApp to web account ────────────────────────
+  async reg({ reply, sender, senderJid, args, textRaw }) {
+    const rawInput = (textRaw || '').replace(/^\.\s*reg\s*/i, '').trim()
+    const db = require('../database')
+    const WEB_URL = 'https://konosubacommunity.onrender.com/signup'
+
+    // No number provided — direct them to .signup
+    if (!rawInput) {
+      return reply(
+        `📋 *Usage:* *.reg <phone number>*\n\n` +
+        `Enter the number you signed up with (country code, no + or spaces).\n` +
+        `e.g. *.reg 23470xxxxxxxx*\n\n` +
+        `Haven't signed up yet? Type *.signup* first.`
+      )
+    }
+
+    // Phone-link flow: .reg 23470xxxxxxxx
+    if (/^\d{7,15}$/.test(rawInput)) {
+      const phone = rawInput
+      const effectiveJid = senderJid || `${sender}@s.whatsapp.net`
+      try {
+        const otp = await db.requestWaLink(effectiveJid, phone)
+        return reply(
+          `🔐 *Link Your Account*\n\n` +
+          `An OTP has been sent! Your code:\n*${otp}*\n\n` +
+          `Now type in this group:\n*.link ${otp}*\n\n` +
+          `This links your WhatsApp to web account *${phone}*.\n\n` +
+          `_OTP expires in 5 minutes. Do not share it._`
+        )
+      } catch (err) {
+        return reply(
+          `⚠️ ${err.message}\n\n` +
+          `Make sure you signed up first at:\n> ${WEB_URL}\n\n` +
+          `Type *.signup* for the full guide.`
+        )
+      }
+    }
+
+    // Not a valid phone number
+    return reply(
+      `⚠️ That doesn't look like a valid phone number.\n\n` +
+      `*Usage:* *.reg <phone number>*\n` +
+      `e.g. *.reg 23470xxxxxxxx*\n\n` +
+      `Country code, no + or spaces. Type *.signup* for help.`
+    )
+  },
+
+    // ── .link <otp> — verify and link WhatsApp to web account ───────────────
   async link({ reply, sender, senderJid, args }) {
     const otp = args[0]
     if (!otp) {

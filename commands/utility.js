@@ -34,9 +34,13 @@ module.exports = {
         timeout: 10000,
       })
       const result = res.data?.responseData?.translatedText
-      if (!result) return reply('❌ Translation failed.')
-      await reply(`🌐 *Translation* (→ ${lang.toUpperCase()})\n\n${result}`)
-    } catch (e) { await reply(`❌ Failed: ${e.message}`) }
+      if (!result) return reply('📚 Unsupported language or nothing to translate.')
+      await reply(
+        `🌐 *Translation Complete*\n\n` +
+        `📝 Original\n└ ${args.slice(1).join(' ')}\n\n` +
+        `🔄 ${lang.toUpperCase()}\n└ ${result}`
+      )
+    } catch (e) { await reply(`⚠️ Failed: ${e.message}`) }
   },
   async tr(ctx) { return module.exports.translate(ctx) },
 
@@ -71,7 +75,7 @@ module.exports = {
     try {
       const res = await axios.get(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(text)}`, { timeout: 10000 })
       await reply(`🔗 *Short URL*\n\n${res.data}`)
-    } catch { await reply('❌ URL shortening failed') }
+    } catch { await reply('⚠️ URL shortening failed') }
   },
   async tinyurl(ctx) { return module.exports.tourl(ctx) },
   async shorturl(ctx) { return module.exports.tourl(ctx) },
@@ -90,7 +94,7 @@ module.exports = {
       const QRCode = require('qrcode')
       const buffer = await QRCode.toBuffer(text, { width: 400, margin: 2 })
       await sock.sendMessage(jid, { image: buffer, caption: `📱 QR Code\n\n${text}` }, { quoted: msg })
-    } catch (e) { await reply(`❌ Failed: ${e.message}`) }
+    } catch (e) { await reply(`⚠️ Failed: ${e.message}`) }
   },
 
   async readqr({ sock, msg, jid, reply }) {
@@ -111,16 +115,16 @@ module.exports = {
       if (!artist) {
         const sugRes = await axios.get(url, { timeout: 10000 })
         const first  = sugRes.data?.data?.[0]
-        if (!first) return reply('❌ Song not found.')
+        if (!first) return reply('⚠️ Song not found.')
         const lyricRes = await axios.get(`https://api.lyrics.ovh/v1/${encodeURIComponent(first.artist.name)}/${encodeURIComponent(first.title)}`, { timeout: 10000 })
         const lyrics   = lyricRes.data?.lyrics?.slice(0, 2000)
-        if (!lyrics) return reply('❌ Lyrics not found.')
+        if (!lyrics) return reply('⚠️ Lyrics not found.')
         return reply(`🎵 *${first.title}* by ${first.artist.name}\n\n${lyrics}${lyricRes.data.lyrics.length > 2000 ? '\n\n...(truncated)' : ''}`)
       }
 
       const res    = await axios.get(url, { timeout: 10000 })
       const lyrics = res.data?.lyrics?.slice(0, 2000)
-      if (!lyrics) return reply('❌ Lyrics not found.')
+      if (!lyrics) return reply('⚠️ Lyrics not found.')
       await reply(`🎵 *${title}*${artist ? ` by ${artist}` : ''}\n\n${lyrics}${res.data.lyrics.length > 2000 ? '\n\n...(truncated)' : ''}`)
     } catch { await reply('❌ Lyrics not found. Try: .lyrics artist - song') }
   },
@@ -184,10 +188,10 @@ module.exports = {
       })
       const ids  = [...res.data.matchAll(/videoId\\?":\\?"([a-zA-Z0-9_-]{11})\\?"/g)].map(m => m[1])
       const unique = [...new Set(ids)].slice(0, 5)
-      if (!unique.length) return reply('❌ No results found.')
+      if (!unique.length) return reply('⚠️ No results found.')
       const links = unique.map((id, i) => `${i + 1}. https://youtu.be/${id}`).join('\n')
       await reply(`🔍 *YouTube: ${query}*\n\n${links}`)
-    } catch { await reply('❌ Search failed.') }
+    } catch { await reply('⚠️ Search failed.') }
   },
 
   async google({ reply, args }) {
@@ -203,16 +207,16 @@ module.exports = {
       const res  = await axios.get(`https://wttr.in/${encodeURIComponent(location)}?format=j1`, { timeout: 10000 })
       const cur  = res.data?.current_condition?.[0]
       const area = res.data?.nearest_area?.[0]
-      if (!cur) return reply('❌ Location not found.')
+      if (!cur) return reply('📍 City not found. Check spelling.')
       const city = area?.areaName?.[0]?.value || location
       await reply(
-        `🌤️ *Weather — ${city}*\n\n` +
-        `🌡️ Temp: ${cur.temp_C}°C / ${cur.temp_F}°F\n` +
-        `💧 Humidity: ${cur.humidity}%\n` +
-        `💨 Wind: ${cur.windspeedKmph} km/h\n` +
-        `☁️ Condition: ${cur.weatherDesc?.[0]?.value || 'N/A'}`
+        `🌤️ *Weather in ${city}*\n\n` +
+        `🌡️ ${cur.temp_C}°C • ${cur.weatherDesc?.[0]?.value || 'N/A'}\n\n` +
+        `💧 Humidity\n└ ${cur.humidity}%\n\n` +
+        `💨 Wind\n└ ${cur.windspeedKmph} km/h\n\n` +
+        `🌡️ Feels Like\n└ ${cur.FeelsLikeC || cur.temp_C}°C`
       )
-    } catch { await reply('❌ Couldn\'t get weather. Check city name.') }
+    } catch { await reply('⚠️ Weather service unavailable right now.') }
   },
 
   async wiki({ reply, args }) {
@@ -221,9 +225,14 @@ module.exports = {
     try {
       const res = await axios.get(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`, { timeout: 10000 })
       const p   = res.data
-      if (p.type === 'https://mediawiki.org/wiki/HyperSwitch/errors/not_found') return reply('❌ Topic not found.')
-      await reply(`📖 *${p.title}*\n\n${p.extract?.slice(0, 500) || 'No info found'}`)
-    } catch { await reply('❌ Wikipedia search failed.') }
+      if (p.type === 'https://mediawiki.org/wiki/HyperSwitch/errors/not_found') return reply('📄 No page found for that topic.')
+      const link = p.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(query)}`
+      await reply(
+        `📚 *${p.title}*\n\n` +
+        `📖 Summary\n└ ${(p.extract?.slice(0, 400) || 'No info found')}\n\n` +
+        `🔗 Read More\n└ ${link}`
+      )
+    } catch { await reply('⚠️ Wikipedia unavailable right now.') }
   },
 
   async news({ reply, args }) {
@@ -234,8 +243,8 @@ module.exports = {
       if (!articles?.length) {
         return reply(`📰 Search for *${topic}* news:\nhttps://news.google.com/search?q=${encodeURIComponent(topic)}`)
       }
-      const lines = articles.map((a, i) => `${i + 1}. *${a.title}*\n${a.url}`).join('\n\n')
-      await reply(`📰 *News: ${topic}*\n\n${lines}`)
+      const lines = articles.map((a, i) => `${i + 1}️⃣ *${a.title}*\n└ ${a.url}`).join('\n\n')
+      await reply(`📰 *${topic.charAt(0).toUpperCase() + topic.slice(1)} News*\n\n${lines}`)
     } catch {
       await reply(`📰 Search for *${topic}* news:\nhttps://news.google.com/search?q=${encodeURIComponent(topic)}`)
     }
@@ -249,14 +258,14 @@ module.exports = {
         responseType: 'arraybuffer', timeout: 20000,
       })
       await sock.sendMessage(jid, { image: Buffer.from(ss.data), caption: `🌐 ${url}` }, { quoted: msg })
-    } catch { await reply(`❌ Screenshot failed. Try: ${url}`) }
+    } catch { await reply(`⚠️ Screenshot failed for that URL.`) }
   },
 
   async myip({ reply }) {
     try {
       const res = await axios.get('https://api.ipify.org?format=json', { timeout: 8000 })
       await reply(`🌐 Bot IP: ${res.data.ip}`)
-    } catch { await reply('❌ Couldn\'t get IP') }
+    } catch { await reply('⚠️ Couldn\'t get IP') }
   },
 
   async ytmp4({ reply, args }) {
@@ -273,9 +282,9 @@ module.exports = {
       if (res.data?.url) {
         await reply(`🎬 *Download ready!*\n\n${res.data.url}`)
       } else {
-        await reply('❌ Download failed. Try y2mate.com or similar.')
+        await reply('⚠️ Download failed. Try y2mate.com instead.')
       }
-    } catch { await reply(`❌ Download failed.\n\n💡 Try: https://y2mate.com`) }
+    } catch { await reply(`⚠️ Download failed.\n\n💡 Try: https://y2mate.com`) }
   },
 
   async ytmp3({ reply, args }) {
@@ -291,9 +300,9 @@ module.exports = {
       if (res.data?.url) {
         await reply(`🎵 *Download ready!*\n\n${res.data.url}`)
       } else {
-        await reply('❌ Download failed. Try y2mate.com or similar.')
+        await reply('⚠️ Download failed. Try y2mate.com instead.')
       }
-    } catch { await reply(`❌ Download failed.\n\n💡 Try: https://y2mate.com`) }
+    } catch { await reply(`⚠️ Download failed.\n\n💡 Try: https://y2mate.com`) }
   },
 
   async tiktok({ reply, args }) {
@@ -357,7 +366,7 @@ module.exports = {
         responseType: 'arraybuffer', timeout: 60000,
       })
       await sock.sendMessage(jid, { image: Buffer.from(res.data), caption: `🖼️ Wallpaper: ${query}` }, { quoted: msg })
-    } catch { await reply(`❌ Couldn't get wallpaper`) }
+    } catch { await reply(`⚠️ Couldn't get wallpaper right now.`) }
   },
 
   async smeme({ sock, msg, jid, reply }) {
@@ -385,5 +394,26 @@ module.exports = {
     const emojis = args.join(' ').trim()
     if (!emojis) return reply('⚠️ Usage: .emojimix 😀 + 🔥')
     await reply(`🎨 Emoji mix: ${emojis}\n\nTry: https://emojikitchen.dev/`)
+  },
+
+  async ping({ reply }) {
+    const start = Date.now()
+    await reply(
+      `🏓 *Pong!*\n\n` +
+      `⚡ Response Time\n└ ${Date.now() - start}ms`
+    )
+  },
+
+  async uptime({ reply }) {
+    const ms = process.uptime() * 1000
+    const d  = Math.floor(ms / 86400000)
+    const h  = Math.floor((ms % 86400000) / 3600000)
+    const m  = Math.floor((ms % 3600000) / 60000)
+    await reply(
+      `⏱️ *Bot Uptime*\n\n` +
+      `📅 ${d}d\n` +
+      `🕒 ${h}h\n` +
+      `⏰ ${m}m`
+    )
   },
 }

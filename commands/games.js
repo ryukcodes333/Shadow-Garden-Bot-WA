@@ -16,9 +16,9 @@ function checkWin(board, player) {
 module.exports = {
   async ttt({ sock, msg, jid, senderJid, sender, reply, args }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('Please mention a user to play Tic-Tac-Toe with.')
+    if (!mentioned.length) return reply('⚠️ Tag a user to play Tic-Tac-Toe! `.ttt @user`')
     const p2 = mentioned[0]
-    if (p2 === senderJid) return reply('❌ You can\'t play against yourself!')
+    if (p2 === senderJid) return reply('⚠️ You can\'t play against yourself!')
     const game = { board: [1,2,3,4,5,6,7,8,9], players: [senderJid, p2], turn: 0, id: Date.now() }
     tttBoards[jid] = game
     await sock.sendMessage(jid, {
@@ -36,13 +36,13 @@ module.exports = {
     if (!game) {
       const unoGame = await db.getGame(jid, 'uno')
       if (unoGame) return require('./uno').unoplay({ sock, msg, jid, senderJid, sender, reply, args })
-      return reply('❌ No active game. Start one with `.ttt @user`')
+      return reply('⚠️ No active game. Start one with `.ttt @user`')
     }
     const pos = parseInt(args[0]) - 1
-    if (isNaN(pos) || pos < 0 || pos > 8) return reply('❌ Enter a number 1-9')
+    if (isNaN(pos) || pos < 0 || pos > 8) return reply('⚠️ Enter a number between 1-9')
     const currentPlayer = game.players[game.turn]
     if (senderJid !== currentPlayer) return reply('⚠️ It\'s not your turn!')
-    if (typeof game.board[pos] !== 'number') return reply('❌ That position is taken!')
+    if (typeof game.board[pos] !== 'number') return reply('⚠️ That position is already taken!')
     const symbol = game.turn === 0 ? 1 : 2
     game.board[pos] = symbol
     if (checkWin(game.board, symbol)) {
@@ -69,7 +69,7 @@ module.exports = {
 
   async wcg({ sock, msg, jid, senderJid, sender, reply }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('Please mention a user to play Word Chain with.')
+    if (!mentioned.length) return reply('⚠️ Tag a user to play Word Chain! `.wcg @user`')
     const p2 = mentioned[0]
     const starters = ['apple', 'elephant', 'tiger', 'rabbit', 'night', 'tree', 'eagle', 'dark', 'shadow']
     const startWord = starters[Math.floor(Math.random() * starters.length)]
@@ -101,7 +101,7 @@ module.exports = {
           `🏆 *WINNER: @${winner}!*\n\n` +
           `📊 Chain: ${game.chain.join(' → ')}\n` +
           `🎁 +$200 coins\n\n` +
-          `❌ @${sender} failed - "*${word}*" doesn't start with "*${game.lastWord[game.lastWord.length - 1]}*"`,
+          `💀 @${sender} failed — *${word}* doesn't start with *${game.lastWord[game.lastWord.length - 1]}*`,
         mentions: [opponent, senderJid]
       })
     }
@@ -131,7 +131,7 @@ module.exports = {
 
   async startbattle({ sock, msg, jid, sender, senderJid, reply }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('Please mention a user to battle.')
+    if (!mentioned.length) return reply('⚠️ Tag a user to battle! `.startbattle @user`')
     const target = mentioned[0]
     const myAtk = Math.floor(Math.random() * 30) + 20
     const theirAtk = Math.floor(Math.random() * 30) + 20
@@ -154,7 +154,7 @@ module.exports = {
 
   async c4({ sock, msg, jid, sender, senderJid, reply }) {
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    if (!mentioned.length) return reply('Please mention a user to play Connect 4 with.')
+    if (!mentioned.length) return reply('⚠️ Tag a user to play Connect 4! `.c4 @user`')
     const p2 = mentioned[0]
     await sock.sendMessage(jid, {
       text:

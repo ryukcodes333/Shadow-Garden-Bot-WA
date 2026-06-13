@@ -54,8 +54,8 @@ function parseAmount(raw, wallet) {
 }
 
 function validateBet(amount, wallet) {
-  if (!amount || amount <= 0) return '❌ Invalid amount provided.'
-  if (amount > wallet) return `❌ You do not have enough coins. Wallet: £${wallet.toLocaleString()}`
+  if (!amount || amount <= 0) return '⚠️ Bet must be between the min and max limits.'
+  if (amount > wallet) return `⚠️ Not enough coins. Wallet: £${wallet.toLocaleString()}`
   return null
 }
 
@@ -115,7 +115,7 @@ module.exports = {
     const choice = args[0]?.toLowerCase()
     const amount = parseAmount(args[1], u.wallet || 0)
     if (!['heads', 'tails', 'h', 't'].includes(choice || '')) {
-      return reply('❌ Invalid amount provided. Usage: `.cf heads/tails <amount>`')
+      return reply('⚠️ Usage: .cf heads/tails <amount>')
     }
     const err = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
@@ -132,7 +132,7 @@ module.exports = {
     return reply(
       `🪙 *Coin Flip!*\n\n` +
       `Your bet: *${normalised.toUpperCase()}* | Result: *${flip.toUpperCase()}*\n\n` +
-      `${playerWins ? `✅ +£${amount.toLocaleString()}` : `❌ -£${amount.toLocaleString()}`}\n` +
+      `${playerWins ? `🪙 Flipped ${flip.toUpperCase()}! You won *+£${(amount).toLocaleString()}*` : `🪙 Flipped ${flip === 'heads' ? 'tails' : 'heads'}! You lost *-£${amount.toLocaleString()}*`}\n` +
       `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
@@ -193,7 +193,7 @@ module.exports = {
     return sock.sendMessage(jid, {
       text:
         `⏳ *Stopping...*\n\n│ ${reels[0]} │ ${reels[1]} │ ${reels[2]} │\n\n` +
-        `${net >= 0 ? `🏆 ${label}\n> +£${Math.floor(amount * multiplier)}` : `❌ ${label}\n> -£${amount.toLocaleString()}`}\n\n` +
+        `${net >= 0 ? (multiplier >= 10 ? `💎 JACKPOT! ${label}\n> *+£${Math.floor(amount * multiplier)}*` : `🎉 ${label}\n> *+£${Math.floor(amount * multiplier)}*`) : `😔 ${label}\n> *-£${amount.toLocaleString()}*`}\n\n` +
         `💵 £${((u.wallet || 0) + net).toLocaleString()}\n_${rem} gambles left today._`,
     }, { quoted: msg })
   }),
@@ -206,7 +206,7 @@ module.exports = {
     const amount = parseAmount(args[0], u.wallet || 0)
     const guess  = parseInt(args[1])
     if (!amount || !guess || guess < 1 || guess > 6) {
-      return reply('❌ Invalid amount provided. Usage: `.dice <amount> <guess 1–6>`')
+      return reply('⚠️ Usage: .dice <amount> <guess 1-6>')
     }
     const err = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
@@ -221,7 +221,7 @@ module.exports = {
     const rem = getRemainingGambles(sender)
     return reply(
       `🎲 *Dice Roll!*\n\nGuess: ${guess} | Rolled: *${roll}*\n\n` +
-      `${win ? `🏆 Correct! *+£${(amount * 4).toLocaleString()}* (×5 total)` : `❌ Wrong! -£${amount.toLocaleString()}`}\n` +
+      `${win ? `🎲 Rolled *${roll}*! Won *+£${(amount * 4).toLocaleString()}*` : `🎲 Rolled *${roll}*! Lost *-£${amount.toLocaleString()}*`}`\n` +
       `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
@@ -233,7 +233,7 @@ module.exports = {
     const choice = (args[0]?.toLowerCase() && isNaN(parseInt(args[0]))) ? args[0].toLowerCase() : null
     const amount = parseAmount(args[1] || args[0], u.wallet || 0)
     if (!choice || !['rock', 'paper', 'scissors', 'r', 'p', 's'].includes(choice)) {
-      return reply('❌ Invalid amount provided. Usage: `.rps <rock/paper/scissors> <amount>`')
+      return reply('⚠️ Usage: .rps rock/paper/scissors <amount>')
     }
     const err = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
@@ -269,7 +269,7 @@ module.exports = {
     const rem = getRemainingGambles(sender)
     return reply(
       `🪨📄✂️ *Rock Paper Scissors!*\n\nYou: ${emojis[playerMove]} | Bot: ${emojis[botMove]}\n\n` +
-      `${result === 'win' ? `🏆 WIN! *+£${amount.toLocaleString()}*` : result === 'draw' ? `🤝 Draw — no change` : `❌ Lose! -£${amount.toLocaleString()}`}\n` +
+      `${result === 'win' ? `🏆 You: ${emojis[playerMove]} | Bot: ${emojis[botMove]} | You Win! *+£${amount.toLocaleString()}*` : result === 'draw' ? `🤝 You: ${emojis[playerMove]} | Bot: ${emojis[botMove]} | Draw!` : `💀 You: ${emojis[playerMove]} | Bot: ${emojis[botMove]} | You Lose! *-£${amount.toLocaleString()}*`}`\n` +
       `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
@@ -315,7 +315,7 @@ module.exports = {
       `🎴 You: ${playerCards.join('+')} = *${playerSum}*\n` +
       `🤖 Dealer: ${dealerCards.join('+')} = *${dealerSum}*\n\n` +
       `${playerBust ? '💥 BUST! ' : dealerBust ? '💥 Dealer BUST! ' : ''}` +
-      `${result === 'win' ? `🏆 WIN! *+£${amount.toLocaleString()}*` : result === 'draw' ? `🤝 Push` : `❌ Lose -£${amount.toLocaleString()}`}\n` +
+      `${result === 'win' ? `🏆 You win! *+£${amount.toLocaleString()}*` : result === 'draw' ? `🤝 Push — bet returned.` : `💀 Lost *-£${amount.toLocaleString()}*`}\n` +
       `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
@@ -362,7 +362,7 @@ module.exports = {
     const rem = getRemainingGambles(sender)
     return reply(
       `🂡 *Poker!*\n\n🃏 ${hand.join(' ')}\n\n🎯 ${handName}\n` +
-      `${mult > 0 ? `🏆 WIN! ×${mult} → *+£${Math.floor(amount * mult)}*` : `❌ No win — -£${amount.toLocaleString()}`}\n` +
+      `${mult > 0 ? `💎 WIN! ×${mult} → *+£${Math.floor(amount * mult)}*` : `😔 No win. Lost *-£${amount.toLocaleString()}*`}\n` +
       `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
@@ -407,7 +407,7 @@ module.exports = {
     const bet    = args[0]?.toLowerCase()
     const amount = parseAmount(args[1], u.wallet || 0)
     if (!bet || !amount) {
-      return reply('❌ Invalid amount provided. Usage: `.roulette <red/black/green/odd/even/number> <amount>`')
+      return reply('⚠️ Usage: .roulette red/black/odd/even/0-36 <amount>')
     }
     const err = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
@@ -435,7 +435,7 @@ module.exports = {
       `🎰 *Roulette!*\n\n` +
       `${emoji} Ball landed on: *${num}* (${color})\n` +
       `Your bet: *${bet}*\n\n` +
-      `${mult > 0 ? `🏆 WIN! ×${mult} → *+£${payout.toLocaleString()}*` : `❌ Lose — -£${amount.toLocaleString()}`}\n` +
+      `${mult > 0 ? `🎯 Your bet won! ×${mult} → *+£${payout.toLocaleString()}*` : `😔 Ball missed your bet. Lost *-£${amount.toLocaleString()}*`}\n` +
       `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
     )
   }),
@@ -447,7 +447,7 @@ module.exports = {
     const horse  = parseInt(args[0])
     const amount = parseAmount(args[1], u.wallet || 0)
     if (!horse || horse < 1 || horse > 6 || !amount) {
-      return reply('❌ Invalid amount provided. Usage: `.horse <1–6> <amount>`\n\nPick a horse (1–6) and bet!')
+      return reply('⚠️ Usage: `.horse <1-6> <amount>`\n\nPick a horse number (1-6) and place your bet!')
     }
     const err = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)

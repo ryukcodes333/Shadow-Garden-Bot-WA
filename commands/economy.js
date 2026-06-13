@@ -285,12 +285,7 @@ module.exports = {
     if (digXp > 0) caption += `\n⭐ +${digXp} XP`
     if (xpResult.leveledUp) caption += `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊`
     if (earned === 0 && gems === 0) caption += `\n\n_You did not catch anything this time._`
-    try {
-      const imgBuf = fs.readFileSync(DIG_IMG)
-      await replyImage(imgBuf, caption)
-    } catch {
-      await reply(caption)
-    }
+    await reply(caption)
   },
 
   // ── .fish ────────────────────────────────────────────────────────────────
@@ -330,12 +325,7 @@ module.exports = {
     else caption += `\n\n_You did not catch anything this time._`
     caption += `\n⭐ +${fishXp} XP`
     if (xpResult.leveledUp) caption += `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊`
-    try {
-      const imgBuf = fs.readFileSync(FISH_IMG)
-      await replyImage(imgBuf, caption)
-    } catch {
-      await reply(caption)
-    }
+    await reply(caption)
   },
 
   // ── .beg ─────────────────────────────────────────────────────────────────
@@ -349,7 +339,7 @@ module.exports = {
       await db.trackCurrencyGenerated(coins)
     }
     await db.setCooldown(sender, 'beg', CD_BEG)
-    await reply(success ? `🙏 Someone felt generous — *+£${coins} Eris*` : `🙏 Nobody gave you anything. Get a job! 😭`)
+    await reply(success ? `🙏 Someone felt generous — *+£${coins}*` : `🚶 Nobody stopped to help.`)
   },
 
   // ── .crime ───────────────────────────────────────────────────────────────
@@ -403,7 +393,7 @@ module.exports = {
       target = quotedParticipant
       tp     = quotedParticipant.split('@')[0].split(':')[0]
     } else {
-      return reply('❌ Mention or *quote* a user\'s message to rob them.')
+      return reply('⚠️ Mention or *quote* a user to rob them.')
     }
 
     // ── Resolve @lid to real phone number ────────────────────────────────────
@@ -428,13 +418,13 @@ module.exports = {
       return reply(`⏳ You are on cooldown for *${mins}m*.`)
     }
 
-    if (tp === sender) return reply('❌ You cannot rob yourself!')
+    if (tp === sender) return reply('🪞 You can't rob yourself.')
 
     const tu = await db.getOrCreateUser(tp)
     const targetWallet = tu.wallet || 0
 
     // Minimum $200 to be robbed (protects early players)
-    if (targetWallet < 200) return reply(`❌ @${tp} doesn't have enough to rob. (Need $200+ in wallet)`)
+    if (targetWallet < 200) return reply(`🪙 Target has nothing worth stealing. (Need £200+ in wallet)`)
 
     const success = Math.random() < 0.40  // 40% success
     await db.setCooldown(sender, 'rob', CD_ROB)
@@ -540,11 +530,11 @@ module.exports = {
     }
 
     if (!targetPhone) return reply('Please mention a user or quote their message to pay.')
-    if (targetPhone === sender) return reply('❌ You cannot pay yourself.')
+    if (targetPhone === sender) return reply('🪞 You can't send money to yourself.')
 
     const amount = parseInt(args.find(a => !isNaN(parseInt(a))))
-    if (!amount || amount <= 0) return reply('❌ Invalid amount provided.')
-    if (amount > (u.wallet || 0)) return reply(`❌ You do not have enough coins. Wallet: £${(u.wallet || 0).toLocaleString()}`)
+    if (!amount || amount <= 0) return reply('⚠️ Invalid amount provided.')
+    if (amount > (u.wallet || 0)) return reply(`💸 Your wallet only has £${(u.wallet || 0).toLocaleString()}`)
 
     pendingPay[sender] = { toPhone: targetPhone, toJid: targetJid, amount, expiresAt: Date.now() + 60000 }
     setTimeout(() => { if (pendingPay[sender]?.toPhone === targetPhone) delete pendingPay[sender] }, 60000)
@@ -562,12 +552,12 @@ module.exports = {
     if (!pending) return false
     if (Date.now() > pending.expiresAt) {
       delete pendingPay[sender]
-      await sock.sendMessage(jid, { text: '❌ Payment expired.' }, { quoted: msg })
+      await sock.sendMessage(jid, { text: '⚠️ Payment expired.' }, { quoted: msg })
       return true
     }
     if (!confirmed) {
       delete pendingPay[sender]
-      await sock.sendMessage(jid, { text: '❌ Payment cancelled.' }, { quoted: msg })
+      await sock.sendMessage(jid, { text: '⚠️ Payment cancelled.' }, { quoted: msg })
       return true
     }
 
@@ -576,7 +566,7 @@ module.exports = {
 
     const u = await db.getOrCreateUser(sender)
     if (amount > (u.wallet || 0)) {
-      await sock.sendMessage(jid, { text: `❌ You do not have enough coins. You have £${(u.wallet || 0).toLocaleString()}` }, { quoted: msg })
+      await sock.sendMessage(jid, { text: `⚠️ Not enough coins. You have £${(u.wallet || 0).toLocaleString()}` }, { quoted: msg })
       return true
     }
 
@@ -606,8 +596,8 @@ module.exports = {
   async withdraw({ reply, sender, user, args }) {
     const u = user || await db.getOrCreateUser(sender)
     const amount = args[0]?.toLowerCase() === 'all' ? u.bank : parseInt(args[0])
-    if (!amount || amount <= 0) return reply('❌ Invalid amount provided. Usage: `.withdraw <amount>` or `.withdraw all`')
-    if (amount > (u.bank || 0)) return reply(`❌ Your bank is insufficient. Bank: £${(u.bank || 0).toLocaleString()}`)
+    if (!amount || amount <= 0) return reply('⚠️ Usage: `.withdraw <amount>` or `.withdraw all`')
+    if (amount > (u.bank || 0)) return reply(`🏦 You only have £${(u.bank || 0).toLocaleString()}`)
     await db.updateUser(sender, { wallet: (u.wallet || 0) + amount, bank: (u.bank || 0) - amount })
     await reply(`🏧 Withdrew *£${amount.toLocaleString()}* from your bank.\n\n💵 Wallet: £${((u.wallet||0)+amount).toLocaleString()} | 🏦 Bank: £${((u.bank||0)-amount).toLocaleString()}`)
   },
@@ -616,7 +606,7 @@ module.exports = {
   async withdrawall({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
     const amount = u.bank || 0
-    if (amount <= 0) return reply('❌ Your bank is empty.')
+    if (amount <= 0) return reply('🏦 Your bank is empty.')
     await db.updateUser(sender, { wallet: (u.wallet || 0) + amount, bank: 0 })
     await reply(`🏧 Withdrew *£${amount.toLocaleString()}* from your bank.\n\n💵 Wallet: £${((u.wallet||0)+amount).toLocaleString()} | 🏦 Bank: $0`)
   },
@@ -624,13 +614,13 @@ module.exports = {
   async deposit({ reply, sender, user, args }) {
     const u = user || await db.getOrCreateUser(sender)
     const amount = args[0]?.toLowerCase() === 'all' ? u.wallet : parseInt(args[0])
-    if (!amount || amount <= 0) return reply('❌ Invalid amount provided. Usage: `.deposit <amount>` or `.deposit all`')
-    if (amount > (u.wallet || 0)) return reply(`❌ You do not have enough coins. Wallet: £${(u.wallet || 0).toLocaleString()}`)
+    if (!amount || amount <= 0) return reply('⚠️ Usage: `.deposit <amount>` or `.deposit all`')
+    if (amount > (u.wallet || 0)) return reply(`💸 Your wallet only has £${(u.wallet || 0).toLocaleString()}`)
     const bankLimit = u.bank_limit || 50000
     if ((u.bank || 0) + amount > bankLimit) {
       const space = Math.max(0, bankLimit - (u.bank || 0))
       return reply(
-        `❌ *Your bank is full!*\n\n` +
+        `🏦 Bank full! You can only deposit more once you upgrade.\n\n` +
         `🏦 Bank: £${(u.bank||0).toLocaleString()} / £${bankLimit.toLocaleString()}\n` +
         `📥 Space remaining: £${space.toLocaleString()}\n\n` +
         `💵 Buy a *Bank Note* from *.shop* to increase your limit!`
@@ -670,16 +660,16 @@ module.exports = {
   async buy({ reply, sender, user, args }) {
     const u       = user || await db.getOrCreateUser(sender)
     const itemKey = args[0]?.toLowerCase()
-    if (!itemKey) return reply('❌ Invalid amount provided. Usage: `.buy <item>` — see `.shop`')
+    if (!itemKey) return reply('⚠️ Usage: `.buy <item>` — check `.shop` for items')
     const item    = Object.entries(SHOP_ITEMS).find(([k, v]) => k === itemKey || v.name.toLowerCase() === itemKey)
-    if (!item) return reply('❌ Item not found. Check `.shop`')
+    if (!item) return reply('📦 That item doesn't exist. Check `.shop`')
     const [, data] = item
     if (data.gems) {
-      if ((u.gems || 0) < data.price) return reply(`❌ You do not have enough coins. Need ${data.price} 💎. You have ${u.gems || 0}.`)
+      if ((u.gems || 0) < data.price) return reply(`⚠️ Not enough gems. Need ${data.price} 💎, you have ${u.gems || 0}.`)
       await db.updateUser(sender, { gems: (u.gems || 0) - data.price })
       await db.trackCurrencyRemoved(0)  // gem sink (gem not coin)
     } else {
-      if ((u.wallet || 0) < data.price) return reply(`❌ You do not have enough coins. Need £${data.price.toLocaleString()}. You have £${(u.wallet || 0).toLocaleString()}`)
+      if ((u.wallet || 0) < data.price) return reply(`⚠️ Not enough coins. Need £${data.price.toLocaleString()}, you have £${(u.wallet || 0).toLocaleString()}`)
       await db.updateUser(sender, { wallet: (u.wallet || 0) - data.price })
       await db.trackCurrencyRemoved(data.price)
     }
@@ -697,25 +687,25 @@ module.exports = {
 
   async sell({ reply, sender, user, args }) {
     const itemName = args.join(' ')
-    if (!itemName) return reply('❌ Usage: `.sell <item>`')
+    if (!itemName) return reply('⚠️ Usage: `.sell <item>`')
     const items    = await db.getInventory(sender)
     const found    = items.find(i => i.item.toLowerCase() === itemName.toLowerCase())
-    if (!found) return reply('❌ You do not own this item.')
+    if (!found) return reply('⚠️ You don\'t own that item.')
     const shopItem  = Object.values(SHOP_ITEMS).find(s => s.name.toLowerCase() === itemName.toLowerCase())
     const sellPrice = shopItem ? Math.floor(shopItem.price * 0.55) : 30  // 55% resale value
     await db.removeItem(sender, found.item)
     const u = user || await db.getOrCreateUser(sender)
     await db.updateUser(sender, { wallet: (u.wallet || 0) + sellPrice })
     await db.trackCurrencyGenerated(sellPrice)
-    await reply(`💸 Sold *${found.item}* for £${sellPrice}`)
+    await reply(`💰 Sold *${found.item}* for £${sellPrice.toLocaleString()}`)
   },
 
   async use({ reply, sender, args }) {
     const itemName = args.join(' ')
-    if (!itemName) return reply('❌ Usage: `.use <item>`')
+    if (!itemName) return reply('⚠️ Usage: `.use <item>`')
     const items    = await db.getInventory(sender)
     const found    = items.find(i => i.item.toLowerCase() === itemName.toLowerCase())
-    if (!found) return reply('❌ You do not own this item.')
+    if (!found) return reply('⚠️ You don\'t own that item.')
     const bankNoteMap = {
       'bank note':        50000,
       'bank note (100k)': 100000,
@@ -736,7 +726,7 @@ module.exports = {
       )
     }
     await db.removeItem(sender, found.item)
-    await reply(`✨ Used *${found.item}* — effect applied!`)
+    await reply(`✨ Used *${found.item}*.`)
   },
 
   // ── .register / .reg ─────────────────────────────────────────────────────
@@ -745,12 +735,12 @@ module.exports = {
     if (existing && existing.bio && existing.bio !== '') return reply('⚠️ Already registered.')
     const raw     = args.join(' ')
     const pipeIdx = raw.indexOf('|')
-    if (pipeIdx === -1) return reply('❌ Usage: `.reg <name> | <password>`\nExample: `.reg Shadow Reaper | mypassword123`')
+    if (pipeIdx === -1) return reply('⚠️ Usage: `.reg <name> | <password>`')
     const name     = raw.slice(0, pipeIdx).trim() || pushName || sender
     const password = raw.slice(pipeIdx + 1).trim()
-    if (!password) return reply('❌ Password cannot be empty.\nUsage: `.reg <name> | <password>`')
+    if (!password) return reply('⚠️ Password cannot be empty.')
     const userDoc = await db.getOrCreateUser(sender, name).catch(() => null)
-    if (!userDoc) return reply('❌ Registration failed — the database may be offline. Please try again later.')
+    if (!userDoc) return reply('⚠️ Registration failed. Database may be offline. Try again shortly.')
     await db.updateUser(sender, { name, password, bio: 'Konosuba Member' }).catch(() => {})
     await reply(
       `✅ *REGISTERED!*\n\n` +
@@ -765,21 +755,21 @@ module.exports = {
 
   async setname({ reply, sender, args }) {
     const name = args.join(' ')
-    if (!name) return reply('❌ Usage: `.setname <name>`')
+    if (!name) return reply('⚠️ Usage: `.setname <name>`')
     await db.updateUser(sender, { name })
     await reply(`✅ Name set to *${name}*`)
   },
 
   async bio({ reply, sender, args }) {
     const bio = args.join(' ')
-    if (!bio) return reply('❌ Usage: `.bio <your bio>`')
+    if (!bio) return reply('⚠️ Usage: `.bio <your bio>`')
     await db.updateUser(sender, { bio })
     await reply(`✅ *Bio updated!*`)
   },
 
   async setage({ reply, sender, args }) {
     const age = parseInt(args[0])
-    if (!age || age < 1 || age > 120) return reply('❌ Invalid amount provided. Usage: `.setage <1–120>`')
+    if (!age || age < 1 || age > 120) return reply('⚠️ Invalid age. Usage: `.setage <1-120>`')
     await db.updateUser(sender, { age })
     await reply(`✅ Age set to ${age}`)
   },
@@ -878,7 +868,7 @@ module.exports = {
   // ── .membership ──────────────────────────────────────────────────────────
   async membership({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
-    await reply(`👑 *Membership Status*\n\n${u.name || sender}: ${u.premium ? '✅ Premium Member' : '❌ Regular Member'}`)
+    await reply(`👑 *Membership Status*\n\n${u.name || sender}: ${u.premium ? '✅ Premium Member' : '👤 Regular Member'}`)
   },
   async memb(ctx)    { return module.exports.membership(ctx) },
   async premium(ctx) { return module.exports.membership(ctx) },

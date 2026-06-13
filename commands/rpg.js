@@ -333,14 +333,14 @@ module.exports = {
     }
 
     if (!CLASSES[chosen]) {
-      return reply(`❌ Unknown class: *${chosen}*\n\nValid: ${Object.keys(CLASSES).join(', ')}`)
+      return reply(`⚠️ Unknown class: *${chosen}*\n\nValid classes: ${Object.keys(CLASSES).join(', ')}`)
     }
 
     const cls = CLASSES[chosen]
     const saved = await db.updateUser(sender, { class_name: chosen, skill_xp: JSON.stringify({}) })
 
     if (!saved) {
-      return reply(`❌ *CLASS SAVE FAILED*\n\nCould not save your class to the database. Please try again later. 🖤`)
+      return reply(`⚠️ *CLASS SAVE FAILED*\n\nDatabase error. Please try again shortly. 🖤`)
     }
 
     return reply(
@@ -359,7 +359,7 @@ module.exports = {
   async skillinfo({ reply, sender, user, args }) {
     const u = user || await db.getOrCreateUser(sender)
     const cls = getClassForUser(u)
-    if (!cls) return reply(`❌ Pick a class first with *.selectclass*`)
+    if (!cls) return reply(`⚠️ Pick a class first with *.selectclass*`)
 
     let skillXp = {}
     try { skillXp = JSON.parse(u.skill_xp || '{}') } catch {}
@@ -460,7 +460,7 @@ module.exports = {
   // ─── STANDARD ATTACK ─────────────────────────────────────────
   async attack({ sock, jid, reply, sender, user }) {
     const s = dungeonSessions[sender]
-    if (!s) return reply('❌ No dungeon active. Use *.dungeon* to start.')
+    if (!s) return reply('⚠️ No dungeon active. Use *.dungeon* to start.')
     const u = user || await db.getOrCreateUser(sender)
     const cls = getClassForUser(u)
 
@@ -550,11 +550,11 @@ module.exports = {
   // ─── CLASS ABILITY: SLASH (Warrior tier-1) ───────────────────
   async slash({ sock, jid, reply, sender, user }) {
     const s = dungeonSessions[sender]
-    if (!s) return reply('❌ Use *.dungeon* first.')
+    if (!s) return reply('⚠️ Start a dungeon first with *.dungeon*')
     const u = user || await db.getOrCreateUser(sender)
     const cls = getClassForUser(u)
     if (!cls || !cls.abilities.includes('slash') && !cls.abilities.includes('darkslash') && !cls.abilities.includes('voidrend'))
-      return reply(`❌ This ability is for Warriors only.`)
+      return reply(`⚔️ Warriors only! Switch class with *.selectclass*`)
 
     const { currentSkill, evolved, reply: skillReply } = await module.exports._useSkill(sender, u, 'slash', s)
     if (skillReply) return reply(skillReply)
@@ -585,10 +585,10 @@ module.exports = {
   // ─── CLASS ABILITY: DARKNOVA (Mage tier-1) ───────────────────
   async darknova({ sock, jid, reply, sender, user }) {
     const s = dungeonSessions[sender]
-    if (!s) return reply('❌ Use *.dungeon* first.')
+    if (!s) return reply('⚠️ Start a dungeon first with *.dungeon*')
     const u = user || await db.getOrCreateUser(sender)
     const cls = getClassForUser(u)
-    if (!cls || cls.name !== 'Dark Mage') return reply('❌ This ability is for Dark Mages only.')
+    if (!cls || cls.name !== 'Dark Mage') return reply('🔮 Dark Mages only! Switch class with *.selectclass*')
 
     const { currentSkill, evolved } = await module.exports._useSkill(sender, u, 'darknova', s)
     const sk = SKILL_EVOLUTION[currentSkill]
@@ -620,10 +620,10 @@ module.exports = {
   // ─── CLASS ABILITY: SHADOWSHOT (Archer tier-1) ───────────────
   async shadowshot({ sock, jid, reply, sender, user }) {
     const s = dungeonSessions[sender]
-    if (!s) return reply('❌ Use *.dungeon* first.')
+    if (!s) return reply('⚠️ Start a dungeon first with *.dungeon*')
     const u = user || await db.getOrCreateUser(sender)
     const cls = getClassForUser(u)
-    if (!cls || cls.name !== 'Void Archer') return reply('❌ This ability is for Void Archers only.')
+    if (!cls || cls.name !== 'Void Archer') return reply('🏹 Void Archers only! Switch class with *.selectclass*')
 
     const { currentSkill, evolved } = await module.exports._useSkill(sender, u, 'shadowshot', s)
     const sk = SKILL_EVOLUTION[currentSkill]
@@ -652,10 +652,10 @@ module.exports = {
   // ─── CLASS ABILITY: BACKSTAB (Assassin tier-1) ───────────────
   async backstab({ sock, jid, reply, sender, user }) {
     const s = dungeonSessions[sender]
-    if (!s) return reply('❌ Use *.dungeon* first.')
+    if (!s) return reply('⚠️ Start a dungeon first with *.dungeon*')
     const u = user || await db.getOrCreateUser(sender)
     const cls = getClassForUser(u)
-    if (!cls || cls.name !== 'Night Assassin') return reply('❌ Night Assassins only.')
+    if (!cls || cls.name !== 'Night Assassin') return reply('🗡️ Night Assassins only! Switch class with *.selectclass*')
 
     const { currentSkill, evolved } = await module.exports._useSkill(sender, u, 'backstab', s)
     const sk = SKILL_EVOLUTION[currentSkill]
@@ -683,10 +683,10 @@ module.exports = {
   // ─── CLASS ABILITY: SMOKEBOMB (Assassin) ─────────────────────
   async smokebomb({ reply, sender, user }) {
     const s = dungeonSessions[sender]
-    if (!s) return reply('❌ Use *.dungeon* first.')
+    if (!s) return reply('⚠️ Start a dungeon first with *.dungeon*')
     const u = user || await db.getOrCreateUser(sender)
     const cls = getClassForUser(u)
-    if (!cls || cls.name !== 'Night Assassin') return reply('❌ Night Assassins only.')
+    if (!cls || cls.name !== 'Night Assassin') return reply('🗡️ Night Assassins only! Switch class with *.selectclass*')
     s.smokeDodge = true
     await reply(`💨 *SMOKE BOMB*\n\nYou vanish into the shadows!\n70% chance to dodge the next attack.\n\n_They can't hit what they can't see._ 🖤`)
   },
@@ -694,10 +694,10 @@ module.exports = {
   // ─── CLASS ABILITY: SHIELDWALL (Knight) ──────────────────────
   async shieldwall({ reply, sender, user }) {
     const s = dungeonSessions[sender]
-    if (!s) return reply('❌ Use *.dungeon* first.')
+    if (!s) return reply('⚠️ Start a dungeon first with *.dungeon*')
     const u = user || await db.getOrCreateUser(sender)
     const cls = getClassForUser(u)
-    if (!cls || cls.name !== 'Shadow Knight') return reply('❌ Shadow Knights only.')
+    if (!cls || cls.name !== 'Shadow Knight') return reply('🛡️ Shadow Knights only! Switch class with *.selectclass*')
     s.shieldWallTurns = 2
     await reply(`🛡️ *SHIELD WALL*\n\nMassive shield raised!\nDamage reduced 60% for 2 turns.\n\n_The wall holds. Nothing passes._ 🖤`)
   },
@@ -705,12 +705,12 @@ module.exports = {
   // ─── CLASS ABILITY: DEATHBLOW (Knight finisher) ──────────────
   async deathblow({ reply, sender, user }) {
     const s = dungeonSessions[sender]
-    if (!s) return reply('❌ Use *.dungeon* first.')
+    if (!s) return reply('⚠️ Start a dungeon first with *.dungeon*')
     const u = user || await db.getOrCreateUser(sender)
     const cls = getClassForUser(u)
-    if (!cls || cls.name !== 'Shadow Knight') return reply('❌ Shadow Knights only.')
+    if (!cls || cls.name !== 'Shadow Knight') return reply('🛡️ Shadow Knights only! Switch class with *.selectclass*')
     if (s.enemy.currentHp / s.enemy.hp > 0.20)
-      return reply(`❌ *Death Blow* only activates when enemy HP is below 20%!\n\nEnemy HP: ${Math.floor(s.enemy.currentHp / s.enemy.hp * 100)}%`)
+      return reply(`⚠️ *Death Blow* requires enemy HP below 20%!\n\nEnemy HP: ${Math.floor(s.enemy.currentHp / s.enemy.hp * 100)}%`)
     const myDmg = Math.floor(s.playerAtk * 5.0)
     s.enemy.currentHp = 0
     return await module.exports._dungeonWin(null, null, reply, sender, s, u)
@@ -719,10 +719,10 @@ module.exports = {
   // ─── CLASS ABILITY: BERSERK (Warrior) ────────────────────────
   async berserk({ sock, jid, reply, sender, user }) {
     const s = dungeonSessions[sender]
-    if (!s) return reply('❌ Use *.dungeon* first.')
+    if (!s) return reply('⚠️ Start a dungeon first with *.dungeon*')
     const u = user || await db.getOrCreateUser(sender)
     const cls = getClassForUser(u)
-    if (!cls || cls.name !== 'Shadow Warrior') return reply('❌ Shadow Warriors only.')
+    if (!cls || cls.name !== 'Shadow Warrior') return reply('⚔️ Shadow Warriors only! Switch class with *.selectclass*')
     const myDmg = Math.floor(s.playerAtk * 2.0)
     const enemyDmg = Math.floor(s.enemy.attack * 1.5)
     s.enemy.currentHp = Math.max(0, s.enemy.currentHp - myDmg)
@@ -743,7 +743,7 @@ module.exports = {
   // ─── STANDARD MOVES ──────────────────────────────────────────
   async heavy({ sock, jid, reply, sender, user }) {
     const s = dungeonSessions[sender]
-    if (!s) return reply('❌ Use *.dungeon* first.')
+    if (!s) return reply('⚠️ Start a dungeon first with *.dungeon*')
     const hit = Math.random() < 0.60
     if (!hit) {
       const enemyDmg = Math.floor(s.enemy.attack * (0.8 + Math.random() * 0.4))
@@ -781,7 +781,7 @@ module.exports = {
 
   async defend({ reply, sender }) {
     const s = dungeonSessions[sender]
-    if (!s) return reply('❌ Use *.dungeon* first.')
+    if (!s) return reply('⚠️ Start a dungeon first with *.dungeon*')
     s.defending = true
     await reply(
       `🛡️ *BRACE!*\n\n` +
@@ -794,7 +794,7 @@ module.exports = {
 
   async special({ sock, jid, reply, sender, user }) {
     const s = dungeonSessions[sender]
-    if (!s) return reply('❌ Use *.dungeon* first.')
+    if (!s) return reply('⚠️ Start a dungeon first with *.dungeon*')
     const myDmg    = Math.floor(s.playerAtk * 2)
     const enemyDmg = Math.floor(s.enemy.attack * 1.2)
     s.enemy.currentHp = Math.max(0, s.enemy.currentHp - myDmg)
@@ -843,7 +843,7 @@ module.exports = {
 
   async flee({ reply, sender }) {
     const s = dungeonSessions[sender]
-    if (!s) return reply('❌ No dungeon active.')
+    if (!s) return reply('⚠️ No dungeon active. Type *.dungeon* first.')
     if (Math.random() < 0.4) {
       delete dungeonSessions[sender]
       return reply(
@@ -874,7 +874,7 @@ module.exports = {
 
   async item({ reply, sender }) {
     const items = await db.getInventory(sender)
-    if (!items.length) return reply('❌ Inventory empty! Use *.buy* to get items.')
+    if (!items.length) return reply('📭 Your inventory is empty.\n\nUse *.buy* to pick up items.')
     await reply(`🎒 *USE ITEM*\n\nInventory: ${items.map(i => i.item).join(', ')}\n\nUsage: *.use <item>*\n\n_Your inventory holds your power._ 🖤`)
   },
 
@@ -930,7 +930,7 @@ module.exports = {
   },
 
   async raid({ sock, jid, reply, sender, isGroup, user }) {
-    if (!isGroup) return reply('❌ Raids are group events!')
+    if (!isGroup) return reply('⚠️ Raids can only be done in a group chat!')
     const remaining = await db.getCooldown(sender, 'raid')
     if (remaining > 0) {
       const mins = Math.floor(remaining / 60000)
@@ -953,7 +953,7 @@ module.exports = {
         `🎭 *YOUR CLASS*\n\n👤 ${u.name || sender}\n\n${cls.emoji} Class: *${cls.name}*\n📊 Level: ${u.level || 1}\n\n${cls.passiveDesc}\n\n⚔️ Abilities: ${cls.abilities.join(', ')}\n\n_Use *.skillinfo* to see skill progress._\n_Use *.selectclass* to change class._ 🖤`
       )
     }
-    await reply(`🎭 *NO CLASS*\n\n👤 ${u.name || sender}\n\n❌ You haven't chosen a class yet!\n\nUse *.selectclass* to pick your path.\n\n_Every shadow warrior has a role._ 🖤`)
+    await reply(`🎭 *NO CLASS*\n\n👤 ${u.name || sender}\n\n⚠️ You haven't chosen a class yet!\n\nUse *.selectclass* to pick your path.\n\n_Every shadow warrior has a role._ 🖤`)
   },
 
   // ─── SKILL USE HELPER ────────────────────────────────────────
@@ -1085,4 +1085,259 @@ module.exports = {
       `_Use *.dungeon* to enter again._`
     )
   },
+
+  // ─── .equip <item> ───────────────────────────────────────────────────────
+  async equip({ reply, sender, user, args }) {
+    const u    = user || await db.getOrCreateUser(sender)
+    const item = args.join(' ')
+    if (!item) return reply('📋 Usage: .equip <item>')
+    const inv = u.inventory || []
+    const found = inv.find(i => i.item?.toLowerCase() === item.toLowerCase())
+    if (!found) return reply(`📭 *Item not found in inventory.*
+
+Use *.inv* to check your items.`)
+    const equipped = u.equipped || {}
+    const slot = 'weapon'
+    if (equipped[slot]) return reply(`🔒 Equipment slot occupied.
+
+Unequip *${equipped[slot]}* first.`)
+    equipped[slot] = found.item
+    await db.updateUser(sender, { equipped })
+    await reply(`🗡️ *Equipped ${found.item}*
+
+⚔️ ATK +5
+🛡️ DEF +2`)
+  },
+
+  // ─── .unequip <item> ─────────────────────────────────────────────────────
+  async unequip({ reply, sender, user, args }) {
+    const u    = user || await db.getOrCreateUser(sender)
+    const item = args.join(' ')
+    if (!item) return reply('📋 Usage: .unequip <item>')
+    const equipped = u.equipped || {}
+    const slot = Object.keys(equipped).find(k => equipped[k]?.toLowerCase() === item.toLowerCase())
+    if (!slot) return reply(`📭 *${item}* is not equipped.`)
+    delete equipped[slot]
+    await db.updateUser(sender, { equipped })
+    await reply(`🎒 *Unequipped ${item}*
+
+Moved to inventory.`)
+  },
+
+  // ─── .skills ─────────────────────────────────────────────────────────────
+  async skills({ reply, sender, user }) {
+    const u   = user || await db.getOrCreateUser(sender)
+    const cls = getClassForUser(u)
+    if (!cls) return reply(`📭 No skills unlocked.
+
+Use *.selectclass* first.`)
+    const sp = u.skillPoints || 0
+    const sk = cls.abilities || []
+    const list = sk.map((s, i) => `✨ ${s} Lv.${u.level || 1}`).join('
+') || '—'
+    await reply(
+      `✨ *Skills — ${cls.name}*
+
+${list}
+
+🎯 Skill Points
+└ ${sp}
+
+_Use .upgrade <skill>_`
+    )
+  },
+
+  // ─── .craft <item> ───────────────────────────────────────────────────────
+  async craft({ reply, sender, user, args }) {
+    const u    = user || await db.getOrCreateUser(sender)
+    const item = args.join(' ')
+    if (!item) return reply('📋 Usage: .craft <item>')
+    const recipes = {
+      'health potion': { materials: '2x Herb + 1x Vial', cost: 0, xp: 20 },
+      'iron sword':    { materials: '3x Iron Ore + 1x Handle', cost: 0, xp: 50 },
+      'leather armor': { materials: '4x Leather + 2x Thread', cost: 0, xp: 40 },
+    }
+    const key = item.toLowerCase()
+    const recipe = recipes[key]
+    if (!recipe) return reply(`📖 *Recipe not found for ${item}.*
+
+Known recipes: ${Object.keys(recipes).map(r => `*${r}*`).join(', ')}`)
+    // Check level
+    if ((u.level || 1) < 3) return reply(`🚫 *Crafting Lv.3 required.*
+
+Your level: ${u.level || 1}`)
+    const inv = u.inventory || []
+    inv.push({ item, quantity: 1 })
+    await db.updateUser(sender, { inventory: inv, xp: (u.xp || 0) + recipe.xp })
+    await reply(
+      `🔨 *Crafted ${item}!*
+
+🧱 Materials
+└ ${recipe.materials}
+
+✨ +${recipe.xp} Crafting EXP`
+    )
+  },
+
+  // ─── .forge ──────────────────────────────────────────────────────────────
+  async forge({ reply, sender, user, args }) {
+    const u    = user || await db.getOrCreateUser(sender)
+    const item = args.join(' ')
+    if (!item) return reply('📋 Usage: .forge <equipped-item>')
+    const equipped = u.equipped || {}
+    const slot = Object.keys(equipped).find(k => equipped[k]?.toLowerCase() === item.toLowerCase())
+    if (!slot) return reply(`📭 *${item}* is not equipped. Equip it first.`)
+    const stones = u.forgeStones || 0
+    const needed = 3
+    if (stones < needed) return reply(`📭 *Forge Stones: ${stones}/${needed}*
+
+Need more forge stones.`)
+    const enhance = (u.enhancement || 0) + 1
+    if (enhance > 10) return reply(`🚫 *Max enhancement reached.*
+
++10 is the maximum.`)
+    const success = Math.random() < 0.75
+    if (!success) {
+      delete equipped[slot]
+      await db.updateUser(sender, { equipped, forgeStones: stones - needed })
+      return reply(`💥 *Forge Failed*
+
+⚠️ ${item} was destroyed.
+
+_Better luck next time._`)
+    }
+    await db.updateUser(sender, { enhancement: enhance, forgeStones: stones - needed })
+    await reply(
+      `⚒️ *${item} upgraded!*
+
+⭐ Enhancement
+└ +${enhance}
+
+📈 Boost
+└ +${enhance * 5}% stats
+
+🎯 Success Rate
+└ 75%`
+    )
+  },
+
+  // ─── .shop ───────────────────────────────────────────────────────────────
+  async shop({ reply, sender, user, jid }) {
+    const u = user || await db.getOrCreateUser(sender)
+    // Check if boss raid active (simple check)
+    await reply(
+      `🛒 *RPG Shop*
+
+` +
+      `⚔️ Weapons
+└ Iron Sword — 500g
+└ Steel Blade — 1200g
+└ Shadow Edge — 5000g
+
+` +
+      `🧪 Potions
+└ Health Potion — 100g
+└ Max Potion — 500g
+└ Elixir — 2000g
+
+` +
+      `🛡️ Armor
+└ Leather Armor — 800g
+└ Chain Mail — 2000g
+
+` +
+      `Use *.buy <item>*`
+    )
+  },
+
+  // ─── .prestige ───────────────────────────────────────────────────────────
+  async prestige({ reply, sender, user }) {
+    const u   = user || await db.getOrCreateUser(sender)
+    const req = 50
+    if ((u.level || 1) < req) {
+      return reply(`🚫 *Prestige requires Lv.${req}*
+
+Your level: ${u.level || 1}`)
+    }
+    const cooldownKey = 'prestige'
+    const rem = await db.getCooldown(sender, cooldownKey).catch(() => 0)
+    if (rem > 0) {
+      const h = Math.floor(rem / 3600000)
+      const m = Math.floor((rem % 3600000) / 60000)
+      return reply(`⏳ *Prestige cooldown*
+└ ${h}h ${m}m remaining`)
+    }
+    const prestige = (u.prestige || 0) + 1
+    const titles   = ['Awakened', 'Ascendant', 'Transcendent', 'Mythic', 'Legendary']
+    const title    = titles[Math.min(prestige - 1, titles.length - 1)]
+    await db.updateUser(sender, { level: 1, xp: 0, prestige, title })
+    await db.setCooldown(sender, cooldownKey, 86400000)
+    await reply(
+      `🌟 *PRESTIGE ${prestige}*
+
+🔄 Reset to Lv.1
+
+📈 Permanent Bonus
+└ +${prestige * 5}% income
+
+🏅 Title
+└ ${title}`
+    )
+  },
+
+  // ─── .rparty ─────────────────────────────────────────────────────────────
+  async rparty({ reply, sender, user, args, senderJid, sock, jid, msg }) {
+    const u   = user || await db.getOrCreateUser(sender)
+    const sub = args[0]?.toLowerCase()
+    if (!sub || sub === 'create') {
+      if (u.partyId) return reply(`🚫 *Already in a party.*
+
+Leave first with *.rparty leave*`)
+      const partyId = `party_${sender}_${Date.now()}`
+      await db.updateUser(sender, { partyId, partyLeader: true })
+      return reply(
+        `👥 *Party Created*
+
+👑 Leader
+└ @${sender}
+
+Members
+└ 1/4
+
+_Use .rparty invite @user_`
+      )
+    }
+    if (sub === 'leave') {
+      if (!u.partyId) return reply(`📭 *You are not in a party.*`)
+      await db.updateUser(sender, { partyId: null, partyLeader: false })
+      return reply(`👋 *Left your party.*`)
+    }
+    if (sub === 'invite') {
+      if (!u.partyId) return reply(`📭 *Create a party first with .rparty create*`)
+      const target = args[1]?.replace('@', '')
+      if (!target) return reply('📋 Usage: .rparty invite @user')
+      return await sock.sendMessage(jid, {
+        text: `👥 *Party Invite*
+
+@${target}, you've been invited to join @${sender}'s party!
+
+Accept: *.rparty join*`,
+        mentions: [senderJid],
+      }, { quoted: msg })
+    }
+    if (sub === 'join') {
+      if (u.partyId) return reply(`🚫 *Already in a party.*`)
+      return reply(`✅ @${sender} joined the party!
+
+👥 Members
+└ 2/4`)
+    }
+    await reply(`📋 *Party Commands*
+
+• .rparty create
+• .rparty invite @user
+• .rparty join
+• .rparty leave`)
+  },
+
 }
