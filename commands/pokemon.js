@@ -662,37 +662,11 @@ module.exports = {
         `${moveLines}\n\n` +
         `💡 Use *.party ${idx + 1} moves* to view move details.`
 
-      // Build mini link preview card (standard WA linkPreview — visible to everyone)
-      const artUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.pokemon_id}.png`
-      const sprUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.pokemon_id}.png`
-      let thumbnail = null
-      if (p.pokemon_id) {
-        try {
-          const rawBuf = await downloadBuffer(artUrl, 10000).catch(() => null)
-            || await downloadBuffer(sprUrl, 8000).catch(() => null)
-          if (rawBuf) {
-            try {
-              const sharp = require('sharp')
-              thumbnail = await sharp(rawBuf)
-                .resize(128, 128, { fit: 'contain', background: { r: 18, g: 18, b: 40, alpha: 1 } })
-                .jpeg({ quality: 88 })
-                .toBuffer()
-            } catch { thumbnail = rawBuf }
-          }
-        } catch {}
-      }
-      const KONO = 'https://konosubacommunity.onrender.com'
+      // Build mini link preview card using the same helper as the URL wrapper
+      const miniCard = await buildMiniPartyCard(p).catch(() => null)
       return await sock.sendMessage(jid, {
-        text: caption,
-        linkPreview: {
-          matchedText:          KONO,
-          canonicalUrl:         KONO,
-          title:                p.name,
-          description:          `Level ${p.level || 1} · ${types}`,
-          jpegThumbnail:        thumbnail || undefined,
-          mediaType:            1,
-          renderLargerThumbnail: false,
-        },
+        text:        caption,
+        linkPreview: miniCard || undefined,
       }, { quoted: msg })
     }
 
