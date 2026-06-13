@@ -418,7 +418,7 @@ module.exports = {
       return reply(`⏳ You are on cooldown for *${mins}m*.`)
     }
 
-    if (tp === sender) return reply('🪞 You can't rob yourself.')
+    if (tp === sender) return reply("🪞 You can't rob yourself.")
 
     const tu = await db.getOrCreateUser(tp)
     const targetWallet = tu.wallet || 0
