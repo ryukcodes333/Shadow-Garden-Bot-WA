@@ -30,6 +30,8 @@ const { alphaChatReply, aquaChatReply } = require('./chat')
 const vibeCmds = require('./vibe')
 const amongusCmds = require('./amongus')
 
+const { buildLinkPreview } = require('../linkPreviewHelper')
+
 const PREFIX      = global.prefix   || '.'
 const POKE_PREFIX = '#'
 const OWNER_LID   = '12232838631673@lid'
@@ -134,6 +136,22 @@ async function handleInteraction(sock, msg) {
 // ── Main message handler ─────────────────────────────────────────────────────
 
 async function handleMessage(sock, msg) {
+  // ── One-time link preview wrapper ────────────────────────────────────────
+  if (!sock.__lpWrapped) {
+    const _origSend = sock.sendMessage.bind(sock)
+    sock.sendMessage = async (jid, content, opts) => {
+      if (content?.text && !content.linkPreview && typeof content.text === 'string') {
+        const url = (content.text.match(/https?:\/\/[^\s\]>)'"]+/i) || [])[0]
+        if (url) {
+          const preview = await buildLinkPreview(url).catch(() => null)
+          if (preview) content = { ...content, linkPreview: preview }
+        }
+      }
+      return _origSend(jid, content, opts)
+    }
+    sock.__lpWrapped = true
+  }
+
   const jid       = msg.key.remoteJid
   const isGroup   = jid?.endsWith('@g.us')
   let senderJid   = isGroup ? msg.key.participant : msg.key.remoteJid
@@ -597,10 +615,11 @@ async function handleMessage(sock, msg) {
       // .kill — route to Among Us when in active game; otherwise falls through
       if (cmd === 'kill' && amongusCmds.activeGames[jid]) return await amongusCmds['kill'](ctx)
 
-      // .joinau / .leaveau / .playersau — explicit Among Us aliases (always route to AU)
+      // .joinau / .leaveau / .playersau / .startau — explicit Among Us aliases (always route to AU)
       if (cmd === 'joinau')    return await amongusCmds['joinau'](ctx)
       if (cmd === 'leaveau')   return await amongusCmds['leaveau'](ctx)
       if (cmd === 'playersau') return await amongusCmds['playersau'](ctx)
+      if (cmd === 'startau')   return await amongusCmds['startau'](ctx)
 
       // .join / .leave / .players — route to Among Us when game exists in group
       const AU_LOBBY = new Set(['join','leave','players'])

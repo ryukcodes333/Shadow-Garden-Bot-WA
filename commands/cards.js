@@ -684,7 +684,11 @@ module.exports = {
   // ─── .coll ────────────────────────────────────────────────────────────────
   async coll({ reply, sender, msg }) {
     const mentioned   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    const targetPhone = mentioned.length ? mentioned[0].split('@')[0].split(':')[0] : sender
+    let targetPhone = sender
+    if (mentioned.length) {
+      const _r = await db.getUserByJid(mentioned[0]).catch(() => null)
+      targetPhone = _r?.phone || mentioned[0].split('@')[0].split(':')[0]
+    }
     const cards = await db.getUserCards(targetPhone)
     if (!cards.length) return reply(`*🃏 Your collection:*\n\n_No cards yet._`)
     const lines = cards.map((uc, i) => {
@@ -698,7 +702,11 @@ module.exports = {
 
   async myseries({ reply, sender, msg }) {
     const mentioned   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    const targetPhone = mentioned.length ? mentioned[0].split('@')[0].split(':')[0] : sender
+    let targetPhone = sender
+    if (mentioned.length) {
+      const _r = await db.getUserByJid(mentioned[0]).catch(() => null)
+      targetPhone = _r?.phone || mentioned[0].split('@')[0].split(':')[0]
+    }
     const cards = await db.getUserCards(targetPhone)
     if (!cards.length) return reply(`*📚 Your Cards By Series 📚*\n\n_No cards yet._`)
     const seriesSet = new Set()
@@ -713,7 +721,11 @@ module.exports = {
 
   async cbs({ reply, sender, msg, args }) {
     const mentioned   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    const targetPhone = mentioned.length ? mentioned[0].split('@')[0].split(':')[0] : sender
+    let targetPhone = sender
+    if (mentioned.length) {
+      const _r = await db.getUserByJid(mentioned[0]).catch(() => null)
+      targetPhone = _r?.phone || mentioned[0].split('@')[0].split(':')[0]
+    }
     const series = args.join(' ').trim()
     if (!series) return reply('⚠️ Usage: *.cbs <series name>*\nExample: *.cbs Dog Days*')
     const cards = await db.getUserCards(targetPhone)
@@ -732,7 +744,11 @@ module.exports = {
 
   async tier({ reply, sender, msg }) {
     const mentioned   = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    const targetPhone = mentioned.length ? mentioned[0].split('@')[0].split(':')[0] : sender
+    let targetPhone = sender
+    if (mentioned.length) {
+      const _r = await db.getUserByJid(mentioned[0]).catch(() => null)
+      targetPhone = _r?.phone || mentioned[0].split('@')[0].split(':')[0]
+    }
     const cards = await db.getUserCards(targetPhone)
     if (!cards.length) return reply(`*🏆 Cards By Tier:*\n\n_No cards yet._`)
     const TIER_ORDER  = ['TS','T6','T5','T4','T3','T2','T1','TZ','UR','SSR','SR','R','C']

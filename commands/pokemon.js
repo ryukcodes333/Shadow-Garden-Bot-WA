@@ -3,7 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const https = require('https')
 const http = require('http')
-const { buildBattleImage } = require('../battleHelper')
+const { buildBattleImage, buildBattleChallenge } = require('../battleHelper')
 
 const PHELP_IMAGE = path.join(__dirname, '../assets/phelp.jpg')
 
@@ -647,17 +647,17 @@ module.exports = {
       )
     }
 
-    const slots = Array.from({ length: 6 }, (_, i) => {
+    const partyLines = Array.from({ length: 6 }, (_, i) => {
       const p = party[i]
-      if (!p) return `#${i + 1}\n🎈 *Name:* (empty)\n🔮 *Level:* —\n🪄 *XP:* —`
-      return `#${i + 1}\n🎈 *Name:* ${p.name}\n🔮 *Level:* ${p.level || 1}\n🪄 *XP:* ${p.xp || 0}`
-    }).join('\n\n')
+      if (!p) return `${i + 1}. *(empty)*`
+      return `${i + 1}. ${p.name} Lv.${p.level || 1}`
+    }).join('\n')
 
     const caption =
-      `⚗ *Party*\n\n🎴 *ID:* ${sender.slice(-6)}\n🏮 *Username:* ${u.name || pushName || sender}\n🧧 *Tag:* @${sender}\n\n` +
-      `${slots}\n\n[Use *#party <slot>* to see a Pokémon's stats]\n\n> Shadow Pokémon 👥`
+      `*🐾 Your Party 🐾*\n\n${partyLines}\n\n` +
+      `> Use ".topc <slot>" to move your desired pokemon from your party to your pc.`
 
-    const imgBuf = await _buildPartyImage(party).catch(() => null)
+    const imgBuf = await _buildPartyImage(party, u.name || pushName || sender).catch(() => null)
     if (imgBuf) {
       await sock.sendMessage(jid, { image: imgBuf, caption }, { quoted: msg })
     } else {
@@ -895,12 +895,36 @@ module.exports = {
         `- *Weather:* ${weather}\n\n` +
         `*🔥 Teams Ready*\n\n` +
         `*@${sender}:* ${myTeamNames},\n\n` +
-        `*@${opponentPhone}:* ${theirTeamNames}, }\n\n` +
+        `*@${opponentPhone}:* ${theirTeamNames},\n\n` +
         `*@${opponentPhone},* do you accept the challenge?\n\n` +
         `${TB}#battle accept${TB} - Accept and begin battle\n` +
         `${TB}#battle decline${TB} - Decline the challenge\n\n` +
         `⏳ This request will expire in *2 minutes*`
 
+      // Fetch profile pictures for VS image (silent fallback if unavailable)
+      let challengerAvatar = null, opponentAvatar = null
+      try {
+        const url = await sock.profilePictureUrl(senderJid, 'image').catch(() => null)
+        if (url) challengerAvatar = await downloadBuffer(url, 8000).catch(() => null)
+      } catch {}
+      try {
+        const url = await sock.profilePictureUrl(opponentJid, 'image').catch(() => null)
+        if (url) opponentAvatar = await downloadBuffer(url, 8000).catch(() => null)
+      } catch {}
+
+      const vsImg = await buildBattleChallenge({
+        challengerName:     user?.name || sender,
+        challengerAvatarBuf: challengerAvatar,
+        opponentName:       opponentUser?.name || opponentPhone,
+        opponentAvatarBuf:  opponentAvatar,
+      }).catch(() => null)
+
+      if (vsImg) {
+        return await sock.sendMessage(jid, {
+          image: vsImg, caption: text, mimetype: 'image/png',
+          mentions: [senderJid, opponentJid],
+        }, { quoted: msg })
+      }
       return await sock.sendMessage(jid, {
         text,
         mentions: [senderJid, opponentJid],
@@ -1812,63 +1836,171 @@ async function _sendLevelUpImage(sock, jid, msg, pokeName, newLvl) {
   } catch {}
 }
 
-// ── Party composite image (3×2 sprite grid using sharp) ──────────
-async function _buildPartyImage(party) {
+// ── JSON helper for PokéAPI ──────────────────────────────────────────────────
+async function downloadJson(url, timeoutMs = 8000) {
+  return new Promise((resolve) => {
+    const client = url.startsWith('https') ? https : http
+    const req = client.get(url, { timeout: timeoutMs }, (res) => {
+      if (res.statusCode !== 200) { res.resume(); return resolve(null) }
+      const chunks = []
+      res.on('data', c => chunks.push(c))
+      res.on('end',  () => {
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))) } catch { resolve(null) }
+      })
+      res.on('error', () => resolve(null))
+    })
+    req.on('error',   () => resolve(null))
+    req.on('timeout', () => { req.destroy(); resolve(null) })
+  })
+}
+
+// ── Party composite image (2-col, stat bars, official artwork) ───────────────
+async function _buildPartyImage(party, trainerName) {
   let sharp
   try { sharp = require('sharp') } catch { return null }
 
-  const COLS = 3, cellW = 160, cellH = 160
-  const W = cellW * COLS, H = cellH * 2
+  const TYPE_COLORS = {
+    normal: '#A8A878', fire: '#F08030', water: '#6890F0', electric: '#F8D030',
+    grass: '#78C850', ice: '#98D8D8', fighting: '#C03028', poison: '#A040A0',
+    ground: '#E0C068', flying: '#A890F0', psychic: '#F85888', bug: '#A8B820',
+    rock: '#B8A038', ghost: '#705898', dragon: '#7038F8', dark: '#705848',
+    steel: '#B8B8D0', fairy: '#EE99AC',
+  }
+  const tc  = (t) => TYPE_COLORS[(t || 'normal').toLowerCase()] || '#6890F0'
+  const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const trainer = esc((trainerName || 'ME').toUpperCase().slice(0, 18))
 
-  // SVG background with grid lines and slot labels
-  const labels = Array.from({ length: 6 }, (_, i) => {
-    const col = i % COLS, row = Math.floor(i / COLS)
-    const cx  = col * cellW + cellW / 2
-    const ty  = row * cellH + cellH - 12
+  const HEADER_H = 58, CELL_W = 495, CELL_H = 230
+  const W = 2 * CELL_W, H = HEADER_H + 3 * CELL_H  // 990 × 748
+  const ACCENT_W = 5, SPR_SZ = 128, SPR_PAD = 10
+  const STATS_X  = ACCENT_W + SPR_SZ + SPR_PAD + 10  // ≈153 from cell-left
+
+  // Fetch PokéAPI base stats for each slot in parallel
+  const apiStats = await Promise.all(
+    Array.from({ length: 6 }, async (_, i) => {
+      const p = party[i]
+      if (!p?.pokemon_id) return null
+      try {
+        const d = await downloadJson(`https://pokeapi.co/api/v2/pokemon/${p.pokemon_id}`)
+        if (!d?.stats) return null
+        return {
+          hp:  d.stats[0]?.base_stat ?? 45,
+          atk: d.stats[1]?.base_stat ?? 49,
+          def: d.stats[2]?.base_stat ?? 49,
+          spd: d.stats[5]?.base_stat ?? 45,
+        }
+      } catch { return null }
+    })
+  )
+
+  let cellsSvg = ''
+  for (let i = 0; i < 6; i++) {
+    const col = i % 2, row = Math.floor(i / 2)
+    const X   = col * CELL_W, Y = HEADER_H + row * CELL_H
     const p   = party[i]
-    const txt = p ? `${p.name}  Lv${p.level || 1}` : '— empty —'
-    const col2 = p ? '#b0b8e8' : '#3a3a5a'
-    return `<text x="${cx}" y="${ty}" fill="${col2}" font-size="11" font-weight="bold" text-anchor="middle" font-family="Arial,sans-serif">${txt}</text>`
-  }).join('\n')
+    const st  = apiStats[i]
+
+    if (p) {
+      const types  = Array.isArray(p.types) ? p.types : (p.types ? [p.types] : ['normal'])
+      const accent = tc(types[0])
+      const lvl    = p.level || 1
+      const pName  = esc(p.name.toUpperCase().slice(0, 13))
+
+      const typeBadges = types.slice(0, 2).map((t, ti) => {
+        const bx = X + STATS_X + ti * 90
+        return `<rect x="${bx}" y="${Y + 56}" width="80" height="19" rx="9" fill="${tc(t)}" opacity="0.88"/>
+          <text x="${bx + 40}" y="${Y + 69}" fill="white" font-size="10" font-weight="bold" text-anchor="middle" font-family="'Courier New',monospace">${esc(t.toUpperCase())}</text>`
+      }).join('\n        ')
+
+      const BAR_W = CELL_W - STATS_X - 50
+      const bars = [
+        ['HP',  st?.hp  ?? 45, 250, '#48D840'],
+        ['ATK', st?.atk ?? 49, 185, '#F08030'],
+        ['DEF', st?.def ?? 49, 250, '#6890F0'],
+        ['SPD', st?.spd ?? 45, 180, '#F8D030'],
+      ].map(([lbl, val, mx, clr], bi) => {
+        const bY = Y + 88 + bi * 30
+        const fw = Math.max(4, Math.round(val / mx * BAR_W))
+        return `<text x="${X + STATS_X}" y="${bY + 9}" fill="#707090" font-size="10" font-family="'Courier New',monospace">${lbl}</text>
+          <text x="${X + CELL_W - 14}" y="${bY + 9}" fill="#9090A8" font-size="10" font-family="'Courier New',monospace" text-anchor="end">${val}</text>
+          <rect x="${X + STATS_X + 28}" y="${bY}" width="${BAR_W}" height="9" rx="4" fill="#1c1c30"/>
+          <rect x="${X + STATS_X + 28}" y="${bY}" width="${fw}" height="9" rx="4" fill="${clr}"/>`
+      }).join('\n        ')
+
+      cellsSvg += `
+        <rect x="${X}" y="${Y}" width="${CELL_W}" height="${CELL_H}" fill="#181828"/>
+        <rect x="${X}" y="${Y}" width="${ACCENT_W}" height="${CELL_H}" fill="${accent}"/>
+        <rect x="${X + ACCENT_W}" y="${Y}" width="3" height="${CELL_H}" fill="${accent}" opacity="0.20"/>
+        <text x="${X + STATS_X}" y="${Y + 40}" fill="white" font-size="19" font-weight="bold" font-family="'Courier New',monospace">${pName}</text>
+        <rect x="${X + CELL_W - 72}" y="${Y + 20}" width="52" height="22" rx="11" fill="#252535"/>
+        <text x="${X + CELL_W - 46}" y="${Y + 36}" fill="#8888b0" font-size="12" font-weight="bold" text-anchor="middle" font-family="'Courier New',monospace">Lv${lvl}</text>
+        ${typeBadges}
+        ${bars}
+        <line x1="${X}" y1="${Y + CELL_H - 1}" x2="${X + CELL_W}" y2="${Y + CELL_H - 1}" stroke="#222232" stroke-width="1"/>`
+    } else {
+      cellsSvg += `
+        <rect x="${X}" y="${Y}" width="${CELL_W}" height="${CELL_H}" fill="#0f0f1e"/>
+        <rect x="${X + 8}" y="${Y + 8}" width="${CELL_W - 16}" height="${CELL_H - 16}" rx="6" fill="none" stroke="#252535" stroke-width="1.5" stroke-dasharray="8,4"/>
+        <circle cx="${X + 68}" cy="${Y + CELL_H / 2}" r="24" fill="#181828" stroke="#2a2a40" stroke-width="1.5"/>
+        <text x="${X + 68}" y="${Y + CELL_H / 2 + 8}" fill="#333350" font-size="24" font-weight="bold" text-anchor="middle" font-family="'Courier New',monospace">+</text>
+        <text x="${X + 108}" y="${Y + CELL_H / 2 - 4}" fill="#303048" font-size="14" font-family="'Courier New',monospace">NO DATA</text>
+        <text x="${X + 108}" y="${Y + CELL_H / 2 + 16}" fill="#303048" font-size="12" font-family="'Courier New',monospace">EMPTY SLOT</text>
+        <line x1="${X}" y1="${Y + CELL_H - 1}" x2="${X + CELL_W}" y2="${Y + CELL_H - 1}" stroke="#1a1a28" stroke-width="1"/>`
+    }
+  }
 
   const bgSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
     <defs>
-      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#12122a"/>
-        <stop offset="100%" stop-color="#1e1e42"/>
+      <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#0c0c1c"/><stop offset="100%" stop-color="#101020"/>
       </linearGradient>
     </defs>
     <rect width="${W}" height="${H}" fill="url(#bg)"/>
-    <line x1="${cellW}"     y1="0" x2="${cellW}"     y2="${H}" stroke="#2a2a5a" stroke-width="1.5"/>
-    <line x1="${cellW * 2}" y1="0" x2="${cellW * 2}" y2="${H}" stroke="#2a2a5a" stroke-width="1.5"/>
-    <line x1="0" y1="${cellH}" x2="${W}" y2="${cellH}" stroke="#2a2a5a" stroke-width="1.5"/>
-    ${labels}
+    <rect x="0" y="0" width="${W}" height="${HEADER_H}" fill="#090918"/>
+    <rect x="0" y="0" width="${W}" height="3" fill="#00BFFF"/>
+    <rect x="0" y="0" width="6" height="${HEADER_H}" fill="#00BFFF"/>
+    <text x="18" y="38" fill="#00BFFF" font-size="26" font-weight="bold" font-family="'Courier New',monospace">|</text>
+    <text x="36" y="38" fill="white" font-size="22" font-weight="bold" font-family="'Courier New',monospace">KONO</text>
+    <text x="134" y="38" fill="#00BFFF" font-size="22" font-weight="bold" font-family="'Courier New',monospace">SUBA</text>
+    <text x="228" y="38" fill="#00BFFF" font-size="18" font-weight="bold" font-family="'Courier New',monospace"> // ACTIVE</text>
+    <line x1="468" y1="32" x2="${W - 220}" y2="32" stroke="#00BFFF" stroke-width="1" stroke-dasharray="6,4" opacity="0.38"/>
+    <text x="${W - 16}" y="38" fill="#606080" font-size="13" font-family="'Courier New',monospace" text-anchor="end">TRAINER: ${trainer}</text>
+    <line x1="${CELL_W}" y1="${HEADER_H}" x2="${CELL_W}" y2="${H}" stroke="#1e1e30" stroke-width="2"/>
+    ${cellsSvg}
   </svg>`
 
   let base
   try { base = await sharp(Buffer.from(bgSvg)).png().toBuffer() } catch { return null }
 
+  const spriteJobs = await Promise.all(
+    Array.from({ length: 6 }, async (_, i) => {
+      const p = party[i]
+      if (!p?.pokemon_id) return null
+      const artUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.pokemon_id}.png`
+      const sprUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.pokemon_id}.png`
+      let buf = await downloadBuffer(artUrl, 10000).catch(() => null)
+      if (!buf) buf = await downloadBuffer(sprUrl, 8000).catch(() => null)
+      return buf ? { buf, idx: i } : null
+    })
+  )
+
   const composites = []
-  for (let i = 0; i < Math.min(party.length, 6); i++) {
-    const p = party[i]
-    if (!p || !p.pokemon_id) continue
-    const sprUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.pokemon_id}.png`
+  for (const job of spriteJobs) {
+    if (!job) continue
+    const { buf, idx } = job
+    const col = idx % 2, row = Math.floor(idx / 2)
     try {
-      const buf = await downloadBuffer(sprUrl, 8000)
-      if (!buf) continue
-      const col  = i % COLS, row = Math.floor(i / COLS)
-      const left = col * cellW + 16
-      const top  = row * cellH + 4
-      const spr  = await sharp(buf)
-        .resize(cellW - 32, cellH - 30, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-        .png()
-        .toBuffer()
+      const spr = await sharp(buf)
+        .resize(SPR_SZ, SPR_SZ, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 }, kernel: 'lanczos3' })
+        .png().toBuffer()
+      const left = col * CELL_W + ACCENT_W + SPR_PAD
+      const top  = HEADER_H + row * CELL_H + Math.round((CELL_H - SPR_SZ) / 2)
       composites.push({ input: spr, left, top })
     } catch {}
   }
 
   try {
-    return composites.length > 0
+    return composites.length
       ? await sharp(base).composite(composites).png().toBuffer()
       : base
   } catch { return null }

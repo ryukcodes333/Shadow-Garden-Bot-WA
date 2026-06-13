@@ -257,4 +257,124 @@ async function buildBattleImage(opts) {
   } catch { return baseBuf }
 }
 
-module.exports = { buildBattleImage }
+// ── Circular avatar (for VS screen) ─────────────────────────────────────────
+async function _circleAv(sharp, inputBuf, diameter) {
+  const r = Math.round(diameter / 2)
+  const mask = Buffer.from(
+    `<svg width="${diameter}" height="${diameter}" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="${r}" cy="${r}" r="${r}" fill="white"/></svg>`
+  )
+  return sharp(inputBuf)
+    .resize(diameter, diameter, { fit: 'cover', position: 'centre' })
+    .composite([{ input: mask, blend: 'dest-in' }])
+    .png()
+    .toBuffer()
+}
+
+// ── Battle challenge "VS screen" image ───────────────────────────────────────
+async function buildBattleChallenge(opts) {
+  let sharp
+  try { sharp = require('sharp') } catch { return null }
+
+  const {
+    challengerName    = 'ME',
+    challengerAvatarBuf = null,
+    opponentName      = 'OPPONENT',
+    opponentAvatarBuf = null,
+  } = opts
+
+  const W = 800, H = 450
+  const AV_D = 136, AV_R = AV_D / 2
+  const L_CX = 198, R_CX = 602
+  const AV_CY = 228
+  const CARD_TOP = 106, CARD_H_EACH = 282, CARD_W_EACH = 242
+
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').slice(0, 22)
+  const cName = esc(challengerName)
+  const oName = esc(opponentName)
+
+  const grid = []
+  for (let x = 0; x < W; x += 40) grid.push(`<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="#14142a" stroke-width="0.6"/>`)
+  for (let y = 0; y < H; y += 40) grid.push(`<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="#14142a" stroke-width="0.6"/>`)
+
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    <linearGradient id="redBar" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#FF2020" stop-opacity="0"/>
+      <stop offset="50%"  stop-color="#FF2020" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#FF2020" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="blueBar" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#2040FF" stop-opacity="0"/>
+      <stop offset="50%"  stop-color="#2040FF" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#2040FF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="${W}" height="${H}" fill="#08080f"/>
+  ${grid.join('\n  ')}
+
+  <!-- Title -->
+  <text x="${W/2}" y="58" fill="white" font-size="34" font-weight="bold" text-anchor="middle"
+    font-family="'Courier New',monospace" letter-spacing="4">BATTLE CHALLENGE</text>
+
+  <!-- Subtitle pill -->
+  <rect x="${W/2 - 148}" y="68" width="296" height="28" rx="14" fill="#101020" stroke="#C4920A" stroke-width="1.5"/>
+  <text x="${W/2}" y="87" fill="#C4920A" font-size="13" font-weight="bold" text-anchor="middle"
+    font-family="'Courier New',monospace" letter-spacing="2">1V1  STANDARD  BATTLE</text>
+
+  <!-- Left card -->
+  <rect x="${L_CX - CARD_W_EACH/2}" y="${CARD_TOP}" width="${CARD_W_EACH}" height="${CARD_H_EACH}" rx="14" fill="#0e0e1e"/>
+  <rect x="${L_CX - CARD_W_EACH/2}" y="${CARD_TOP}" width="${CARD_W_EACH}" height="5" rx="2" fill="url(#redBar)"/>
+  <circle cx="${L_CX}" cy="${AV_CY}" r="${AV_R + 7}" fill="#161628"/>
+  <circle cx="${L_CX}" cy="${AV_CY}" r="${AV_R + 7}" fill="none" stroke="#FF3030" stroke-width="2.5"/>
+  <text x="${L_CX}" y="${CARD_TOP + CARD_H_EACH - 62}" fill="white" font-size="15" font-style="italic" font-weight="bold"
+    text-anchor="middle" font-family="'Courier New',monospace">${cName}</text>
+  <text x="${L_CX}" y="${CARD_TOP + CARD_H_EACH - 40}" fill="#00CFFF" font-size="12" font-weight="bold"
+    text-anchor="middle" font-family="'Courier New',monospace" letter-spacing="2">CHALLENGER</text>
+
+  <!-- Right card -->
+  <rect x="${R_CX - CARD_W_EACH/2}" y="${CARD_TOP}" width="${CARD_W_EACH}" height="${CARD_H_EACH}" rx="14" fill="#0e0e1e"/>
+  <rect x="${R_CX - CARD_W_EACH/2}" y="${CARD_TOP}" width="${CARD_W_EACH}" height="5" rx="2" fill="url(#blueBar)"/>
+  <circle cx="${R_CX}" cy="${AV_CY}" r="${AV_R + 7}" fill="#161628"/>
+  <circle cx="${R_CX}" cy="${AV_CY}" r="${AV_R + 7}" fill="none" stroke="#2840FF" stroke-width="2.5"/>
+  <text x="${R_CX}" y="${CARD_TOP + CARD_H_EACH - 62}" fill="white" font-size="15" font-style="italic" font-weight="bold"
+    text-anchor="middle" font-family="'Courier New',monospace">${oName}</text>
+  <text x="${R_CX}" y="${CARD_TOP + CARD_H_EACH - 40}" fill="#FF5520" font-size="12" font-weight="bold"
+    text-anchor="middle" font-family="'Courier New',monospace" letter-spacing="3">OPPONENT</text>
+
+  <!-- VS -->
+  <text x="${W/2}" y="${AV_CY + 22}" fill="#F0B020" font-size="60" font-weight="bold"
+    text-anchor="middle" font-family="'Courier New',monospace">VS</text>
+
+  <!-- Footer -->
+  <text x="${W/2}" y="${H - 16}" fill="#444460" font-size="13" font-style="italic"
+    text-anchor="middle" font-family="'Courier New',monospace">Waiting for opponent to accept ...</text>
+</svg>`
+
+  let base
+  try { base = await sharp(Buffer.from(svg)).png().toBuffer() } catch { return null }
+
+  const composites = []
+  if (challengerAvatarBuf) {
+    try {
+      const av = await _circleAv(sharp, challengerAvatarBuf, AV_D)
+      composites.push({ input: av, top: AV_CY - AV_R, left: L_CX - AV_R })
+    } catch {}
+  }
+  if (opponentAvatarBuf) {
+    try {
+      const av = await _circleAv(sharp, opponentAvatarBuf, AV_D)
+      composites.push({ input: av, top: AV_CY - AV_R, left: R_CX - AV_R })
+    } catch {}
+  }
+
+  try {
+    return composites.length
+      ? await sharp(base).composite(composites).png().toBuffer()
+      : base
+  } catch { return base }
+}
+
+module.exports = { buildBattleImage, buildBattleChallenge }
