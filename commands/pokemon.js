@@ -4,6 +4,7 @@ const path = require('path')
 const https = require('https')
 const http = require('http')
 const { buildBattleImage, buildBattleChallenge } = require('../battleHelper')
+const { buildMiniPartyCard } = require('../linkPreviewHelper')
 
 const PHELP_IMAGE = path.join(__dirname, '../assets/phelp.jpg')
 
@@ -638,13 +639,31 @@ module.exports = {
       if (!p) return reply(`⚠️ No Pokémon in slot #${idx + 1}`)
       const moves     = Array.isArray(p.moves) ? p.moves.join(', ') : p.moves || 'N/A'
       const abilities = Array.isArray(p.abilities) ? p.abilities.join(', ') : p.abilities || 'N/A'
-      return reply(
-        `📊 *POKÉMON STATS — Slot #${idx + 1}*\n\n` +
-        `📛 *Name:* ${p.name}\n🆔 *No:* ${p.pokemon_id}\n🔮 *Level:* ${p.level || 1}\n🪄 *XP:* ${p.xp || 0}\n\n` +
-        `🔄 *Type:* ${Array.isArray(p.types) ? p.types.join(' / ') : p.types}\n` +
-        `📏 *Height:* ${p.height || '?'} m\n⚖️ *Weight:* ${p.weight || '?'} kg\n\n` +
-        `🎮 *Moves:* ${moves}\n🧬 *Abilities:* ${abilities}\n🎱 *Ball:* ${p.ball || 'Poké Ball'}`
-      )
+      const statsText =
+        `*Name:* ${p.name}\n` +
+        `*Capture Rate:* ${p.capture_rate ?? '?'}\n` +
+        `*Gender:* ${p.gender || 'Unknown'}\n` +
+        `*Nature:* ${p.nature || 'Unknown'}\n` +
+        `*Types:* ${Array.isArray(p.types) ? p.types.join(', ') : p.types}\n` +
+        `*Level:* ${p.level || 1}\n` +
+        `*XP:* ${p.xp || 0} / ${(p.level || 1) * 50}\n` +
+        `*State:* ${p.fainted ? 'Fainted' : 'Healthy'}\n` +
+        `*HP:* ${p.current_hp ?? p.hp ?? 0} / ${p.hp || 0}\n` +
+        `*Attack:* ${p.attack || 0}\n` +
+        `*Defense:* ${p.defense || 0}\n` +
+        `*Sp. Atk:* ${p.sp_atk || 0}\n` +
+        `*Sp. Def:* ${p.sp_def || 0}\n` +
+        `*Speed:* ${p.speed || 0}\n` +
+        `*Moves:* ${moves}\n\n` +
+        `_Use .party ${idx + 1} moves to see moves._`
+      const miniCard = await buildMiniPartyCard(p).catch(() => null)
+      if (miniCard) {
+        return await sock.sendMessage(jid, {
+          text: statsText,
+          contextInfo: { externalAdReply: miniCard },
+        }, { quoted: msg })
+      }
+      return reply(`📊 *POKÉMON STATS — Slot #${idx + 1}*\n\n${statsText}`)
     }
 
     const partyLines = Array.from({ length: 6 }, (_, i) => {
