@@ -662,12 +662,15 @@ module.exports = {
         `${moveLines}\n\n` +
         `💡 Use *.party ${idx + 1} moves* to view move details.`
 
-      // Build mini link preview card using the same helper as the URL wrapper
+      // Build mini card — externalAdReply is visible to all WA users
       const miniCard = await buildMiniPartyCard(p).catch(() => null)
-      return await sock.sendMessage(jid, {
-        text:        caption,
-        linkPreview: miniCard || undefined,
-      }, { quoted: msg })
+      if (miniCard) {
+        return await sock.sendMessage(jid, {
+          text:        caption,
+          contextInfo: { externalAdReply: miniCard },
+        }, { quoted: msg })
+      }
+      return await sock.sendMessage(jid, { text: caption }, { quoted: msg })
     }
 
     const partyLines = Array.from({ length: 6 }, (_, i) => {
