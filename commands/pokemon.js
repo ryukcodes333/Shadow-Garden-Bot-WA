@@ -4,7 +4,6 @@ const path = require('path')
 const https = require('https')
 const http = require('http')
 const { buildBattleImage, buildBattleChallenge } = require('../battleHelper')
-const { buildMiniPartyCard } = require('../linkPreviewHelper')
 
 const PHELP_IMAGE = path.join(__dirname, '../assets/phelp.jpg')
 
@@ -662,15 +661,14 @@ module.exports = {
         `${moveLines}\n\n` +
         `💡 Use *.party ${idx + 1} moves* to view move details.`
 
-      // Small preview card with Pokémon artwork thumbnail
-      const card = await buildMiniPartyCard(p).catch(() => null)
-      if (card) {
-        return await sock.sendMessage(jid, {
-          text:        caption,
-          contextInfo: { externalAdReply: card },
-        }, { quoted: msg })
-      }
-      return await sock.sendMessage(jid, { text: caption }, { quoted: msg })
+      // Native WA link preview via OG endpoint — mini card visible to ALL users
+      const pName  = (p.name || 'pokemon').replace(/^\w/, c => c.toUpperCase())
+      const types  = Array.isArray(p.types) ? p.types.join(' / ') : (p.types || '?')
+      const params = new URLSearchParams({ name: pName, level: p.level || 1, types })
+      const ogUrl  = `https://konosubacommunity.onrender.com/pokemon/${p.pokemon_id}?${params}`
+      return await sock.sendMessage(jid, {
+        text: `${caption}\n\n${ogUrl}`,
+      }, { quoted: msg })
     }
 
     const partyLines = Array.from({ length: 6 }, (_, i) => {
