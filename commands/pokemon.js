@@ -662,12 +662,12 @@ module.exports = {
         `${moveLines}\n\n` +
         `💡 Use *.party ${idx + 1} moves* to view move details.`
 
-      // Mini preview card — visible to all WA users
-      const miniCard = await buildMiniPartyCard(p).catch(() => null)
-      if (miniCard) {
+      // Small preview card with Pokémon artwork thumbnail
+      const card = await buildMiniPartyCard(p).catch(() => null)
+      if (card) {
         return await sock.sendMessage(jid, {
           text:        caption,
-          contextInfo: { externalAdReply: miniCard },
+          contextInfo: { externalAdReply: card },
         }, { quoted: msg })
       }
       return await sock.sendMessage(jid, { text: caption }, { quoted: msg })
