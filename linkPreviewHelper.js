@@ -134,7 +134,7 @@ async function buildMiniPartyCard(p) {
             .resize(128, 128, { fit: 'contain', background: { r: 18, g: 18, b: 40, alpha: 1 } })
             .jpeg({ quality: 88 })
             .toBuffer()
-        } catch { thumbnail = rawBuf.slice(0, 60000) }
+        } catch { thumbnail = null }
       }
     } catch {}
   }
@@ -146,7 +146,7 @@ async function buildMiniPartyCard(p) {
     sourceUrl:            KONO_DOMAIN,
     mediaType:            1,
     renderLargerThumbnail: false,
-    showAdUrl:            true,
+    showAdUrl:            false,
   }
 }
 
