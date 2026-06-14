@@ -108,7 +108,7 @@ async function buildLinkPreview(url) {
     matchedText:          url,
     mediaType:            1,
     showAdUrl:            false,
-    renderLargerThumbnail: true,
+    renderLargerThumbnail: false,
     thumbnail:            thumbnail || undefined,
   }
 }
@@ -116,34 +116,29 @@ async function buildLinkPreview(url) {
 const KONO_DOMAIN = 'https://konosubacommunity.onrender.com'
 
 async function buildMiniPartyCard(p) {
+  if (!p.pokemon_id) return null
   const raw   = p.name || 'Unknown'
   const name  = raw.charAt(0).toUpperCase() + raw.slice(1)
-  const level = p.level  || 1
+  const level = p.level || 1
   const types = Array.isArray(p.types) ? p.types.join(' / ') : (p.types || '?')
-
+  const artUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.pokemon_id}.png`
+  const sprUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.pokemon_id}.png`
   let thumbnail = null
-  if (p.pokemon_id) {
-    const artUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.pokemon_id}.png`
-    const sprUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.pokemon_id}.png`
-    try {
-      const rawBuf = await dlBuf(artUrl).catch(() => null) || await dlBuf(sprUrl).catch(() => null)
-      if (rawBuf) {
-        try {
-          const sharp = require('sharp')
-          thumbnail = await sharp(rawBuf)
-            .resize(128, 128, { fit: 'contain', background: { r: 18, g: 18, b: 40, alpha: 1 } })
-            .jpeg({ quality: 88 })
-            .toBuffer()
-        } catch { thumbnail = null }
-      }
-    } catch {}
-  }
-
+  try {
+    const rawBuf = await dlBuf(artUrl).catch(() => null) || await dlBuf(sprUrl).catch(() => null)
+    if (rawBuf) {
+      const sharp = require('sharp')
+      thumbnail = await sharp(rawBuf)
+        .resize(100, 100, { fit: 'contain', background: { r: 18, g: 18, b: 40, alpha: 1 } })
+        .jpeg({ quality: 85 })
+        .toBuffer()
+    }
+  } catch {}
   return {
     title:                name,
     body:                 `Level ${level} · ${types}`,
-    thumbnail:            thumbnail || undefined,
-    sourceUrl:            KONO_DOMAIN,
+    thumbnail,
+    sourceUrl:            `https://pokemondb.net/pokedex/${raw.toLowerCase()}`,
     mediaType:            1,
     renderLargerThumbnail: false,
     showAdUrl:            false,
