@@ -717,6 +717,41 @@ app.post('/request-pairing-code', async (req, res) => {
 app.get('/ping',     (req, res) => res.json({ status: 'alive', ts: Date.now() }))
 app.get('/bot.ping', (req, res) => res.json({ status: 'alive', ts: Date.now() }))
 
+// ── Pokémon OG preview page ───────────────────────────────────────────────
+// WhatsApp fetches this URL, reads the og:image tag, and shows a native
+// mini link-preview card for EVERY user — regular and Business alike.
+app.get('/pokemon/:id', (req, res) => {
+  const id    = parseInt(req.params.id)
+  const name  = String(req.query.name  || 'Pokémon').slice(0, 60)
+  const level = String(req.query.level || '1').slice(0, 10)
+  const types = String(req.query.types || '').slice(0, 60)
+  const desc  = types ? `Level ${level} · ${types}` : `Level ${level}`
+
+  const artUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`
+  const pageUrl = `https://konosubacommunity.onrender.com/pokemon/${id}`
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(`<!DOCTYPE html>
+<html prefix="og: https://ogp.me/ns#">
+<head>
+<meta charset="UTF-8">
+<meta property="og:type"        content="website">
+<meta property="og:url"         content="${pageUrl}">
+<meta property="og:title"       content="${name}">
+<meta property="og:description" content="${desc}">
+<meta property="og:image"       content="${artUrl}">
+<meta property="og:image:width" content="475">
+<meta property="og:image:height"content="475">
+<meta name="twitter:card"       content="summary">
+<meta name="twitter:title"      content="${name}">
+<meta name="twitter:description"content="${desc}">
+<meta name="twitter:image"      content="${artUrl}">
+<title>${name}</title>
+</head>
+<body></body>
+</html>`)
+})
+
 // OTP sender — called by the web app's /api/auth/request-otp route
 app.post('/send-otp', async (req, res) => {
   const { phone, otp } = req.body || {}
