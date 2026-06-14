@@ -663,7 +663,6 @@ module.exports = {
 
       // Native WA link preview via OG endpoint — mini card visible to ALL users
       const pName  = (p.name || 'pokemon').replace(/^\w/, c => c.toUpperCase())
-      const types  = Array.isArray(p.types) ? p.types.join(' / ') : (p.types || '?')
       const params = new URLSearchParams({ name: pName, level: p.level || 1, types })
       const ogUrl  = `https://konosubacommunity.onrender.com/pokemon/${p.pokemon_id}?${params}`
       return await sock.sendMessage(jid, {
