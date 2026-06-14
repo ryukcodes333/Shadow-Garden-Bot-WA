@@ -662,7 +662,7 @@ module.exports = {
         `${moveLines}\n\n` +
         `💡 Use *.party ${idx + 1} moves* to view move details.`
 
-      // Build mini card — externalAdReply is visible to all WA users
+      // Mini preview card — visible to all WA users
       const miniCard = await buildMiniPartyCard(p).catch(() => null)
       if (miniCard) {
         return await sock.sendMessage(jid, {
