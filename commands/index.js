@@ -388,14 +388,16 @@ async function handleMessage(sock, msg) {
     const triggered = isBotMentioned || isReplyToBot || mentionsAiName || mentionsAlpha || mentionsAqua
 
     if (triggered && !textRaw.startsWith(PREFIX) && !textRaw.startsWith(POKE_PREFIX)) {
-      if (persona?.name && (mentionsAiName || isReplyToBot || isBotMentioned)) {
+      // Aqua always wins: any reply to the bot, any @mention of bot, or "aqua" in message
+      // She has group-level memory so she remembers the whole conversation
+      if (isReplyToBot || isBotMentioned || (mentionsAqua && !mentionsAlpha)) {
+        await aquaChatReply(sock, jid, msg, sender, msg.pushName || sender, textRaw)
+      } else if (persona?.name && mentionsAiName) {
         try {
           await aiCmds.handleAiPersonaReply(sock, jid, msg, textRaw, persona)
         } catch (e) {
           console.error('[AI Persona] reply error:', e.message)
         }
-      } else if ((mentionsAqua && !mentionsAlpha) || isReplyToBot) {
-        await aquaChatReply(sock, jid, msg, sender, msg.pushName || sender, textRaw)
       } else {
         await alphaChatReply(sock, jid, msg, sender, msg.pushName || sender, textRaw, isOwner)
       }
