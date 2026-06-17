@@ -661,13 +661,24 @@ module.exports = {
         `${moveLines}\n\n` +
         `💡 Use *.party ${idx + 1} moves* to view move details.`
 
-      // Native WA link preview via OG endpoint — mini card visible to ALL users
-      const pName  = (p.name || 'pokemon').replace(/^\w/, c => c.toUpperCase())
-      const params = new URLSearchParams({ name: pName, level: p.level || 1, types })
-      const ogUrl  = `https://konosubacommunity.onrender.com/pokemon/${p.pokemon_id}?${params}`
-      return await sock.sendMessage(jid, {
-        text: `${caption}\n\n${ogUrl}`,
-      }, { quoted: msg })
+      // Send official Pokémon artwork as image with caption
+      const artUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.pokemon_id}.png`
+      const sprUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.pokemon_id}.png`
+      try {
+        return await sock.sendMessage(jid, {
+          image: { url: artUrl },
+          caption,
+        }, { quoted: msg })
+      } catch {
+        try {
+          return await sock.sendMessage(jid, {
+            image: { url: sprUrl },
+            caption,
+          }, { quoted: msg })
+        } catch {
+          return await sock.sendMessage(jid, { text: caption }, { quoted: msg })
+        }
+      }
     }
 
     const partyLines = Array.from({ length: 6 }, (_, i) => {
