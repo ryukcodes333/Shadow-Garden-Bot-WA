@@ -372,11 +372,18 @@ async function handleMessage(sock, msg) {
 
   // ── AI chat detection ────────────────────────────────────────────────────
   if (!isSticker && !isReaction && !isBold) {
-    const botPhone       = (sock.user?.id || '').split(':')[0].split('@')[0]
+    const botPhone       = (sock.user?.id  || '').split(':')[0].split('@')[0]
+    const botLid         = (sock.user?.lid || '').split(':')[0].split('@')[0]
     const mentionedJids  = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     const quotedParticipant = (msg.message?.extendedTextMessage?.contextInfo?.participant || '').split('@')[0].split(':')[0]
-    const isReplyToBot   = quotedParticipant && botPhone && quotedParticipant === botPhone
-    const isBotMentioned = botPhone && mentionedJids.some(m => m.split('@')[0].split(':')[0] === botPhone)
+    const isReplyToBot   = quotedParticipant && (
+      (botPhone && quotedParticipant === botPhone) ||
+      (botLid   && quotedParticipant === botLid)
+    )
+    const isBotMentioned = mentionedJids.some(m => {
+      const p = m.split('@')[0].split(':')[0]
+      return (botPhone && p === botPhone) || (botLid && p === botLid)
+    })
 
     const persona    = await db.getAiPersona().catch(() => null)
     const aiName     = (persona?.name || '').trim().toLowerCase()
@@ -385,7 +392,9 @@ async function handleMessage(sock, msg) {
     const mentionsAlpha   = /\balpha\b/i.test(textRaw)
     const mentionsAqua    = /\baqua\b/i.test(textRaw)
 
-    const triggered = isBotMentioned || isReplyToBot || mentionsAiName || mentionsAlpha || mentionsAqua
+    // In DMs, always trigger Aqua (she responds to everything that isn't a command)
+    const isDM = !isGroup
+    const triggered = isDM || isBotMentioned || isReplyToBot || mentionsAiName || mentionsAlpha || mentionsAqua
 
     if (triggered && !textRaw.startsWith(PREFIX) && !textRaw.startsWith(POKE_PREFIX)) {
       // Aqua always wins: any reply to the bot, any @mention of bot, or "aqua" in message
@@ -408,7 +417,13 @@ async function handleMessage(sock, msg) {
   // ── Determine prefix ─────────────────────────────────────────────────────
   const isPokemon = textRaw.startsWith(POKE_PREFIX)
   const isDot     = textRaw.startsWith(PREFIX)
-  if (!isPokemon && !isDot) return
+
+  // ── Natural language battle — "Pikachu use thunderbolt!" ─────────────────
+  if (!isPokemon && !isDot) {
+    const handled = await pokemonCmds.handleNaturalLanguageBattle(sock, jid, msg, sender, textRaw, senderJid).catch(() => false)
+    if (!handled) return
+    return
+  }
 
   const usedPrefix = isPokemon ? POKE_PREFIX : PREFIX
   const body  = textRaw.slice(usedPrefix.length).trim()
@@ -663,6 +678,21 @@ async function handleMessage(sock, msg) {
     if (converterCmds[cmd])     return await converterCmds[cmd](ctx)
 
     if (cmd === 'ecostats')     return await econStatsCmds.ecostats(ctx)
+
+    if (cmd === 'clearstaff') {
+      if (!isOwner) return reply('❌ Owner only.')
+      try {
+        const User = db.mongoose.model('User')
+        const result = await User.updateMany(
+          { role: { $in: ['mod', 'guardian'] } },
+          { $unset: { role: 1 } }
+        )
+        const count = result.modifiedCount ?? result.nModified ?? 0
+        return reply(`✅ Cleared *${count}* staff member${count !== 1 ? 's' : ''} from the database.`)
+      } catch (e) {
+        return reply(`❌ clearstaff failed: ${e.message}`)
+      }
+    }
 
     if (cmd === 'resetallusers') return await staffCmds['resetallusers'](ctx)
     if (staffCmds[cmd])         return await staffCmds[cmd](ctx)

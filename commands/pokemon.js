@@ -155,6 +155,19 @@ async function fetchPokeData(nameOrId) {
 
   const getStat = (name) => (poke.stats || []).find(s => s?.stat?.name === name)?.base_stat || 45
 
+  // Real level-up moves sorted by level learned — no more headbutt on everything
+  const realMoves = (poke.moves || [])
+    .filter(m => m.version_group_details?.some(v => v.move_learn_method?.name === 'level-up' && v.level_learned_at > 0))
+    .sort((a, b) => {
+      const la = Math.min(...a.version_group_details.filter(v => v.move_learn_method?.name === 'level-up').map(v => v.level_learned_at))
+      const lb = Math.min(...b.version_group_details.filter(v => v.move_learn_method?.name === 'level-up').map(v => v.level_learned_at))
+      return la - lb
+    })
+    .slice(0, 4)
+    .map(m => capName(m?.move?.name))
+  // Fallback if no level-up moves found
+  const moveset = realMoves.length ? realMoves : (poke.moves || []).slice(0, 4).map(m => capName(m?.move?.name))
+
   return {
     id:          poke.id,
     name:        capName(poke.name),
@@ -162,11 +175,13 @@ async function fetchPokeData(nameOrId) {
     baseXp:      poke.base_experience || 50,
     height:      ((poke.height || 0) / 10).toFixed(1),
     weight:      ((poke.weight || 0) / 10).toFixed(1),
-    moves:       (poke.moves || []).slice(0, 5).map(m => capName(m?.move?.name)),
+    moves:       moveset,
     abilities:   (poke.abilities || []).map(a => capName(a?.ability?.name)),
     hp:          getStat('hp'),
     attack:      getStat('attack'),
     defense:     getStat('defense'),
+    sp_atk:      getStat('special-attack'),
+    sp_def:      getStat('special-defense'),
     speed:       getStat('speed'),
     location,
     description,
@@ -586,6 +601,9 @@ module.exports = {
         level: 1, xp: 0, moves: poke.moves || [], abilities: poke.abilities || [],
         ball: ballKey, slot: inParty ? slot : null, in_party: inParty, base_xp: poke.baseXp,
         height: poke.height, weight: poke.weight, location: poke.location,
+        hp: poke.hp || 45, attack: poke.attack || 45, defense: poke.defense || 45,
+        sp_atk: poke.sp_atk || 45, sp_def: poke.sp_def || 45, speed: poke.speed || 45,
+        nature: ['Hardy','Lonely','Brave','Adamant','Naughty','Bold','Docile','Relaxed','Impish','Lax','Timid','Hasty','Serious','Jolly','Naive','Modest','Mild','Quiet','Bashful','Rash','Calm','Gentle','Sassy','Careful','Quirky'][Math.floor(Math.random()*25)],
       })
     } catch {}
 
@@ -661,24 +679,15 @@ module.exports = {
         `${moveLines}\n\n` +
         `💡 Use *.party ${idx + 1} moves* to view move details.`
 
-      // Send official Pokémon artwork as image with caption
+      // Download and send image inline (buffer, not URL)
       const artUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.pokemon_id}.png`
       const sprUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.pokemon_id}.png`
-      try {
-        return await sock.sendMessage(jid, {
-          image: { url: artUrl },
-          caption,
-        }, { quoted: msg })
-      } catch {
-        try {
-          return await sock.sendMessage(jid, {
-            image: { url: sprUrl },
-            caption,
-          }, { quoted: msg })
-        } catch {
-          return await sock.sendMessage(jid, { text: caption }, { quoted: msg })
-        }
+      const imgBuf = await downloadBuffer(artUrl, 12000).catch(() => null)
+        || await downloadBuffer(sprUrl, 8000).catch(() => null)
+      if (imgBuf) {
+        return await sock.sendMessage(jid, { image: imgBuf, caption }, { quoted: msg })
       }
+      return await sock.sendMessage(jid, { text: caption }, { quoted: msg })
     }
 
     const partyLines = Array.from({ length: 6 }, (_, i) => {
@@ -1856,7 +1865,178 @@ module.exports = {
   // Legacy alias
   async wb(ctx) { return module.exports.hunt(ctx) },
   async mb(ctx) { return module.exports.move(ctx) },
+
+  // ── .seedpokemon — staff command to fetch real moves/stats from PokéAPI ──
+  async seedpokemon({ reply, args, isOwner, isMod, isGuardian }) {
+    if (!isOwner && !isMod && !isGuardian) return reply('❌ Staff only.')
+    const nameOrId = (args[0] || '').toLowerCase().trim()
+    if (!nameOrId) return reply('⚠️ Usage: *.seedpokemon <name or id>*\n\nExample: .seedpokemon pikachu')
+    await reply(`⏳ Fetching *${nameOrId}* from PokéAPI...`)
+    const poke = await fetchJSON(`https://pokeapi.co/api/v2/pokemon/${nameOrId}`)
+    if (!poke) return reply(`❌ *"${nameOrId}"* not found on PokéAPI.\n\nCheck the spelling and try again.`)
+    const getStat = (n) => (poke.stats || []).find(s => s?.stat?.name === n)?.base_stat || 0
+    // Real level-up moves sorted by level
+    const levelMoves = (poke.moves || [])
+      .filter(m => m.version_group_details?.some(v => v.move_learn_method?.name === 'level-up' && v.level_learned_at > 0))
+      .sort((a, b) => {
+        const la = Math.min(...a.version_group_details.filter(v => v.move_learn_method?.name === 'level-up').map(v => v.level_learned_at))
+        const lb = Math.min(...b.version_group_details.filter(v => v.move_learn_method?.name === 'level-up').map(v => v.level_learned_at))
+        return la - lb
+      })
+      .map(m => capName(m.move.name))
+    const entry = {
+      id:         poke.id,
+      name:       capName(poke.name),
+      types:      (poke.types || []).map(t => capName(t.type.name)),
+      hp:         getStat('hp'),         attack:  getStat('attack'),
+      defense:    getStat('defense'),    sp_atk:  getStat('special-attack'),
+      sp_def:     getStat('special-defense'), speed: getStat('speed'),
+      moves:      levelMoves.slice(0, 4),
+      all_moves:  levelMoves,
+      abilities:  (poke.abilities || []).map(a => capName(a.ability.name)),
+      base_xp:    poke.base_experience || 50,
+      imageUrl:   poke.sprites?.other?.['official-artwork']?.front_default || poke.sprites?.front_default || null,
+    }
+    // Persist to local dex JSON
+    const DEX_FILE = path.join(__dirname, '../pokemon_dex.json')
+    let dex = {}
+    try { dex = JSON.parse(fs.readFileSync(DEX_FILE, 'utf8')) } catch {}
+    dex[entry.name.toLowerCase()] = entry
+    dex[String(entry.id)] = entry
+    try { fs.writeFileSync(DEX_FILE, JSON.stringify(dex, null, 2)) } catch (e) { return reply(`❌ Failed to save: ${e.message}`) }
+    const moveList = entry.moves.length
+      ? entry.moves.map((m, i) => `├ ${m}`).join('\n').replace(/├ ([^\n]*)$/, '└ $1')
+      : '└ None'
+    return reply(
+      `✅ *${entry.name}* seeded to PokéDex!\n\n` +
+      `📜 *POKÉMON INFO*\n` +
+      `├ *ID:* #${entry.id}\n` +
+      `├ *Type:* ${entry.types.join(' / ')}\n` +
+      `└ *Abilities:* ${entry.abilities.join(', ')}\n\n` +
+      `📊 *STATS*\n` +
+      `├ HP: ${entry.hp}  ATK: ${entry.attack}  DEF: ${entry.defense}\n` +
+      `└ SP.ATK: ${entry.sp_atk}  SP.DEF: ${entry.sp_def}  SPD: ${entry.speed}\n\n` +
+      `✨ *REAL MOVES* (${levelMoves.length} total, first 4 shown)\n` +
+      `${moveList}\n\n` +
+      `_Pokémon will now spawn with real moves when caught._`
+    )
+  },
 }
+
+// ── Pokémon cry text map ──────────────────────────────────────────
+function getPokeCry(pokeName) {
+  const name = (pokeName || '').toLowerCase().replace(/[^a-z]/g, '')
+  const CRIES = {
+    pikachu:'Pika... Pikaaaa ⚡', raichu:'Raichu!! ⚡', bulbasaur:'Bulba... Bulbasauuur 🌿',
+    ivysaur:'Ivyyy~saur 🌿', venusaur:'VENUSAUR!! 🌿', charmander:'Char... Charmander 🔥',
+    charmeleon:'Charmeleon!! 🔥', charizard:'CHAAAAR— ZAAARD 🔥',
+    squirtle:'Squirtle squirtle~ 💧', wartortle:'Wartor~tle! 💧', blastoise:'BLASTOISE!! 💧',
+    caterpie:'Cater~pie! 🐛', metapod:'...Metapod 🐛', butterfree:'Butter~FREE! 🦋',
+    pidgey:'Pidgey pid~ 🐦', pidgeot:'PIDGEOT!! 🐦', rattata:'Ratta~ta! 🐭',
+    jigglypuff:'Jigglyyy~puff ♪', meowth:'Meooowth~ 🪙', psyduck:'Psy~duck... 🦆',
+    gengar:'Geeeen~ gar~ 👻', machamp:'MACHAMP!! 💪', geodude:'Geoooo~dude 🪨',
+    graveler:'Gravel~er!! 🪨', golem:'GOLEM!! 🪨', slowpoke:'...slow... poke... 💤',
+    magnemite:'Magne~mite ⚡', haunter:'Haunt~er... 👻', alakazam:'ALAKAZAM!! 🥄',
+    machoke:'Machoooke! 💪', rapidash:'Rapid~ash!! 🔥', slowbro:'...Slow~bro ♥',
+    snorlax:'*yawn*... Snooor... lax... 💤', lapras:'Laapras~ 🌊', eevee:'Vee~! Eeevee! 🌟',
+    vaporeon:'Vapo~reon 💧', jolteon:'Jolteeeeon ⚡', flareon:'FLAREON!! 🔥',
+    porygon:'...Pory~gon 💾', omanyte:'Omany~te 🌊', omastar:'OMASTAR!! 🌊',
+    mewtwo:'...👁️ *the air grows cold*', mew:'Mew~ 🎀',
+    chikorita:'Chiko~ ritaaaa 🍃', bayleef:'Bayleef! 🍃', meganium:'MEGANIUM!! 🌸',
+    cyndaquil:'Quil~! Cyndaquiiil 🔥', quilava:'Quila~va!! 🔥', typhlosion:'TYPHLOSION!! 🔥',
+    totodile:'Toto~! Diiiiile 💧', croconaw:'Croco~naw!! 💧', feraligatr:'FERALIGATR!! 💧',
+    pichu:'Pi~! Pichu 🐭', cleffa:'Clef~fa~ ✨', igglybuff:'Iggly~buff ♪',
+    togepi:'Toge~pi! ✨', togetic:'Togetic!! ✨', ampharos:'AMPHA~ROS!! ⚡',
+    umbreon:'Umb~... Umbreon 🌑', espeon:'Espe~on 🌙', sylveon:'Vee~! Sylveeon 🎀',
+    leafeon:'Leafeeon 🍃', glaceon:'Glace~on ❄️', flareon2:'FLAREON!!',
+    scizor:'SCIZOR!! ✂️', heracross:'Hera~cross!! 🦅', sneasel:'Snea~sel 🌑',
+    tyranitar:'TYRANITAR!! 🏔️', lugia:'Luuu~gia... 🕊️', hooh:'HO~OH!! 🔥',
+    celebi:'Celebi~ ✨', treecko:'Treee~ cko 🌿', grovyle:'Grovyle! 🌿', sceptile:'SCEPTILE!! 🌿',
+    torchic:'Tor~chic! 🔥', combusken:'Combus~ken! 🔥', blaziken:'BLAZIKEN!! 🔥',
+    mudkip:'Muuud~kip 💧', marshtomp:'Marsh~tomp! 💧', swampert:'SWAMPERT!! 💧',
+    ralts:'Ralts~ 💫', kirlia:'Kir~lia 💫', gardevoir:'Garde~voir 💫',
+    shroomish:'Shrooo~mish 🍄', breloom:'BRELOOM!! 🍄', slakoth:'...slaaak... oth 💤',
+    slaking:'SLAKING!! 💪', nincada:'Ninca~da 🐛', ninjask:'NINJASK!! 🐛',
+    shedinja:'...she~din~ja... 👁️', meditite:'Medi~tite 🧘', medicham:'MEDICHAM!! 🧘',
+    electrike:'Electri~ke ⚡', manectric:'MANECTRIC!! ⚡', plusle:'Plu~sle! ⚡', minun:'Mi~nun! ⚡',
+    roselia:'Rose~lia 🌹', wailord:'WAAAILORD!!! 🐋', numel:'Nu~mel 🔥', camerupt:'CAMERUPT!! 🔥',
+    torkoal:'Torkoal... 🔥', trapinch:'Trap~inch 🏜️', vibrava:'Vibra~va 🐉', flygon:'FLYGON!! 🐉',
+    cacnea:'Cac~nea 🌵', zangoose:'Zan~goose!! ⚔️', seviper:'Seeeeviper 🐍',
+    lunatone:'Luuuna~tone 🌙', solrock:'SOL~ROCK!! ☀️', baltoy:'Bal~toy 🌀', claydol:'CLAYDOL!! 🌀',
+    salamence:'SALAAAAMENCE!! 🐉', bagon:'Ba~gon 🐉', shelgon:'Shel~gon 🐉',
+    beldum:'...bel~dum 🤖', metang:'Me~tang 🤖', metagross:'... METAGROSS. 🤖',
+    regirock:'REG~I~ROCK 🪨', regice:'REG~I~ICE ❄️', registeel:'REG~I~STEEL 🤖',
+    latias:'Lati~as! 💫', latios:'LATIOS!! 💫', kyogre:'KYOOOOOGRE!! 🌊',
+    groudon:'GROUNDOOOON!! 🔥', rayquaza:'RAAAAAAYQUAZA!!! 🌌', jirachi:'Jirachi~ 🌟',
+    deoxys:'Deox~ys... 👾', lucario:'Lu~cario! 🔵', riolu:'Ri~olu~ 🔵',
+    garchomp:'CHOOOMP!! 💢', gible:'Gib~le 🐊', gabite:'Gab~ite 🐊',
+    dialga:'DIAAAALGA!! ⏰', palkia:'PALKIAAAA!! 🌀', giratina:'...giratina... 👻',
+    darkrai:'Dark~raiiii 🌑', arceus:'...👁️ *the god pokémon stares back at you*',
+    zoroark:'ZOROARK!! 🎭', zorua:'Zo~rua~ 🎭', oshawott:'Osha~wott! 💧',
+    snivy:'Sniiiivy 🌿', tepig:'Te~pig! 🔥', reshiram:'RESHIIIIRAM!! 🔥',
+    zekrom:'ZEKROOOM!! ⚡', kyurem:'Kyuuu~rem ❄️', greninja:'Gren~ja! 💦',
+    froakie:'Fro~a~kie 💧', frogadier:'Froga~dier! 💧', chespin:'Ches~pin 🌿',
+    fennekin:'Fenne~kin! 🔥', braixen:'Braix~en! 🔥', delphox:'DELPHOX!! 🔥',
+    sylveon2:'Vee!', togekiss:'Toge~kiss!! ✨', noivern:'NOIVEEERN!! 🎵',
+    xerneas:'Xerneas~ ✨', yveltal:'YVEEELTAL!! 💀', zygarde:'Zyg~arde 🐍',
+    decidueye:'Deci~dueye! 🏹', incineroar:'INCINEROAR!! 🔥', primarina:'Prima~rina~ 🌊',
+    mimikyu:'...mimi~kyu... 👻', kommo_o:'KOM~MO~O!! 🐉', necrozma:'NECROZMA!! 🌟',
+    zacian:'ZACIAN!! ⚔️', zamazenta:'ZAMAZENTA!! 🛡️', eternatus:'ETERNATUS!! 💀',
+  }
+  const key = name.replace(/-/g, '_')
+  if (CRIES[key]) return CRIES[key]
+  if (CRIES[name]) return CRIES[name]
+  // Generic fallback: stutter first half then full name caps
+  const half = pokeName.slice(0, Math.ceil(pokeName.length / 2))
+  return `${half}~... ${pokeName.toUpperCase()}!! 🔥`
+}
+
+// ── Natural language battle: "Pikachu use thunderbolt!" ──────────
+async function handleNaturalLanguageBattle(sock, jid, msg, sender, textRaw, senderJid) {
+  const pvp  = pvpBattles[sender]
+  const wild = activeBattles[sender]
+  if (!pvp && !wild) return false
+  if ((pvp || wild).jid !== jid) return false
+
+  const text = textRaw.trim()
+  const reply = (t) => sock.sendMessage(jid, { text: t }, { quoted: msg })
+
+  // Pattern: "… use[s] <move name>[!?.]"
+  const moveMatch = text.match(/\buse[s]?\s+([\w][\w\s'-]{0,30}?)(?:\s*[!?.,])*$/i)
+  if (moveMatch) {
+    const attempt = moveMatch[1].trim().toLowerCase()
+    const isChallenger = pvp ? sender === pvp.challengerPhone : false
+    const myPoke = pvp ? (isChallenger ? pvp.challengerPoke : pvp.opponentPoke) : wild?.myPokemon
+    if (!myPoke) return false
+    const moves = Array.isArray(myPoke.moves) && myPoke.moves.length ? myPoke.moves : ['Tackle']
+    // Match move by name (exact, then partial)
+    let idx = moves.findIndex(m => m.toLowerCase() === attempt)
+    if (idx === -1) idx = moves.findIndex(m => m.toLowerCase().includes(attempt))
+    if (idx === -1) idx = moves.findIndex(m => attempt.includes(m.toLowerCase().split(' ')[0]))
+    if (idx === -1) return false
+    // Send Pokémon cry, then execute move
+    await sock.sendMessage(jid, { text: getPokeCry(myPoke.name) }, { quoted: msg })
+    await module.exports.move({ sock, jid, msg, reply, sender, senderJid, user: null, args: [String(idx + 1)] })
+    return true
+  }
+
+  // Pattern: just Pokémon name (cry response, no move executed)
+  const nameTry = text.replace(/[!?.,~\s]+$/g, '').toLowerCase()
+  if (nameTry.length >= 3 && nameTry.length <= 20 && !/\s{2,}/.test(nameTry)) {
+    const isChallenger = pvp ? sender === pvp.challengerPhone : false
+    const myPoke = pvp ? (isChallenger ? pvp.challengerPoke : pvp.opponentPoke) : wild?.myPokemon
+    if (myPoke) {
+      const pn = myPoke.name.toLowerCase()
+      if (pn === nameTry || pn.startsWith(nameTry.slice(0, 4)) || nameTry.startsWith(pn.slice(0, 4))) {
+        await sock.sendMessage(jid, { text: getPokeCry(myPoke.name) }, { quoted: msg })
+        return true
+      }
+    }
+  }
+  return false
+}
+
+module.exports.handleNaturalLanguageBattle = handleNaturalLanguageBattle
 
 // ── Level-up image via Pollinations (URL-based, no download) ─────
 async function _sendLevelUpImage(sock, jid, msg, pokeName, newLvl) {
