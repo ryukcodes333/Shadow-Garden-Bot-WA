@@ -95,21 +95,18 @@ async function buildLinkPreview(url) {
             .resize(320, 180, { fit: 'cover', position: 'centre' })
             .jpeg({ quality: 75 })
             .toBuffer()
-        } catch { thumbnail = rawBuf.slice(0, 60000) }
+        } catch { thumbnail = null }
       }
     } catch {}
   }
 
+  // Field names must match Baileys 7.x WAUrlInfo exactly
   return {
-    url:                  url,
+    'canonical-url':      url,
+    'matched-text':       url,
     title:                (title || url).slice(0, 100),
-    body:                 (desc  || '').slice(0, 200),
-    canonicalUrl:         url,
-    matchedText:          url,
-    mediaType:            1,
-    showAdUrl:            false,
-    renderLargerThumbnail: false,
-    thumbnail:            thumbnail || undefined,
+    description:          (desc  || '').slice(0, 200),
+    jpegThumbnail:        thumbnail || undefined,
   }
 }
 
