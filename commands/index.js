@@ -555,7 +555,7 @@ async function handleMessage(sock, msg) {
       if (cmd === 'pdaily')                      return await pk.pdaily(ctx)
       if (cmd === 'quests')                      return await pk.quests(ctx)
       if (cmd === 'rank')                        return await pk.rank(ctx)
-      if (cmd === 'hunt' || cmd === 'wb')        return await pk.hunt(ctx)
+      if (cmd === 'hunt' || cmd === 'wb' || cmd === 'scout') return await pk.scout(ctx)
       if (cmd === 'catch' || cmd === 'c')        return await pk.catch(ctx)
       if (cmd === 'spawnp' || cmd === 'spawn')   return await pk.spawnp(ctx)
       if (cmd === 'team')                        return await pk.team(ctx)
