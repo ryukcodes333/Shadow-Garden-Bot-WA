@@ -271,102 +271,176 @@ async function _circleAv(sharp, inputBuf, diameter) {
     .toBuffer()
 }
 
-// ── Battle challenge "VS screen" image ───────────────────────────────────────
+// ── Battle challenge "VS screen" image ── dark purple/gold dual-card style ───
 async function buildBattleChallenge(opts) {
   let sharp
   try { sharp = require('sharp') } catch { return null }
 
   const {
-    challengerName    = 'ME',
+    challengerName      = 'ME',
     challengerAvatarBuf = null,
-    opponentName      = 'OPPONENT',
-    opponentAvatarBuf = null,
+    opponentName        = 'OPPONENT',
+    opponentAvatarBuf   = null,
+    challengerPokeName  = null,
+    challengerPokeLevel = 1,
+    challengerPokeId    = null,
+    challengerHp        = null,
+    challengerMaxHp     = null,
+    opponentPokeName    = null,
+    opponentPokeLevel   = 1,
+    opponentPokeId      = null,
+    opponentHp          = null,
+    opponentMaxHp       = null,
   } = opts
 
-  const W = 800, H = 450
-  const AV_D = 136, AV_R = AV_D / 2
-  const L_CX = 198, R_CX = 602
-  const AV_CY = 228
-  const CARD_TOP = 106, CARD_H_EACH = 282, CARD_W_EACH = 242
+  const W = 900, H = 520
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').slice(0, 20)
 
-  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').slice(0, 22)
-  const cName = esc(challengerName)
-  const oName = esc(opponentName)
+  const CARD_W = 375, CARD_H = 420, CARD_Y = 78
+  const L_X  = 12,  R_X  = W - CARD_W - 12
+  const L_CX = Math.round(L_X + CARD_W / 2)
+  const R_CX = Math.round(R_X + CARD_W / 2)
 
-  const grid = []
-  for (let x = 0; x < W; x += 40) grid.push(`<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="#14142a" stroke-width="0.6"/>`)
-  for (let y = 0; y < H; y += 40) grid.push(`<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="#14142a" stroke-width="0.6"/>`)
+  // Grid
+  const g = []
+  for (let x = 0; x < W; x += 44) g.push(`<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="#0d0d22" stroke-width="0.5"/>`)
+  for (let y = 0; y < H; y += 44) g.push(`<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="#0d0d22" stroke-width="0.5"/>`)
+
+  // HP bar
+  const hpBar = (cur, max, bx, by, bw) => {
+    if (!max || max <= 0) return ''
+    const ratio = Math.max(0, Math.min(1, (cur ?? max) / max))
+    const fw    = Math.round(ratio * bw)
+    const col   = ratio > 0.5 ? '#28CC38' : ratio > 0.25 ? '#EEC020' : '#EE2828'
+    return `<rect x="${bx}" y="${by}" width="${bw}" height="7" rx="3.5" fill="#111128"/>` +
+           `<rect x="${bx}" y="${by}" width="${fw}" height="7" rx="3.5" fill="${col}"/>`
+  }
+
+  // Name badge strip at top of card
+  const nameBadge = (cx, by, name, col) => {
+    const label = esc(name).toUpperCase().slice(0, 14)
+    return `<rect x="${cx - 64}" y="${by}" width="128" height="24" rx="6" fill="#060614" stroke="${col}" stroke-width="1.5"/>` +
+           `<text x="${cx}" y="${by + 16}" fill="${col}" font-size="12" font-weight="bold" text-anchor="middle" font-family="'Courier New',monospace" letter-spacing="1">${label}</text>`
+  }
+
+  // Trainer silhouette with aura glow
+  const figure = (cx, cy, gradId, sparCol) =>
+    `<ellipse cx="${cx}" cy="${cy + 15}" rx="92" ry="105" fill="url(#${gradId})"/>` +
+    `<circle  cx="${cx}" cy="${cy - 68}" r="20"  fill="#03030c"/>` +
+    `<path    d="M${cx-25},${cy-48} Q${cx-38},${cy-8} ${cx-32},${cy+54} L${cx+32},${cy+54} Q${cx+38},${cy-8} ${cx+25},${cy-48} Z" fill="#03030c"/>` +
+    `<path    d="M${cx-25},${cy-42} L${cx-62},${cy-4}  L${cx-54},${cy+5}  L${cx-17},${cy-34} Z" fill="#03030c"/>` +
+    `<path    d="M${cx+25},${cy-42} L${cx+62},${cy-4}  L${cx+54},${cy+5}  L${cx+17},${cy-34} Z" fill="#03030c"/>` +
+    `<path    d="M${cx-14},${cy+54} L${cx-20},${cy+96} L${cx-7},${cy+96}  L${cx-1},${cy+54}  Z" fill="#03030c"/>` +
+    `<path    d="M${cx+14},${cy+54} L${cx+20},${cy+96} L${cx+7},${cy+96}  L${cx+1},${cy+54}  Z" fill="#03030c"/>` +
+    `<polyline points="${cx-88},${cy-25} ${cx-72},${cy-52} ${cx-58},${cy-22} ${cx-44},${cy-62}" stroke="${sparCol}" stroke-width="1.8" fill="none" opacity="0.65"/>` +
+    `<polyline points="${cx+88},${cy-25} ${cx+72},${cy-52} ${cx+58},${cy-22} ${cx+44},${cy-62}" stroke="${sparCol}" stroke-width="1.8" fill="none" opacity="0.65"/>`
+
+  const cPoke  = esc(challengerPokeName || '—')
+  const oPoke  = esc(opponentPokeName   || '—')
+  const cHpStr = challengerMaxHp ? `${challengerHp ?? challengerMaxHp}/${challengerMaxHp}` : ''
+  const oHpStr = opponentMaxHp   ? `${opponentHp   ?? opponentMaxHp}/${opponentMaxHp}` : ''
+  const FIG_CY = CARD_Y + 200
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-  <defs>
-    <linearGradient id="redBar" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%"   stop-color="#FF2020" stop-opacity="0"/>
-      <stop offset="50%"  stop-color="#FF2020" stop-opacity="1"/>
-      <stop offset="100%" stop-color="#FF2020" stop-opacity="0"/>
-    </linearGradient>
-    <linearGradient id="blueBar" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%"   stop-color="#2040FF" stop-opacity="0"/>
-      <stop offset="50%"  stop-color="#2040FF" stop-opacity="1"/>
-      <stop offset="100%" stop-color="#2040FF" stop-opacity="0"/>
-    </linearGradient>
-  </defs>
-
-  <rect width="${W}" height="${H}" fill="#08080f"/>
-  ${grid.join('\n  ')}
-
-  <!-- Title -->
-  <text x="${W/2}" y="58" fill="white" font-size="34" font-weight="bold" text-anchor="middle"
-    font-family="'Courier New',monospace" letter-spacing="4">BATTLE CHALLENGE</text>
-
-  <!-- Subtitle pill -->
-  <rect x="${W/2 - 148}" y="68" width="296" height="28" rx="14" fill="#101020" stroke="#C4920A" stroke-width="1.5"/>
-  <text x="${W/2}" y="87" fill="#C4920A" font-size="13" font-weight="bold" text-anchor="middle"
-    font-family="'Courier New',monospace" letter-spacing="2">1V1  STANDARD  BATTLE</text>
-
-  <!-- Left card -->
-  <rect x="${L_CX - CARD_W_EACH/2}" y="${CARD_TOP}" width="${CARD_W_EACH}" height="${CARD_H_EACH}" rx="14" fill="#0e0e1e"/>
-  <rect x="${L_CX - CARD_W_EACH/2}" y="${CARD_TOP}" width="${CARD_W_EACH}" height="5" rx="2" fill="url(#redBar)"/>
-  <circle cx="${L_CX}" cy="${AV_CY}" r="${AV_R + 7}" fill="#161628"/>
-  <circle cx="${L_CX}" cy="${AV_CY}" r="${AV_R + 7}" fill="none" stroke="#FF3030" stroke-width="2.5"/>
-  <text x="${L_CX}" y="${CARD_TOP + CARD_H_EACH - 62}" fill="white" font-size="15" font-style="italic" font-weight="bold"
-    text-anchor="middle" font-family="'Courier New',monospace">${cName}</text>
-  <text x="${L_CX}" y="${CARD_TOP + CARD_H_EACH - 40}" fill="#00CFFF" font-size="12" font-weight="bold"
-    text-anchor="middle" font-family="'Courier New',monospace" letter-spacing="2">CHALLENGER</text>
-
-  <!-- Right card -->
-  <rect x="${R_CX - CARD_W_EACH/2}" y="${CARD_TOP}" width="${CARD_W_EACH}" height="${CARD_H_EACH}" rx="14" fill="#0e0e1e"/>
-  <rect x="${R_CX - CARD_W_EACH/2}" y="${CARD_TOP}" width="${CARD_W_EACH}" height="5" rx="2" fill="url(#blueBar)"/>
-  <circle cx="${R_CX}" cy="${AV_CY}" r="${AV_R + 7}" fill="#161628"/>
-  <circle cx="${R_CX}" cy="${AV_CY}" r="${AV_R + 7}" fill="none" stroke="#2840FF" stroke-width="2.5"/>
-  <text x="${R_CX}" y="${CARD_TOP + CARD_H_EACH - 62}" fill="white" font-size="15" font-style="italic" font-weight="bold"
-    text-anchor="middle" font-family="'Courier New',monospace">${oName}</text>
-  <text x="${R_CX}" y="${CARD_TOP + CARD_H_EACH - 40}" fill="#FF5520" font-size="12" font-weight="bold"
-    text-anchor="middle" font-family="'Courier New',monospace" letter-spacing="3">OPPONENT</text>
-
-  <!-- VS -->
-  <text x="${W/2}" y="${AV_CY + 22}" fill="#F0B020" font-size="60" font-weight="bold"
-    text-anchor="middle" font-family="'Courier New',monospace">VS</text>
-
-  <!-- Footer -->
-  <text x="${W/2}" y="${H - 16}" fill="#444460" font-size="13" font-style="italic"
-    text-anchor="middle" font-family="'Courier New',monospace">Waiting for opponent to accept ...</text>
+<defs>
+  <linearGradient id="bgG" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%"   stop-color="#030310"/>
+    <stop offset="100%" stop-color="#07071a"/>
+  </linearGradient>
+  <linearGradient id="purpleTopBar" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%"   stop-color="#4400AA"/>
+    <stop offset="100%" stop-color="#9933FF"/>
+  </linearGradient>
+  <linearGradient id="goldTopBar" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%"   stop-color="#AA6600"/>
+    <stop offset="100%" stop-color="#FFB800"/>
+  </linearGradient>
+  <radialGradient id="auraP" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#7B2FFF" stop-opacity="0.60"/>
+    <stop offset="65%"  stop-color="#7B2FFF" stop-opacity="0.18"/>
+    <stop offset="100%" stop-color="#7B2FFF" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="auraG" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#FFB800" stop-opacity="0.60"/>
+    <stop offset="65%"  stop-color="#FFB800" stop-opacity="0.18"/>
+    <stop offset="100%" stop-color="#FFB800" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<rect width="${W}" height="${H}" fill="url(#bgG)"/>
+${g.join('\n')}
+<text x="${W/2}" y="30" fill="#FFB800" font-size="10" font-weight="bold" text-anchor="middle" font-family="'Courier New',monospace" letter-spacing="3" opacity="0.65">// CHALLENGE INITIATED //</text>
+<text x="${W/2}" y="56" fill="white"   font-size="22" font-weight="bold" text-anchor="middle" font-family="'Courier New',monospace" letter-spacing="6">CHALLENGE INITIATED</text>
+<text x="${W/2}" y="72" fill="#666688" font-size="10" text-anchor="middle" font-family="'Courier New',monospace">⚠   A battle is about to begin.</text>
+<!-- LEFT card (purple) -->
+<rect x="${L_X}" y="${CARD_Y}" width="${CARD_W}" height="${CARD_H}" rx="14" fill="#07071a" stroke="#7B2FFF" stroke-width="1.5"/>
+<rect x="${L_X}" y="${CARD_Y}" width="${CARD_W}" height="4" rx="2" fill="url(#purpleTopBar)"/>
+${nameBadge(L_CX, CARD_Y + 12, challengerName, '#9B5FFF')}
+${figure(L_CX, FIG_CY, 'auraP', '#9B5FFF')}
+<rect x="${L_X + 10}" y="${CARD_Y + CARD_H - 115}" width="128" height="16" rx="4" fill="#7B2FFF" opacity="0.85"/>
+<text x="${L_X + 20}" y="${CARD_Y + CARD_H - 103}" fill="white" font-size="8.5" font-weight="bold" font-family="'Courier New',monospace" letter-spacing="1">ACTIVE POKÉMON</text>
+<text x="${L_X + 12}" y="${CARD_Y + CARD_H - 83}"  fill="white" font-size="16" font-weight="bold" font-family="'Courier New',monospace">${cPoke}</text>
+<rect x="${L_X + CARD_W - 66}" y="${CARD_Y + CARD_H - 98}" width="54" height="16" rx="8" fill="#7B2FFF"/>
+<text x="${L_X + CARD_W - 39}" y="${CARD_Y + CARD_H - 86}" fill="white" font-size="9" font-weight="bold" text-anchor="middle" font-family="'Courier New',monospace">Lv.${challengerPokeLevel}</text>
+<text x="${L_X + 12}" y="${CARD_Y + CARD_H - 60}" fill="#8888AA" font-size="8.5" font-family="'Courier New',monospace">HP</text>
+${hpBar(challengerHp ?? challengerMaxHp, challengerMaxHp ?? 1, L_X + 28, CARD_Y + CARD_H - 68, CARD_W - 42)}
+<text x="${L_X + CARD_W - 10}" y="${CARD_Y + CARD_H - 60}" fill="#8888AA" font-size="8.5" text-anchor="end" font-family="'Courier New',monospace">${cHpStr}</text>
+<!-- RIGHT card (gold) -->
+<rect x="${R_X}" y="${CARD_Y}" width="${CARD_W}" height="${CARD_H}" rx="14" fill="#100a02" stroke="#FFB800" stroke-width="1.5"/>
+<rect x="${R_X}" y="${CARD_Y}" width="${CARD_W}" height="4" rx="2" fill="url(#goldTopBar)"/>
+${nameBadge(R_CX, CARD_Y + 12, opponentName, '#FFB800')}
+${figure(R_CX, FIG_CY, 'auraG', '#FFB800')}
+<rect x="${R_X + 10}" y="${CARD_Y + CARD_H - 115}" width="128" height="16" rx="4" fill="#CC8800" opacity="0.85"/>
+<text x="${R_X + 20}" y="${CARD_Y + CARD_H - 103}" fill="white" font-size="8.5" font-weight="bold" font-family="'Courier New',monospace" letter-spacing="1">ACTIVE POKÉMON</text>
+<text x="${R_X + 12}" y="${CARD_Y + CARD_H - 83}"  fill="white" font-size="16" font-weight="bold" font-family="'Courier New',monospace">${oPoke}</text>
+<rect x="${R_X + CARD_W - 66}" y="${CARD_Y + CARD_H - 98}" width="54" height="16" rx="8" fill="#CC8800"/>
+<text x="${R_X + CARD_W - 39}" y="${CARD_Y + CARD_H - 86}" fill="white" font-size="9" font-weight="bold" text-anchor="middle" font-family="'Courier New',monospace">Lv.${opponentPokeLevel}</text>
+<text x="${R_X + 12}" y="${CARD_Y + CARD_H - 60}" fill="#8888AA" font-size="8.5" font-family="'Courier New',monospace">HP</text>
+${hpBar(opponentHp ?? opponentMaxHp, opponentMaxHp ?? 1, R_X + 28, CARD_Y + CARD_H - 68, CARD_W - 42)}
+<text x="${R_X + CARD_W - 10}" y="${CARD_Y + CARD_H - 60}" fill="#8888AA" font-size="8.5" text-anchor="end" font-family="'Courier New',monospace">${oHpStr}</text>
+<!-- VS -->
+<text x="${W/2}" y="${CARD_Y + 292}" fill="none"    stroke="#7B2FFF" stroke-width="4" font-size="96" font-weight="bold" text-anchor="middle" font-family="'Courier New',monospace">VS</text>
+<text x="${W/2}" y="${CARD_Y + 292}" fill="#FFB800" font-size="96" font-weight="bold" text-anchor="middle" font-family="'Courier New',monospace" opacity="0.92">VS</text>
+<text x="${W/2}" y="${H - 8}" fill="#222233" font-size="9" text-anchor="middle" font-family="'Courier New',monospace">Waiting for opponent response...</text>
 </svg>`
 
   let base
   try { base = await sharp(Buffer.from(svg)).png().toBuffer() } catch { return null }
 
   const composites = []
+  const AV_D      = 76
+  const spriteRow  = CARD_Y + CARD_H - AV_D - 40
+
   if (challengerAvatarBuf) {
     try {
       const av = await _circleAv(sharp, challengerAvatarBuf, AV_D)
-      composites.push({ input: av, top: AV_CY - AV_R, left: L_CX - AV_R })
+      composites.push({ input: av, top: FIG_CY - AV_D - 30, left: Math.round(L_CX - AV_D / 2) })
     } catch {}
   }
   if (opponentAvatarBuf) {
     try {
       const av = await _circleAv(sharp, opponentAvatarBuf, AV_D)
-      composites.push({ input: av, top: AV_CY - AV_R, left: R_CX - AV_R })
+      composites.push({ input: av, top: FIG_CY - AV_D - 30, left: Math.round(R_CX - AV_D / 2) })
+    } catch {}
+  }
+
+  // Pokémon sprites at bottom-right of each card
+  const SPRITE_SZ = 88
+  async function fetchSprite(id) {
+    if (!id) return null
+    try { return await downloadBuffer(`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`, 6000) } catch { return null }
+  }
+  const [lSpr, rSpr] = await Promise.all([fetchSprite(challengerPokeId), fetchSprite(opponentPokeId)])
+  if (lSpr) {
+    try {
+      const s = await sharp(lSpr).resize(SPRITE_SZ, SPRITE_SZ, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
+      composites.push({ input: s, top: spriteRow, left: Math.round(L_CX + 56 - SPRITE_SZ) })
+    } catch {}
+  }
+  if (rSpr) {
+    try {
+      const s = await sharp(rSpr).resize(SPRITE_SZ, SPRITE_SZ, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
+      composites.push({ input: s, top: spriteRow, left: Math.round(R_CX + 56 - SPRITE_SZ) })
     } catch {}
   }
 
