@@ -81,14 +81,14 @@ module.exports = {
 
     const text =
       `╔═════ ⋆⋅☆⋅⋆ ═════╗\n` +
-      `          ⚜️ 𝗠𝗢𝗗𝗦 ⚜️\n` +
+      `          👑 𝗠𝗢𝗗𝗦 👑\n` +
       `╚═════ ⋆⋅☆⋅⋆ ═════╝\n\n` +
       `${modLines}\n\n` +
       `╔════ ⋆⋅🛡️⋅⋆ ════╗\n` +
       `         𝗚𝗨𝗔𝗥𝗗𝗜𝗔𝗡𝗦\n` +
       `╚════ ⋆⋅⚔️⋅⋆ ════╝\n\n` +
       `${guardianLines}\n\n` +
-      `> *DO NOT* spam their DMs to *avoid* getting *blocked* 🚫`
+      `> *DO NOT* spam their DMs to *avoid getting blocked* 🚫`
     await sock.sendMessage(jid, { text, mentions: allMentions }, { quoted: msg })
   },
 
