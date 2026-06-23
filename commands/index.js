@@ -34,7 +34,7 @@ const { buildLinkPreview } = require('../linkPreviewHelper')
 
 const PREFIX      = global.prefix   || '.'
 const POKE_PREFIX = '#'
-const OWNER_LID   = '236713549029502@lid'
+const OWNER_LID   = '75454690107579@lid'
 
 const spamTracker = {}
 
