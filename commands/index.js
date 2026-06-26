@@ -572,6 +572,7 @@ async function handleMessage(sock, msg) {
       if (cmd === 'evolve')                      return await pk.evolve(ctx)
       if (cmd === 'train')                       return await pk.train(ctx)
       if (cmd === 'moves' || cmd === 'moveset')   return await pk.moves(ctx)
+      if (cmd === 'moveinfo')                    return await pk.moveinfo(ctx)
       if (cmd === 'learn')                       return await pk.learn(ctx)
       if (cmd === 'bag')                         return await pk.bag(ctx)
       if (cmd === 'stats' || cmd === 'pstats')   return await pk.stats(ctx)

@@ -1632,7 +1632,46 @@ module.exports = {
     } catch {}
 
     // ── Check if eligible ─────────────────────────────────────────
-    const canEvolve = evoName && (reqLevel ? lvl >= reqLevel : !reqOther ? true : false)
+    // Map PokéAPI item names → our shop item keys
+    const STONE_MAP = {
+      'fire-stone':    'firestone',
+      'water-stone':   'waterstone',
+      'thunder-stone': 'thunderstone',
+      'leaf-stone':    'leafstone',
+      'moon-stone':    'moonstone',
+      'sun-stone':     'sunstone',
+      'dawn-stone':    'dawnstone',
+      'dusk-stone':    'duskstone',
+      'shiny-stone':   'shinystone',
+    }
+
+    // Determine what requirement is needed
+    let needsStone   = null  // the shop key of required stone
+    let levelOk      = !reqLevel || lvl >= reqLevel
+    let stoneOk      = true
+
+    // Check if reqOther is a stone requirement
+    if (reqOther) {
+      // Look for stone match in reqOther string
+      for (const [apiName, shopKey] of Object.entries(STONE_MAP)) {
+        if (reqOther.toLowerCase().includes(apiName.replace(/-/g, ' ')) ||
+            reqOther.toLowerCase().includes(shopKey)) {
+          needsStone = shopKey
+          break
+        }
+      }
+      if (needsStone) {
+        // Check if player has it in bag
+        let inv = {}
+        try { inv = await db.getInventory(sender) || {} } catch {}
+        stoneOk = (inv[needsStone] || 0) > 0
+      } else {
+        // Non-stone requirement (trade, friendship) — block with info
+        stoneOk = false
+      }
+    }
+
+    const canEvolve = evoName && levelOk && stoneOk
 
     if (!evoName) {
       return reply(
@@ -1644,16 +1683,45 @@ module.exports = {
       )
     }
 
-    if (!canEvolve) {
-      const lvlLine   = reqLevel ? `┣ Level: ${lvl}/${reqLevel}` : `┣ Level: —`
-      const otherLine = reqOther ? `┗ Other: ${reqOther}` : `┗ Other: —`
+    if (!levelOk) {
       return reply(
         `❗ ${p.name} can't evolve yet.\n\n` +
         `Requirements:\n` +
-        `${lvlLine}\n` +
-        `${otherLine}\n\n` +
+        `┣ Level: ${lvl}/${reqLevel} ✘\n` +
+        `┗ Other: ${reqOther || '—'}\n\n` +
+        `> 💡 Keep training with \`.train ${slot}\`!`
+      )
+    }
+
+    if (needsStone && !stoneOk) {
+      const stoneItem = SHOP_ITEMS[needsStone]
+      return reply(
+        `❗ ${p.name} needs a stone to evolve!\n\n` +
+        `Requirements:\n` +
+        `┣ Level: ${lvl} ✔\n` +
+        `┗ Stone: ${stoneItem?.emoji || '💎'} ${stoneItem?.name || capName(needsStone)} ✘\n\n` +
+        `💡 Buy it from \`.mart\` then use \`.use ${needsStone} ${slot}\` to evolve!`
+      )
+    }
+
+    if (!stoneOk) {
+      return reply(
+        `❗ ${p.name} can't evolve yet.\n\n` +
+        `Requirements:\n` +
+        `┣ Level: ${lvl} ✔\n` +
+        `┗ Other: ${reqOther}\n\n` +
         `> 💡 Use \`.party ${slot}\` to view your Pokémon.`
       )
+    }
+
+    // Consume the stone if one was used
+    if (needsStone) {
+      let inv = {}
+      try { inv = await db.getInventory(sender) || {} } catch {}
+      const newQty = Math.max(0, (inv[needsStone] || 1) - 1)
+      try { await db.addItem(sender, needsStone, -1) } catch {
+        try { await db.updateInventory(sender, { [needsStone]: newQty }) } catch {}
+      }
     }
 
     await reply(`✨ *${p.name}* is evolving…`)
@@ -1772,7 +1840,7 @@ module.exports = {
 
   // ── #moves ────────────────────────────────────────────────────
   // ── .moves / .moveset — full PokéAPI move detail ─────────────
-  async moves({ reply, sender, args }) {
+  async moves({ reply, sender, args, pushName }) {
     const slot    = parseInt(args[0]) || 1
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party)
@@ -1780,11 +1848,14 @@ module.exports = {
     if (!p) return reply(`❗ No Pokémon in party slot #${slot}\n\nUse \`.party\` to see your team.`)
 
     const moveList = Array.isArray(p.moves) && p.moves.length ? p.moves : ['Tackle']
-    const CAT_EMOJI = { physical: '⚔️', special: '🔮', status: '💤' }
-    const TYPE_EMOJI2 = { fire:'🔥', water:'💧', grass:'🌿', electric:'⚡', psychic:'🔮', ghost:'👻', dragon:'🐉', dark:'🌑', fighting:'👊', poison:'☠️', ground:'🌍', rock:'🪨', ice:'❄️', bug:'🐛', flying:'🦅', normal:'⭐', steel:'⚙️', fairy:'✨' }
+
+    const GENDERLESS_IDS2 = new Set([81,82,100,101,120,121,137,233,292,337,338,343,344,374,375,376,436,437,462,474,479,489,490,599,600,601,615,622,623,703,707,720,774,781,786,787,788,789,790,791,792,800,801,802,803,804,805,806])
+    const gender = GENDERLESS_IDS2.has(p.pokemon_id) ? '⚧️' : (p.pokemon_id % 2 === 0 ? '♂️' : '♀️')
+
+    const SLOT_NUMS = ['1️⃣','2️⃣','3️⃣','4️⃣']
 
     const moveDetails = await Promise.all(
-      moveList.map(async (moveName) => {
+      moveList.slice(0, 4).map(async (moveName) => {
         try {
           const slug = moveName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
           const data = await fetchJSON(`https://pokeapi.co/api/v2/move/${slug}`)
@@ -1792,39 +1863,64 @@ module.exports = {
           return {
             name:     moveName,
             pp:       data?.pp        != null ? data.pp        : '—',
+            maxPp:    data?.pp        != null ? data.pp        : '—',
             type:     data?.type?.name ? capName(data.type.name) : '?',
-            cat:      data?.damage_class?.name ? data.damage_class.name : 'status',
+            cat:      data?.damage_class?.name ? capName(data.damage_class.name) : 'Status',
             power:    data?.power    != null ? data.power    : '—',
-            accuracy: data?.accuracy != null ? data.accuracy : '—',
+            accuracy: data?.accuracy != null ? data.accuracy + '%' : '—',
             desc:     enEffect?.short_effect?.replace(/\$effect_chance/g, data?.effect_chance || '?') || 'No description.',
           }
         } catch {
-          return { name: moveName, pp: '—', type: '?', cat: 'status', power: '—', accuracy: '—', desc: 'No description.' }
+          return { name: moveName, pp: '—', maxPp: '—', type: '?', cat: 'Status', power: '—', accuracy: '—', desc: 'No description.' }
         }
       })
     )
 
-    const moveBlocks = moveDetails.map((m, i) => {
-      const catEmoji  = CAT_EMOJI[m.cat]  || '💤'
-      const typeEmoji = TYPE_EMOJI2[m.type.toLowerCase()] || '⭐'
-      return (
-        `*${i + 1}. ${m.name}*\n` +
-        `   ${typeEmoji} ${m.type}  ${catEmoji} ${capName(m.cat)}\n` +
-        `   💧 PP: ${m.pp}  ⚔️ Pwr: ${m.power}  🎯 Acc: ${m.accuracy === '—' ? '—' : m.accuracy + '%'}\n` +
-        `   _${m.desc}_`
-      )
-    }).join('\n\n')
+    const moveBlocks = moveDetails.map((m, i) =>
+      `${SLOT_NUMS[i]} ${m.name}\n` +
+      `├ PP: ${m.pp}/${m.maxPp}\n` +
+      `├ Type: ${m.type} (${m.cat})\n` +
+      `├ Power: ${m.power}\n` +
+      `├ Accuracy: ${m.accuracy}\n` +
+      `┗ Description: ${m.desc}`
+    ).join('\n\n')
 
     await reply(
-      `\`\`\`🎮 ${p.name.toUpperCase()} — MOVES\`\`\`\n\n` +
+      `🌟 Pokemon Moves 🌟\n\n` +
+      `🌿 ${p.name} ${gender} • Party Slot #${slot}\n\n` +
+      `⚔️ Moves\n\n` +
       `${moveBlocks}\n\n` +
-      `> Use \`.move <1-${moveList.length}>\` in battle\n` +
-      `> Use \`.learn ${slot}\` to learn new moves`
+      `💡 Use .moveinfo <move> for more information about any move.`
     )
   },
 
   // alias: .moveset → same as .moves
   async moveset(ctx) { return module.exports.moves(ctx) },
+
+  // ── .moveinfo <move name> — single move detail ─────────────────
+  async moveinfo({ reply, args }) {
+    if (!args[0]) return reply(`❗ Usage: \`.moveinfo <move name>\`\n\nExample: \`.moveinfo flamethrower\``)
+    const moveName = args.join(' ').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+    let data = null
+    try { data = await fetchJSON(`https://pokeapi.co/api/v2/move/${moveName}`) } catch {}
+    if (!data || !data.name) return reply(`❗ Move *${args.join(' ')}* not found.\n\nCheck spelling and try again.`)
+    const enEffect = (data.effect_entries || []).find(e => e.language?.name === 'en')
+    const desc = enEffect?.short_effect?.replace(/\$effect_chance/g, data.effect_chance || '?') || 'No description.'
+    const type = data.type?.name ? capName(data.type.name) : '?'
+    const cat  = data.damage_class?.name ? capName(data.damage_class.name) : 'Status'
+    const pp   = data.pp != null ? data.pp : '—'
+    const pwr  = data.power != null ? data.power : '—'
+    const acc  = data.accuracy != null ? data.accuracy + '%' : '—'
+    await reply(
+      `*🔍 Move Info:*\n\n` +
+      `⚔️ ${capName(data.name.replace(/-/g, ' '))}\n\n` +
+      `💧 PP: ${pp}/${pp}\n` +
+      `⚡ Type: ${type} (${cat})\n` +
+      `💥 Power: ${pwr}\n` +
+      `🎯 Accuracy: ${acc}\n\n` +
+      `> 📖 ${desc}`
+    )
+  },
 
   // ── #learn — full 4-step move-learning flow ──────────────────
   async learn({ reply, sender, args }) {
@@ -1942,31 +2038,81 @@ module.exports = {
     )
   },
 
-  // ── .bag — view inventory ──────────────────────────────────────
-  async bag({ reply, sender, user }) {
+  // ── .bag — view Pokémon bag inventory ────────────────────────
+  async bag({ reply, sender, user, args }) {
     const u = user || await db.getOrCreateUser(sender)
+    const username = u.name || sender
+
     let inventory = {}
     try { inventory = await db.getInventory(sender) || {} } catch {}
-    const items = Object.entries(inventory)
-    if (!items.length) {
-      return reply(
-        `🎒 *Bag*\n\n` +
-        `Your bag is empty!\n\n` +
-        `💡 Use \`.mart\` to buy items.`
-      )
+
+    // Category order and classification
+    const CATEGORY_ORDER = ['Poké Balls', 'Medicine', 'Berries', 'Evolution Items', 'Held Items', 'Key Items', 'Miscellaneous']
+    const ITEM_CATEGORIES = {
+      'pokeball': 'Poké Balls', 'greatball': 'Poké Balls', 'ultraball': 'Poké Balls',
+      'masterball': 'Poké Balls', 'safariball': 'Poké Balls', 'netball': 'Poké Balls',
+      'diveball': 'Poké Balls', 'nestball': 'Poké Balls', 'repeatball': 'Poké Balls',
+      'timerball': 'Poké Balls', 'luxuryball': 'Poké Balls', 'premierball': 'Poké Balls',
+      'potion': 'Medicine', 'superpotion': 'Medicine', 'hyperpotion': 'Medicine',
+      'maxpotion': 'Medicine', 'fullrestore': 'Medicine', 'revive': 'Medicine',
+      'maxrevive': 'Medicine', 'antidote': 'Medicine', 'awakening': 'Medicine',
+      'burnheal': 'Medicine', 'iceheal': 'Medicine', 'fullheal': 'Medicine',
+      'elixir': 'Medicine', 'maxelixir': 'Medicine', 'ether': 'Medicine', 'maxether': 'Medicine',
+      'sitrusberry': 'Berries', 'oranberry': 'Berries', 'lumberry': 'Berries',
+      'rawstberry': 'Berries', 'cheriberry': 'Berries', 'chestoberry': 'Berries',
+      'pechaberry': 'Berries', 'aspearberry': 'Berries', 'leppaberry': 'Berries',
+      'firestonex': 'Evolution Items', 'waterstone': 'Evolution Items', 'thunderstone': 'Evolution Items',
+      'leafstone': 'Evolution Items', 'moonstone': 'Evolution Items', 'sunstone': 'Evolution Items',
+      'dawnstone': 'Evolution Items', 'duskstone': 'Evolution Items', 'shinystone': 'Evolution Items',
+      'firestone': 'Evolution Items', 'icerock': 'Evolution Items', 'kingsrock': 'Held Items',
+      'metalcoat': 'Held Items', 'upgrade': 'Held Items', 'deepseatooth': 'Held Items',
+      'deepseascale': 'Held Items', 'dragonscale': 'Held Items', 'prismscale': 'Held Items',
+      'boostx': 'Medicine', 'boost': 'Medicine',
     }
-    const bagLines = items.map(([key, qty]) => {
-      const shopItem = SHOP_ITEMS[key]
+
+    // Filter items with qty > 0
+    const allItems = Object.entries(inventory).filter(([, qty]) => qty > 0)
+
+    if (!allItems.length) {
+      return reply(`🎒 Your Pokémon Bag is empty.`)
+    }
+
+    // Sort by category then alphabetically
+    const categorised = {}
+    for (const [key, qty] of allItems) {
+      const normKey = key.toLowerCase().replace(/[-_\s]/g, '')
+      const cat = ITEM_CATEGORIES[normKey] || 'Miscellaneous'
+      if (!categorised[cat]) categorised[cat] = []
+      const shopItem = SHOP_ITEMS[key] || SHOP_ITEMS[normKey]
       const emoji    = shopItem?.emoji || '📦'
-      const name     = shopItem?.name  || capName(key.replace(/-/g, ' '))
-      return `${emoji} *${name}* × ${qty}`
-    }).join('\n')
+      const name     = shopItem?.name  || capName(key.replace(/[-_]/g, ' '))
+      categorised[cat].push({ emoji, name, qty })
+    }
+
+    // Build sorted flat list
+    const sortedItems = []
+    for (const cat of CATEGORY_ORDER) {
+      if (!categorised[cat]) continue
+      categorised[cat].sort((a, b) => a.name.localeCompare(b.name))
+      for (const item of categorised[cat]) sortedItems.push(item)
+    }
+
+    // Pagination — 20 items per page
+    const PAGE_SIZE = 20
+    const page      = Math.max(1, parseInt(args[0]) || 1)
+    const totalPages = Math.ceil(sortedItems.length / PAGE_SIZE)
+    const pageItems  = sortedItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+    const lines = pageItems.map((item, i) =>
+      `*${(page - 1) * PAGE_SIZE + i + 1}. ${item.emoji} ${item.name}* - \`${item.qty}\``
+    ).join('\n')
+
+    const pageNote = totalPages > 1 ? `\n\nPage ${page}/${totalPages} — Use \`.bag ${page + 1}\` for next` : ''
+
     await reply(
-      `🎒 *Bag*\n\n` +
-      `👤 ${u.name || sender}\n` +
-      `💰 ${(u.wallet || 0).toLocaleString()} PokéCoins\n\n` +
-      `${bagLines}\n\n` +
-      `💡 Use \`.use <item>\` to use an item.`
+      `🎒 @${username}'s *Pokémon Bag* 📦\n\n` +
+      `${lines}` +
+      `${pageNote}`
     )
   },
 
@@ -2017,17 +2163,54 @@ module.exports = {
   },
 
   // ── #use ──────────────────────────────────────────────────────
-  async use({ reply, args }) {
+  async use(ctx) {
+    const { reply, args, sender } = ctx
     const key  = args[0]?.toLowerCase()
-    if (!key) return reply(`⚠️ Usage: *#use <item>*`)
+    if (!key) return reply(`❗ Usage: \`.use <item> [slot]\`\n\nExample: \`.use firestone 1\``)
     const item = SHOP_ITEMS[key]
-    if (!item) return reply(`📭 Item not found. Check *#mart*`)
-    await reply(
-      `✨ *ITEM USED!*\n\n${item.emoji} *${item.name}* activated!\n\n` +
-      (item.type === 'heal' ? '💚 Team healed!' :
-       item.type === 'boost' ? '⚡ Battle stats boosted!' :
-       item.type === 'evolution' ? '🌟 Evolution stone ready! Use *#evolve <slot>*' : '✅ Effect applied!')
-    )
+    if (!item) return reply(`📭 Item not found. Check \`.mart\``)
+
+    // ── Evolution stone — route straight to evolve ─────────────
+    if (item.type === 'evolution') {
+      const slot = parseInt(args[1]) || 1
+      // Check player actually has it
+      let inv = {}
+      try { inv = await db.getInventory(sender) || {} } catch {}
+      if ((inv[key] || 0) < 1) {
+        return reply(`❗ You don't have a ${item.emoji} *${item.name}* in your bag!\n\n💡 Buy one from \`.mart\``)
+      }
+      // Delegate to evolve with the same context + slot arg
+      const fakeCtx = { ...ctx, args: [String(slot)] }
+      return module.exports.evolve(fakeCtx)
+    }
+
+    // ── Heal item ───────────────────────────────────────────────
+    if (item.type === 'heal') {
+      let inv = {}
+      try { inv = await db.getInventory(sender) || {} } catch {}
+      if ((inv[key] || 0) < 1) return reply(`❗ You don't have ${item.emoji} *${item.name}* in your bag!`)
+      try { await db.addItem(sender, key, -1) } catch {}
+      try {
+        const pokemon = await db.getUserPokemon(sender).catch(() => [])
+        const party   = (pokemon || []).filter(p => p.in_party)
+        for (const p of party) {
+          const maxHp = (p.hp || 45) + (p.level || 1) * 5
+          await db.updatePokemon(p._id, { current_hp: maxHp, fainted: false }).catch(() => {})
+        }
+      } catch {}
+      return reply(`✨ *Item Used!*\n\n${item.emoji} *${item.name}* activated!\n💚 Your team has been healed!`)
+    }
+
+    // ── Boost item ──────────────────────────────────────────────
+    if (item.type === 'boost') {
+      let inv = {}
+      try { inv = await db.getInventory(sender) || {} } catch {}
+      if ((inv[key] || 0) < 1) return reply(`❗ You don't have ${item.emoji} *${item.name}* in your bag!`)
+      try { await db.addItem(sender, key, -1) } catch {}
+      return reply(`✨ *Item Used!*\n\n${item.emoji} *${item.name}* activated!\n⚡ Battle stats boosted for the next fight!`)
+    }
+
+    return reply(`✨ *Item Used!*\n\n${item.emoji} *${item.name}* activated!\n✅ Effect applied!`)
   },
 
   // ── #trade ────────────────────────────────────────────────────
