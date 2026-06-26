@@ -14,6 +14,20 @@ const activeBattles     = {}
 const pendingChallenges = {}  // key: `${jid}:${challengerPhone}`
 const pvpBattles        = {}  // key: phone number (both players point to same obj)
 const pendingStarters   = {}  // key: phone → { expiresAt }
+const pendingGymBattle  = {}  // key: phone → { gym, battle state }
+const pendingLearnChoice = {} // key: phone → { slot, moveName, pokemon }
+
+// ── Gym progression data ──────────────────────────────────────────
+const GYM_DATA = [
+  { name: 'Pewter Gym',   leader: 'Brock',    badge: 'Boulder Badge', type: 'Rock',     typeEmoji: '🪨', nextUnlock: 'Cerulean',  coins: 3000, xp: 500, minPokemon: 3, recLevel: 12, leaderPokemon: [{ name: 'Geodude', level: 12 }, { name: 'Onix', level: 14 }] },
+  { name: 'Cerulean Gym', leader: 'Misty',    badge: 'Cascade Badge', type: 'Water',    typeEmoji: '💧', nextUnlock: 'Vermilion', coins: 4000, xp: 700, minPokemon: 3, recLevel: 18, leaderPokemon: [{ name: 'Staryu', level: 18 }, { name: 'Starmie', level: 21 }] },
+  { name: 'Vermilion Gym',leader: 'Lt. Surge',badge: 'Thunder Badge',  type: 'Electric', typeEmoji: '⚡', nextUnlock: 'Celadon',  coins: 5000, xp: 900, minPokemon: 3, recLevel: 25, leaderPokemon: [{ name: 'Voltorb', level: 21 }, { name: 'Pikachu', level: 18 }, { name: 'Raichu', level: 24 }] },
+  { name: 'Celadon Gym',  leader: 'Erika',    badge: 'Rainbow Badge',  type: 'Grass',    typeEmoji: '🌿', nextUnlock: 'Fuchsia',  coins: 6000, xp: 1100, minPokemon: 4, recLevel: 29, leaderPokemon: [{ name: 'Victreebel', level: 29 }, { name: 'Tangela', level: 24 }, { name: 'Vileplume', level: 29 }] },
+  { name: 'Fuchsia Gym',  leader: 'Koga',     badge: 'Soul Badge',     type: 'Poison',   typeEmoji: '☠️', nextUnlock: 'Saffron',  coins: 7000, xp: 1300, minPokemon: 4, recLevel: 37, leaderPokemon: [{ name: 'Koffing', level: 37 }, { name: 'Muk', level: 39 }, { name: 'Weezing', level: 43 }] },
+  { name: 'Saffron Gym',  leader: 'Sabrina',  badge: 'Marsh Badge',    type: 'Psychic',  typeEmoji: '🔮', nextUnlock: 'Cinnabar', coins: 8000, xp: 1500, minPokemon: 5, recLevel: 43, leaderPokemon: [{ name: 'Kadabra', level: 38 }, { name: 'Mr. Mime', level: 37 }, { name: 'Venomoth', level: 38 }, { name: 'Alakazam', level: 43 }] },
+  { name: 'Cinnabar Gym', leader: 'Blaine',   badge: 'Volcano Badge',  type: 'Fire',     typeEmoji: '🔥', nextUnlock: 'Viridian', coins: 9000, xp: 1800, minPokemon: 5, recLevel: 47, leaderPokemon: [{ name: 'Growlithe', level: 42 }, { name: 'Ponyta', level: 40 }, { name: 'Rapidash', level: 42 }, { name: 'Arcanine', level: 47 }] },
+  { name: 'Viridian Gym', leader: 'Giovanni', badge: 'Earth Badge',    type: 'Ground',   typeEmoji: '🌍', nextUnlock: 'Elite Four', coins: 12000, xp: 2500, minPokemon: 6, recLevel: 50, leaderPokemon: [{ name: 'Rhyhorn', level: 45 }, { name: 'Dugtrio', level: 42 }, { name: 'Nidoqueen', level: 44 }, { name: 'Nidoking', level: 45 }, { name: 'Rhydon', level: 50 }] },
+]
 
 // ── Mention sticker store (file-based) ───────────────────────────
 const MS_FILE = path.join(__dirname, '../mention_stickers.json')
@@ -301,45 +315,79 @@ module.exports = {
   // ── .pmenu — POKÉVERSE command menu ─────────────────────────────
   async pmenu({ sock, jid, msg }) {
     const menuText =
-      `✦ *POKÉVERSE* ✦\n\n` +
-      `*🌍  ADVENTURE*\n` +
-      `┣ *.scout* — Search for wild Pokémon\n` +
-      `┣ *.catch <slot> | <ball>* — Attempt capture\n` +
-      `┣ *.fight* — Attack in wild battle\n` +
-      `┣ *.flee* — Escape from battle\n` +
-      `┗ *.dex <name/id>* — Pokédex entry\n\n` +
-      `*⚔️  BATTLE*\n` +
-      `┣ *.battle @user* — Challenge a trainer\n` +
-      `┣ *.move <1-4>* — Use a move in battle\n` +
-      `┣ *.gym* — Challenge gym leaders\n` +
-      `┗ *.raid* — Join a raid battle\n\n` +
-      `*🐾  PARTY & PC*\n` +
-      `┣ *.party* — View your team\n` +
-      `┣ *.party <slot>* — Pokémon details\n` +
-      `┣ *.moveset <slot>* — View move stats\n` +
-      `┣ *.pc* — PC storage\n` +
-      `┣ *.swap <a> <b>* — Rearrange team slots\n` +
-      `┣ *.topc <slot>* — Move Pokémon to PC\n` +
-      `┗ *.toparty <slot>* — Recall from PC\n\n` +
-      `*🔄  TRAINING*\n` +
-      `┣ *.train <slot>* — Train & gain XP\n` +
-      `┣ *.evolve <slot>* — Trigger evolution\n` +
-      `┣ *.learn <slot>* — Learn a new move\n` +
-      `┣ *.heal* — Restore your whole team\n` +
-      `┗ *.boost* — Temporary battle buff\n\n` +
-      `*👤  TRAINER*\n` +
-      `┣ *.start* — Begin your Pokémon journey\n` +
-      `┣ *.trainer* — View trainer profile\n` +
-      `┣ *.pdaily* — Claim daily rewards\n` +
-      `┣ *.quests* — Active quests\n` +
-      `┣ *.rank* — Global trainer ranking\n` +
-      `┗ *.cooldown* — Check command timers\n\n` +
-      `*🛒  SHOP*\n` +
-      `┣ *.mart* — PokéMart store\n` +
-      `┣ *.mbuy <item>* — Buy an item\n` +
-      `┣ *.use <item>* — Use an item\n` +
-      `┣ *.trade @user* — Trade a Pokémon\n` +
-      `┗ *.gift <slot> @user* — Send a Pokémon`
+      `\`\`\`🌟 POKÉVERSE 🌟\`\`\`\n\n` +
+      `*🌍 ADVENTURE*\n` +
+      `┣ .scout\n` +
+      `      └ \`Search for loots\`\n` +
+      `┣ .hunt\n` +
+      `      └ \`Search for a wild Pokémon\`\n` +
+      `┣ .catch <slot> <ball>\n` +
+      `      └ \`Attempt to catch a Pokémon\`\n` +
+      `┣ .fight\n` +
+      `      └ \`Attack the wild Pokémon\`\n` +
+      `┣ .flee\n` +
+      `      └ \`Escape from battle\`\n` +
+      `┗ .dex <name/id>\n` +
+      `      └ \`View Pokédex information\`\n\n` +
+      `*⚔️ BATTLE*\n` +
+      `┣ .battle @user\n` +
+      `      └ \`Challenge another trainer\`\n` +
+      `┣ .move <1-4>\n` +
+      `      └ \`Use a move in battle\`\n` +
+      `┣ .gym\n` +
+      `      └ \`Challenge Gym Leaders\`\n` +
+      `┗ .raid\n` +
+      `      └ \`Join a Raid Battle\`\n\n` +
+      `*🐾 PARTY & PC*\n` +
+      `┣ .party\n` +
+      `      └ \`View your active team\`\n` +
+      `┣ .party <slot>\n` +
+      `      └ \`View Pokémon details\`\n` +
+      `┣ .moveset <slot>\n` +
+      `      └ \`View move information\`\n` +
+      `┣ .pc\n` +
+      `      └ \`Access PC storage\`\n` +
+      `┣ .swap <a> <b>\n` +
+      `      └ \`Rearrange party slots\`\n` +
+      `┣ .topc <slot>\n` +
+      `      └ \`Send Pokémon to PC\`\n` +
+      `┗ .toparty <slot>\n` +
+      `      └ \`Move Pokémon to party\`\n\n` +
+      `*🔄 TRAINING*\n` +
+      `┣ .train <slot>\n` +
+      `      └ \`Gain XP and level up\`\n` +
+      `┣ .evolve <slot>\n` +
+      `      └ \`Evolve a Pokémon\`\n` +
+      `┣ .learn <slot>\n` +
+      `      └ \`Learn a new move\`\n` +
+      `┣ .heal\n` +
+      `      └ \`Heal your entire team\`\n` +
+      `┗ .boost\n` +
+      `      └ \`Activate a temporary buff\`\n\n` +
+      `*👤 TRAINER*\n` +
+      `┣ .start\n` +
+      `      └ \`Begin your Pokémon journey\`\n` +
+      `┣ .trainer\n` +
+      `      └ \`View trainer profile\`\n` +
+      `┣ .pdaily\n` +
+      `      └ \`Claim daily rewards\`\n` +
+      `┣ .quests\n` +
+      `      └ \`View active quests\`\n` +
+      `┣ .rank\n` +
+      `      └ \`Check global rankings\`\n` +
+      `┗ .cooldown\n` +
+      `      └ \`View command cooldowns\`\n\n` +
+      `*🛒 SHOP*\n` +
+      `┣ .mart\n` +
+      `      └ \`Open the PokéMart\`\n` +
+      `┣ .mbuy <item>\n` +
+      `      └ \`Purchase an item\`\n` +
+      `┣ .use <item>\n` +
+      `      └ \`Use an item\`\n` +
+      `┣ .trade @user\n` +
+      `      └ \`Trade with another trainer\`\n` +
+      `┗ .gift <slot> @user\n` +
+      `      └ \`Gift a Pokémon\``
 
     try {
       const imgBuf = fs.readFileSync(PMENU_IMAGE)
@@ -902,24 +950,40 @@ module.exports = {
       const statusText = p.fainted ? '💀 Fainted' : '💚 Healthy'
       const mood = MOODS[Math.abs((p.pokemon_id || 1) + (p.level || 1)) % MOODS.length] || 'Content'
 
+      // IV % derived consistently from stats
+      const ivPct = Math.min(100, Math.round(((p.attack || 45) + (p.defense || 45) + (p.speed || 45)) / 3 / 45 * 100 * 0.7 + ((p.pokemon_id || 1) * 7 % 30)))
+      // Type emoji map
+      const TYPE_EMOJI = { fire:'🔥', water:'💧', grass:'🌿', electric:'⚡', psychic:'🔮', ghost:'👻', dragon:'🐉', dark:'🌑', fighting:'👊', poison:'☠️', ground:'🌍', rock:'🪨', ice:'❄️', bug:'🐛', flying:'🦅', normal:'⭐', steel:'⚙️', fairy:'✨' }
+      const typeArr = Array.isArray(p.types) ? p.types : (p.types ? [p.types] : ['normal'])
+      const typeEmoji = TYPE_EMOJI[(typeArr[0] || 'normal').toLowerCase()] || '⭐'
+      // Moves list
+      const moves = Array.isArray(p.moves) ? p.moves : []
+      const move1 = moves[0] || '—'
+      const move2 = moves[1] || '—'
+      const move3 = moves[2] || '—'
+      const move4 = moves[3] || '—'
+
       const caption =
-        `\`\`\`🐾 POKÉMON SUMMARY\`\`\`\n\n` +
-        `*Name:* ${p.name} ${gender}\n` +
-        `*Level:* ${p.level || 1}\n` +
-        `*Slot:* #${idx + 1} ${statusFlag}\n\n` +
-        `*Type:* ${types}\n` +
-        `*Ability:* ${ability}\n` +
-        `*Nature:* ${nature}\n\n` +
-        `*HP:* ${curHp} / ${maxHp}\n` +
-        `*Attack:* ${p.attack || 0}\n` +
-        `*Defense:* ${p.defense || 0}\n` +
-        `*Sp. Atk:* ${p.sp_atk || 0}\n` +
-        `*Sp. Def:* ${p.sp_def || 0}\n` +
-        `*Speed:* ${p.speed || 0}\n\n` +
-        `*EXP:* ${p.xp || 0} / ${xpReq}\n\n` +
-        `*Status:* ${statusText}\n` +
-        `*Mood:* ${mood}\n\n` +
-        `> Use *.moveset ${idx + 1}* to see move stats`
+        `*🐾 Party | Slot #${idx + 1}*\n\n` +
+        `${typeEmoji} ${p.name} ${gender} • Lv.${p.level || 1}\n\n` +
+        `*❤️ HP:* ${curHp}/${maxHp}\n` +
+        `*💎 IV:* ${ivPct}%\n` +
+        `*✨ Nature:* ${nature}\n` +
+        `*🎖️ Ability:* ${ability}\n` +
+        `*🎒 Item:* None\n` +
+        `*🌟 Shiny:* No\n\n` +
+        `*📊 Stats*\n` +
+        `* ATK ${p.attack || 0}\n` +
+        `* DEF ${p.defense || 0}\n` +
+        `* SPA ${p.sp_atk || 0}\n` +
+        `* SPD ${p.sp_def || 0}\n` +
+        `* SPE ${p.speed || 0}\n\n` +
+        `*🎮 Moves*\n` +
+        `* ${move1}\n` +
+        `* ${move2}\n` +
+        `* ${move3}\n` +
+        `* ${move4}\n\n` +
+        `> *Use .moves <slot> to see Pokemon moves*`
 
       const artUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${p.pokemon_id}.png`
       const sprUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.pokemon_id}.png`
@@ -1400,16 +1464,109 @@ module.exports = {
 
   // ── #gym ──────────────────────────────────────────────────────
   async gym({ reply, sender, user }) {
-    const leaders = ['Brock', 'Misty', 'Lt. Surge', 'Erika', 'Koga', 'Sabrina', 'Blaine', 'Giovanni']
-    const leader  = leaders[Math.floor(Math.random() * leaders.length)]
-    const win     = Math.random() > 0.4
     const u       = user || await db.getOrCreateUser(sender)
-    if (win) {
-      await db.updateUser(sender, { pokemon_badges: (u.pokemon_badges || 0) + 1, xp: (u.xp || 0) + 2 })
-      await reply(`🏅 *GYM BATTLE — ${leader.toUpperCase()}!*\n\n🏆 *YOU WIN!*\n\n🥇 Badge earned! Total: ${(u.pokemon_badges || 0) + 1}\n⭐ +2 XP`)
-    } else {
-      await reply(`🏅 *GYM BATTLE — ${leader.toUpperCase()}!*\n\n💥 *DEFEAT!*\n\n_Train harder and return._ 🖤`)
+    const badges  = u.pokemon_badges || 0
+    const gymIdx  = Math.min(badges, GYM_DATA.length - 1)
+    const gym     = GYM_DATA[gymIdx]
+
+    if (badges >= 8) {
+      return reply(
+        `🏆 *All 8 Badges Collected!*\n\n` +
+        `You have conquered all Kanto Gyms!\n\n` +
+        `1️⃣ Pewter ✅  2️⃣ Cerulean ✅  3️⃣ Vermilion ✅  4️⃣ Celadon ✅\n` +
+        `5️⃣ Fuchsia ✅  6️⃣ Saffron ✅  7️⃣ Cinnabar ✅  8️⃣ Viridian ✅\n\n` +
+        `↓ Elite Four → Champion\n\n` +
+        `💡 Use \`.raid\` to take on Raid Bosses!`
+      )
     }
+
+    const pokemon = await db.getUserPokemon(sender).catch(() => [])
+    const party   = (pokemon || []).filter(p => p.in_party)
+    const maxLvl  = party.reduce((m, p) => Math.max(m, p.level || 1), 0)
+
+    const BADGE_NUMS = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣']
+    const progressLine = BADGE_NUMS.slice(0, 8).map((n, i) => i < badges ? `${n}✅` : n).join('  ')
+
+    await reply(
+      `🏟️ ${gym.name}\n\n` +
+      `👤 Leader: ${gym.leader}\n` +
+      `${gym.typeEmoji} Type: ${gym.type}\n\n` +
+      `Your Team\n` +
+      `• Pokémon: ${party.length}/6\n` +
+      `• Highest Lv: ${maxLvl || '—'}\n\n` +
+      `Requirements\n` +
+      `${party.length >= gym.minPokemon ? '✔' : '✘'} At least ${gym.minPokemon} Pokémon\n` +
+      `${maxLvl >= gym.recLevel ? '✔' : '✘'} Recommended Lv. ${gym.recLevel}+\n\n` +
+      `Rewards\n` +
+      `🏅 ${gym.badge}\n` +
+      `💰 ${gym.coins.toLocaleString()} PokéCoins\n` +
+      `✨ ${gym.xp} XP\n\n` +
+      `Badge Progress:\n${progressLine}\n\n` +
+      `💡 Use \`.challenge\` to battle ${gym.leader}.`
+    )
+  },
+
+  // ── .challenge — start gym battle ─────────────────────────────
+  async challenge({ reply, sender, user, args }) {
+    const u       = user || await db.getOrCreateUser(sender)
+    const badges  = u.pokemon_badges || 0
+    const gymIdx  = Math.min(badges, GYM_DATA.length - 1)
+    const gym     = GYM_DATA[gymIdx]
+
+    if (badges >= 8) return reply(`🏆 You've already conquered all 8 Gyms! Use \`.raid\` for raid bosses.`)
+    if (pendingGymBattle[sender]) return reply(`❗ You're already in a Gym battle! Use \`.move <1-4>\` to fight or \`.heal\` to reset.`)
+
+    const pokemon = await db.getUserPokemon(sender).catch(() => [])
+    const party   = (pokemon || []).filter(p => p.in_party && !p.fainted)
+    if (party.length < gym.minPokemon) return reply(`❗ You need at least ${gym.minPokemon} healthy Pokémon to challenge ${gym.leader}!`)
+
+    const myLead     = party[0]
+    const myMaxHp    = (myLead.hp || 45) + (myLead.level || 1) * 5
+    const gymPoke    = gym.leaderPokemon[0]
+    const gymMaxHp   = (gymPoke.level || 12) * 8 + 30
+
+    pendingGymBattle[sender] = {
+      gym,
+      gymPokeIdx:  0,
+      myPokemon:   myLead,
+      myHp:        myMaxHp,
+      myMaxHp,
+      gymPokemon:  gymPoke,
+      gymHp:       gymMaxHp,
+      gymMaxHp,
+      turn:        1,
+      moves:       Array.isArray(myLead.moves) && myLead.moves.length ? myLead.moves : ['Tackle', 'Growl'],
+    }
+
+    await reply(
+      `🏟️ Gym Battle Started!\n\n` +
+      `Leader ${gym.leader} challenges you!\n\n` +
+      `👤 ${gym.leader} sent out\n` +
+      `${gym.typeEmoji} ${gymPoke.name} Lv.${gymPoke.level}\n\n` +
+      `Choose a move:\n` +
+      (pendingGymBattle[sender].moves.map((m, i) => `* ${m}`).join('\n')) +
+      `\n\n💡 Use \`.move <1-${pendingGymBattle[sender].moves.length}>\` to attack!`
+    )
+  },
+
+  // ── .badges — view earned badges ──────────────────────────────
+  async badges({ reply, sender, user }) {
+    const u      = user || await db.getOrCreateUser(sender)
+    const badges = u.pokemon_badges || 0
+    const BADGE_NUMS = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣']
+    const badgeLines = GYM_DATA.map((g, i) => {
+      const earned = i < badges
+      return `${BADGE_NUMS[i]} *${g.badge}* — ${g.leader} (${g.type})\n   ${earned ? '✅ Earned' : '🔒 Locked'}`
+    }).join('\n\n')
+    await reply(
+      `🏅 *Badge Collection*\n\n` +
+      `👤 ${u.name || sender}\n` +
+      `Badges: ${badges}/8\n\n` +
+      `${badgeLines}\n\n` +
+      (badges >= 8
+        ? `🏆 All badges collected! The Elite Four awaits!`
+        : `💡 Use \`.gym\` to view your current Gym.`)
+    )
   },
 
   // ── #raid ─────────────────────────────────────────────────────
@@ -1441,30 +1598,117 @@ module.exports = {
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party)
     const p       = party[slot - 1]
-    if (!p) return reply(`⚠️ No Pokémon in slot #${slot}`)
+    if (!p) return reply(`❗ No Pokémon in slot #${slot}`)
     const lvl = p.level || 1
-    if (lvl < 16) return reply(`⚠️ *${p.name}* is only level ${lvl}!\n\n_Pokémon evolve at levels 16 and 36._\n_Keep training with *#train ${slot}*!_ 🖤`)
+
+    // ── Fetch evolution chain to get requirement ──────────────────
+    let evoName    = null
+    let reqLevel   = null
+    let reqOther   = null
+    try {
+      const species  = await fetchJSON(`https://pokeapi.co/api/v2/pokemon-species/${p.pokemon_id}`)
+      if (species?.evolution_chain?.url) {
+        const chain = await fetchJSON(species.evolution_chain.url)
+        if (chain?.chain) {
+          function findEvo(node) {
+            const nodeName = (node.species?.name || '').toLowerCase()
+            const match    = nodeName === p.name.toLowerCase() || (node.species?.url || '').includes(`/${p.pokemon_id}/`)
+            if (match && node.evolves_to?.length > 0) {
+              const next    = node.evolves_to[0]
+              const details = next.evolution_details?.[0] || {}
+              evoName  = next.species.name
+              reqLevel = details.min_level || null
+              if (details.item?.name)              reqOther = `Use ${capName(details.item.name)}`
+              else if (details.trigger?.name === 'trade') reqOther = 'Trade the Pokémon'
+              else if (details.min_happiness)      reqOther = `Friendship ≥ ${details.min_happiness}`
+              return true
+            }
+            for (const child of (node.evolves_to || [])) { if (findEvo(child)) return true }
+            return false
+          }
+          findEvo(chain.chain)
+        }
+      }
+    } catch {}
+
+    // ── Check if eligible ─────────────────────────────────────────
+    const canEvolve = evoName && (reqLevel ? lvl >= reqLevel : !reqOther ? true : false)
+
+    if (!evoName) {
+      return reply(
+        `❗ ${p.name} can't evolve yet.\n\n` +
+        `Requirements:\n` +
+        `┣ Level: ${lvl}/—\n` +
+        `┗ Other: Already at final form\n\n` +
+        `> 💡 Use \`.party ${slot}\` to view your Pokémon.`
+      )
+    }
+
+    if (!canEvolve) {
+      const lvlLine   = reqLevel ? `┣ Level: ${lvl}/${reqLevel}` : `┣ Level: —`
+      const otherLine = reqOther ? `┗ Other: ${reqOther}` : `┗ Other: —`
+      return reply(
+        `❗ ${p.name} can't evolve yet.\n\n` +
+        `Requirements:\n` +
+        `${lvlLine}\n` +
+        `${otherLine}\n\n` +
+        `> 💡 Use \`.party ${slot}\` to view your Pokémon.`
+      )
+    }
+
     await reply(`✨ *${p.name}* is evolving…`)
-    const evoName = await getPokeEvolutionTarget(p.pokemon_id, p.name.toLowerCase()).catch(() => null)
-    if (!evoName) return reply(`⚠️ *${p.name}* has no further evolution — it's already at its final form! 🌟`)
     const newData = await fetchPokeData(evoName).catch(() => null)
-    if (!newData) return reply(`⚠️ Could not fetch evolution data. Try again later.`)
+    if (!newData) return reply(`❗ Could not fetch evolution data. Try again later.`)
+
+    // ── Get level-up moves for evolved form filtered to current level ──
+    let evolvedMoves = newData.moves
+    try {
+      const rawPoke = await fetchJSON(`https://pokeapi.co/api/v2/pokemon/${newData.id}`)
+      if (rawPoke?.moves) {
+        const eligible = (rawPoke.moves || [])
+          .filter(m => m.version_group_details?.some(v => v.move_learn_method?.name === 'level-up' && v.level_learned_at > 0 && v.level_learned_at <= lvl))
+          .sort((a, b) => {
+            const la = Math.min(...a.version_group_details.filter(v => v.move_learn_method?.name === 'level-up').map(v => v.level_learned_at))
+            const lb = Math.min(...b.version_group_details.filter(v => v.move_learn_method?.name === 'level-up').map(v => v.level_learned_at))
+            return lb - la
+          })
+          .slice(0, 4)
+          .map(m => capName(m.move.name))
+        if (eligible.length) evolvedMoves = eligible
+      }
+    } catch {}
+
     try {
       await db.updatePokemon(p._id, {
         name:        newData.name,
         pokemon_id:  newData.id,
         types:       newData.types,
-        moves:       newData.moves,
+        moves:       evolvedMoves,
         abilities:   newData.abilities,
       })
     } catch {}
+
+    const evoAbility = newData.abilities?.[0] || 'Unknown'
+    const ivPct      = Math.min(100, Math.round(((p.attack || 45) + (p.defense || 45) + (p.speed || 45)) / 3 / 45 * 100 * 0.7 + ((p.pokemon_id || 1) * 7 % 30)))
+
     const caption =
-      `🌟 *EVOLUTION COMPLETE!*\n\n` +
-      `✨ *${p.name}* evolved into *${newData.name}*!\n\n` +
-      `🔮 *Level:* ${lvl}\n` +
-      `⚡ *Type:* ${newData.types.join(' / ')}\n` +
-      `🧬 *Abilities:* ${newData.abilities.join(', ')}\n\n` +
-      `_The power within has awakened._ 🖤`
+      `✨ Evolution Complete!\n\n` +
+      `${p.name} evolved into ${newData.name}!\n\n` +
+      `📈 Level: ${lvl}\n` +
+      `🎖️ Ability: ${evoAbility}\n` +
+      `💎 IV: ${ivPct}%\n\n` +
+      `🎉 Congratulations! Your Pokémon has grown stronger.`
+
+    // ── Evolution scene image via Pollinations ──────────────────
+    const evoPrompt = encodeURIComponent(
+      `Create a dramatic Pokémon evolution scene in a vertical (9:16) game-art style. Show ${p.name} on the left transforming into ${newData.name} on the right. Bright white and blue evolution energy spirals around the Pokémon with glowing particles, lightning-like arcs, and a radiant aura. The background is a dark, mystical forest with soft bokeh lights and magical effects. The transition between the two Pokémon should be seamless, with energy obscuring the middle to emphasize transformation. Highly detailed, vibrant colors, cinematic lighting, dynamic composition, no text, no watermark, polished game artwork`
+    )
+    const evoImgUrl = `https://image.pollinations.ai/prompt/${evoPrompt}?width=576&height=1024&nologo=true&model=turbo&seed=${Date.now() % 9999}`
+    try {
+      await sock.sendMessage(jid, { image: { url: evoImgUrl }, caption }, { quoted: msg })
+      return
+    } catch {}
+    // Fallback to official artwork
     if (newData.imageUrl) {
       try { await sock.sendMessage(jid, { image: { url: newData.imageUrl }, caption }, { quoted: msg }); return } catch {}
     }
@@ -1527,77 +1771,203 @@ module.exports = {
   },
 
   // ── #moves ────────────────────────────────────────────────────
+  // ── .moves / .moveset — full PokéAPI move detail ─────────────
   async moves({ reply, sender, args }) {
     const slot    = parseInt(args[0]) || 1
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party)
     const p       = party[slot - 1]
-    if (!p) return reply(`⚠️ No Pokémon in slot #${slot}`)
-    const moveList = Array.isArray(p.moves) ? p.moves : ['Tackle']
-    await reply(`🎮 *${p.name.toUpperCase()} — MOVES*\n\n${moveList.map((m, i) => `${i + 1}. *${m}*`).join('\n')}\n\n_Use *#learn ${slot}* to unlock new moves._ 🖤`)
-  },
+    if (!p) return reply(`❗ No Pokémon in party slot #${slot}\n\nUse \`.party\` to see your team.`)
 
-  // ── .moveset — move stats with power/accuracy from PokéAPI ───
-  async moveset({ reply, sender, args }) {
-    const slot    = parseInt(args[0]) || 1
-    const pokemon = await db.getUserPokemon(sender).catch(() => [])
-    const party   = (pokemon || []).filter(p => p.in_party)
-    const p       = party[slot - 1]
-    if (!p) return reply(`⚠️ No Pokémon in party slot #${slot}\n\nUse *.party* to see your team.`)
-
-    const moveList = Array.isArray(p.moves) ? p.moves : ['Tackle']
-    if (!moveList.length) return reply(`⚠️ *${p.name}* has no moves! Use *.learn ${slot}* to unlock some.`)
-
-    const types = Array.isArray(p.types) ? p.types.join(' / ') : (p.types || '?')
+    const moveList = Array.isArray(p.moves) && p.moves.length ? p.moves : ['Tackle']
+    const CAT_EMOJI = { physical: '⚔️', special: '🔮', status: '💤' }
+    const TYPE_EMOJI2 = { fire:'🔥', water:'💧', grass:'🌿', electric:'⚡', psychic:'🔮', ghost:'👻', dragon:'🐉', dark:'🌑', fighting:'👊', poison:'☠️', ground:'🌍', rock:'🪨', ice:'❄️', bug:'🐛', flying:'🦅', normal:'⭐', steel:'⚙️', fairy:'✨' }
 
     const moveDetails = await Promise.all(
       moveList.map(async (moveName) => {
         try {
           const slug = moveName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
           const data = await fetchJSON(`https://pokeapi.co/api/v2/move/${slug}`)
+          const enEffect = (data?.effect_entries || []).find(e => e.language?.name === 'en')
           return {
             name:     moveName,
+            pp:       data?.pp        != null ? data.pp        : '—',
+            type:     data?.type?.name ? capName(data.type.name) : '?',
+            cat:      data?.damage_class?.name ? data.damage_class.name : 'status',
             power:    data?.power    != null ? data.power    : '—',
             accuracy: data?.accuracy != null ? data.accuracy : '—',
-            type:     data?.type?.name ? capName(data.type.name) : '?',
-            pp:       data?.pp        != null ? data.pp : '—',
+            desc:     enEffect?.short_effect?.replace(/\$effect_chance/g, data?.effect_chance || '?') || 'No description.',
           }
         } catch {
-          return { name: moveName, power: '—', accuracy: '—', type: '?', pp: '—' }
+          return { name: moveName, pp: '—', type: '?', cat: 'status', power: '—', accuracy: '—', desc: 'No description.' }
         }
       })
     )
 
-    const moveLines = moveDetails.map((m, i) =>
-      `*${i + 1}. ${m.name}*\n   ⚔️ Power: ${m.power}  🎯 Accuracy: ${m.accuracy}%  💫 PP: ${m.pp}`
-    ).join('\n\n')
+    const moveBlocks = moveDetails.map((m, i) => {
+      const catEmoji  = CAT_EMOJI[m.cat]  || '💤'
+      const typeEmoji = TYPE_EMOJI2[m.type.toLowerCase()] || '⭐'
+      return (
+        `*${i + 1}. ${m.name}*\n` +
+        `   ${typeEmoji} ${m.type}  ${catEmoji} ${capName(m.cat)}\n` +
+        `   💧 PP: ${m.pp}  ⚔️ Pwr: ${m.power}  🎯 Acc: ${m.accuracy === '—' ? '—' : m.accuracy + '%'}\n` +
+        `   _${m.desc}_`
+      )
+    }).join('\n\n')
 
     await reply(
-      `🐾 *${p.name.toUpperCase()}'S MOVESET*\n\n` +
-      `*Level:* ${p.level || 1}\n` +
-      `*Type:* ${types}\n\n` +
-      `━━━━━━━━━━━━━━\n\n` +
-      `⚔️ *MOVES*\n\n` +
-      `${moveLines}\n\n` +
-      `━━━━━━━━━━━━━━\n\n` +
-      `> Use *.move <1-${moveList.length}>* in battle\n` +
-      `> Use *.learn ${slot}* to unlock new moves`
+      `\`\`\`🎮 ${p.name.toUpperCase()} — MOVES\`\`\`\n\n` +
+      `${moveBlocks}\n\n` +
+      `> Use \`.move <1-${moveList.length}>\` in battle\n` +
+      `> Use \`.learn ${slot}\` to learn new moves`
     )
   },
 
-  // ── #learn ────────────────────────────────────────────────────
+  // alias: .moveset → same as .moves
+  async moveset(ctx) { return module.exports.moves(ctx) },
+
+  // ── #learn — full 4-step move-learning flow ──────────────────
   async learn({ reply, sender, args }) {
-    const slot    = parseInt(args[0]) || 1
+    if (!args[0]) return reply(`❗ Usage: \`.learn <slot>\`\n\nUse \`.party\` to view your team slots.`)
+    const slot = parseInt(args[0])
+    if (isNaN(slot) || slot < 1) return reply(`❗ Invalid slot. Use \`.party\` to view your team.`)
+
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party)
     const p       = party[slot - 1]
-    if (!p) return reply(`⚠️ No Pokémon in slot #${slot}`)
-    const data     = await fetchPokeData(p.pokemon_id).catch(() => null)
-    const allMoves = data?.moves || []
-    const newMove  = allMoves[Math.floor(Math.random() * allMoves.length)] || 'Hyper Beam'
-    const curMoves = Array.isArray(p.moves) ? [...p.moves] : ['Tackle']
-    if (!curMoves.includes(newMove)) { curMoves.push(newMove); try { await db.updatePokemon(p._id, { moves: curMoves.slice(0, 8) }) } catch {} }
-    await reply(`📚 *MOVE LEARNED!*\n\n📛 *${p.name}* learned *${newMove}*!`)
+    if (!p) return reply(`❗ No Pokémon in slot #${slot}. Use \`.party\` to view your team.`)
+
+    const curMoves   = Array.isArray(p.moves) ? p.moves : ['Tackle']
+    const currentLvl = p.level || 1
+
+    // ── Step 3: .learn <slot> <move> forget <n> — replace a move ──
+    if (args.length >= 4 && args[2]?.toLowerCase() === 'forget') {
+      const moveName  = args[1].replace(/-/g, ' ')
+      const forgetIdx = parseInt(args[3]) - 1
+      if (isNaN(forgetIdx) || forgetIdx < 0 || forgetIdx >= curMoves.length) {
+        return reply(`❗ Invalid slot to forget. Use a number from 1 to ${curMoves.length}.`)
+      }
+      const forgotten  = curMoves[forgetIdx]
+      const newMoves   = [...curMoves]
+      newMoves[forgetIdx] = capName(moveName)
+      try { await db.updatePokemon(p._id, { moves: newMoves }) } catch {}
+      return reply(
+        `📚 *Move Replaced!*\n\n` +
+        `${p.name} forgot *${forgotten}*\n` +
+        `and learned *${capName(moveName)}*!\n\n` +
+        `🎮 Current Moves:\n` +
+        newMoves.map((m, i) => `${i + 1}. ${m}`).join('\n') +
+        `\n\n> Use \`.moves ${slot}\` to view move details.`
+      )
+    }
+
+    // ── Step 2: .learn <slot> <move> — teach a specific move ──────
+    if (args.length >= 2) {
+      const moveName = args.slice(1).join(' ').replace(/-/g, ' ')
+      const moveSlug = moveName.toLowerCase().replace(/\s+/g, '-')
+
+      // Validate the move exists for this Pokémon
+      let moveData = null
+      try {
+        moveData = await fetchJSON(`https://pokeapi.co/api/v2/move/${moveSlug}`)
+      } catch {}
+      if (!moveData || !moveData.name) return reply(`❗ Move *${moveName}* not found. Check \`.learn ${slot}\` for available moves.`)
+
+      if (curMoves.includes(capName(moveName))) {
+        return reply(`❗ ${p.name} already knows *${capName(moveName)}*!`)
+      }
+
+      // If slot available, just add
+      if (curMoves.length < 4) {
+        const newMoves = [...curMoves, capName(moveName)]
+        try { await db.updatePokemon(p._id, { moves: newMoves }) } catch {}
+        return reply(
+          `📚 *Move Learned!*\n\n` +
+          `${p.name} learned *${capName(moveName)}*!\n\n` +
+          `🎮 Current Moves:\n` +
+          newMoves.map((m, i) => `${i + 1}. ${m}`).join('\n') +
+          `\n\n> Use \`.moves ${slot}\` to view move details.`
+        )
+      }
+
+      // Already 4 moves — ask to forget one
+      pendingLearnChoice[sender] = { slot, moveName: capName(moveName), pokemon: p }
+      return reply(
+        `📚 ${p.name} already knows 4 moves!\n\n` +
+        `Which move should ${p.name} forget to learn *${capName(moveName)}*?\n\n` +
+        curMoves.map((m, i) => `${i + 1}. ${m}`).join('\n') +
+        `\n\n💡 Use \`.learn ${slot} ${moveSlug} forget <1-4>\` to replace a move.`
+      )
+    }
+
+    // ── Step 1: .learn <slot> — show learnable moves ───────────────
+    let learnableMoves = []
+    try {
+      const rawPoke = await fetchJSON(`https://pokeapi.co/api/v2/pokemon/${p.pokemon_id}`)
+      if (rawPoke?.moves) {
+        learnableMoves = (rawPoke.moves || [])
+          .filter(m => m.version_group_details?.some(v =>
+            v.move_learn_method?.name === 'level-up' &&
+            v.level_learned_at > 0 &&
+            v.level_learned_at <= currentLvl + 10
+          ))
+          .sort((a, b) => {
+            const la = Math.min(...a.version_group_details.filter(v => v.move_learn_method?.name === 'level-up').map(v => v.level_learned_at))
+            const lb = Math.min(...b.version_group_details.filter(v => v.move_learn_method?.name === 'level-up').map(v => v.level_learned_at))
+            return la - lb
+          })
+          .map(m => ({ name: capName(m.move.name), slug: m.move.name, level: Math.min(...m.version_group_details.filter(v => v.move_learn_method?.name === 'level-up').map(v => v.level_learned_at)) }))
+          .filter(m => !curMoves.includes(m.name))
+          .slice(0, 10)
+      }
+    } catch {}
+
+    if (!learnableMoves.length) {
+      return reply(
+        `📚 *${p.name}* — Available Moves\n\n` +
+        `No new moves available at Lv.${currentLvl}.\n\n` +
+        `🎮 Current Moves:\n` +
+        curMoves.map((m, i) => `${i + 1}. ${m}`).join('\n') +
+        `\n\n> Train more to unlock new moves!`
+      )
+    }
+
+    const moveLines = learnableMoves.map((m, i) => `${i + 1}. *${m.name}* (Lv.${m.level})`).join('\n')
+    await reply(
+      `📚 *${p.name}* — Available Moves (Lv.${currentLvl})\n\n` +
+      `${moveLines}\n\n` +
+      `🎮 Current Moves:\n` +
+      curMoves.map((m, i) => `${i + 1}. ${m}`).join('\n') +
+      `\n\n💡 Use \`.learn ${slot} <move name>\` to teach a move.`
+    )
+  },
+
+  // ── .bag — view inventory ──────────────────────────────────────
+  async bag({ reply, sender, user }) {
+    const u = user || await db.getOrCreateUser(sender)
+    let inventory = {}
+    try { inventory = await db.getInventory(sender) || {} } catch {}
+    const items = Object.entries(inventory)
+    if (!items.length) {
+      return reply(
+        `🎒 *Bag*\n\n` +
+        `Your bag is empty!\n\n` +
+        `💡 Use \`.mart\` to buy items.`
+      )
+    }
+    const bagLines = items.map(([key, qty]) => {
+      const shopItem = SHOP_ITEMS[key]
+      const emoji    = shopItem?.emoji || '📦'
+      const name     = shopItem?.name  || capName(key.replace(/-/g, ' '))
+      return `${emoji} *${name}* × ${qty}`
+    }).join('\n')
+    await reply(
+      `🎒 *Bag*\n\n` +
+      `👤 ${u.name || sender}\n` +
+      `💰 ${(u.wallet || 0).toLocaleString()} PokéCoins\n\n` +
+      `${bagLines}\n\n` +
+      `💡 Use \`.use <item>\` to use an item.`
+    )
   },
 
   // ── #stats ────────────────────────────────────────────────────
@@ -1875,6 +2245,93 @@ module.exports = {
 
   // ── .move — use a move during wild OR pvp battle ──────────────
   async move({ sock, jid, msg, reply, sender, senderJid, user, args }) {
+    // ── Gym battle handling ─────────────────────────────────────
+    const gymState = pendingGymBattle[sender]
+    if (gymState) {
+      const moveIdx = Math.max(0, (parseInt(args[0]) || 1) - 1)
+      const myMoves = gymState.moves
+      const moveName = myMoves[Math.min(moveIdx, myMoves.length - 1)] || 'Tackle'
+      const gym = gymState.gym
+
+      const myLvl   = gymState.myPokemon.level || 1
+      const baseDmg = 18 + myLvl * 2
+      const crit    = Math.random() < 0.10
+      const myDmg   = Math.round((baseDmg + Math.floor(Math.random() * 15)) * (crit ? 1.5 : 1))
+
+      const gymBaseDmg = 15 + (gymState.gymPokemon.level || 10) * 2
+      const gymDmg     = Math.round(gymBaseDmg + Math.floor(Math.random() * 12))
+
+      gymState.gymHp = Math.max(0, gymState.gymHp - myDmg)
+      gymState.myHp  = Math.max(0, gymState.myHp  - gymDmg)
+
+      // ── Gym Pokémon fainted ────────────────────────────
+      if (gymState.gymHp <= 0) {
+        gymState.gymPokeIdx++
+        if (gymState.gymPokeIdx >= gym.leaderPokemon.length) {
+          // ── All gym Pokémon defeated — WIN ─────────────
+          delete pendingGymBattle[sender]
+          const u = user || await db.getOrCreateUser(sender).catch(() => ({}))
+          await db.updateUser(sender, {
+            pokemon_badges: (u.pokemon_badges || 0) + 1,
+            xp:     (u.xp || 0) + gym.xp,
+            wallet: (u.wallet || 0) + gym.coins,
+          }).catch(() => {})
+          const newBadges = (u.pokemon_badges || 0) + 1
+          const BADGE_NUMS = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣']
+          const progress = BADGE_NUMS.slice(0, 8).map((n, i) => i < newBadges ? `${n}✅` : n).join('  ')
+          return reply(
+            `🏆 *Victory!*\n\n` +
+            `${gym.leader} was defeated!\n\n` +
+            `🏅 *${gym.badge}* earned!\n` +
+            `💰 +${gym.coins.toLocaleString()} PokéCoins\n` +
+            `✨ +${gym.xp} XP\n\n` +
+            `Badges: ${progress}\n\n` +
+            (newBadges < 8
+              ? `💡 Use \`.gym\` to view your next Gym.`
+              : `🌟 All 8 badges! You're a Pokémon Champion!`)
+          )
+        }
+        // ── Next gym Pokémon ───────────────────────────────
+        const nextGymPoke = gym.leaderPokemon[gymState.gymPokeIdx]
+        const nextMaxHp   = (nextGymPoke.level || 10) * 8 + 30
+        gymState.gymPokemon = nextGymPoke
+        gymState.gymHp      = nextMaxHp
+        gymState.gymMaxHp   = nextMaxHp
+        return reply(
+          `💥 ${gym.leader}: \"${gymState.myPokemon.name} scored a direct hit!\"\n\n` +
+          `${gym.leader} sent out *${nextGymPoke.name}* Lv.${nextGymPoke.level}!\n\n` +
+          `HP: ${gymState.myHp}/${gymState.myMaxHp} (yours)\n\n` +
+          `💡 Use \`.move <1-${myMoves.length}>\` to continue!`
+        )
+      }
+
+      // ── My Pokémon fainted ─────────────────────────────
+      if (gymState.myHp <= 0) {
+        delete pendingGymBattle[sender]
+        return reply(
+          `💔 *Defeat!*\n\n` +
+          `${gymState.myPokemon.name} fainted!\n\n` +
+          `${gym.leader}: \"You have talent, young trainer. Come back stronger!\"\n\n` +
+          `💡 Heal with \`.heal\` and try \`.challenge\` again.`
+        )
+      }
+
+      // ── Battle continues ───────────────────────────────
+      const myHpBar  = '█'.repeat(Math.ceil(gymState.myHp / gymState.myMaxHp * 10)) + '░'.repeat(10 - Math.ceil(gymState.myHp / gymState.myMaxHp * 10))
+      const gymHpBar = '█'.repeat(Math.ceil(gymState.gymHp / gymState.gymMaxHp * 10)) + '░'.repeat(10 - Math.ceil(gymState.gymHp / gymState.gymMaxHp * 10))
+      return reply(
+        `⚔️ *Gym Battle — ${gym.leader}*\n\n` +
+        `${gym.typeEmoji} ${gymState.gymPokemon.name} Lv.${gymState.gymPokemon.level}\n` +
+        `HP [${gymHpBar}] ${gymState.gymHp}/${gymState.gymMaxHp}\n\n` +
+        `⭐ ${gymState.myPokemon.name} Lv.${myLvl}\n` +
+        `HP [${myHpBar}] ${gymState.myHp}/${gymState.myMaxHp}\n\n` +
+        `${gymState.myPokemon.name} used *${moveName}*! -${myDmg} HP${crit ? ' ✨Crit!' : ''}\n` +
+        `${gymState.gymPokemon.name} used attack! -${gymDmg} HP\n\n` +
+        `💡 Use \`.move <1-${myMoves.length}>\` to continue!\n` +
+        myMoves.map((m, i) => `${i + 1}. ${m}`).join('  ')
+      )
+    }
+
     // ── PvP battle handling ─────────────────────────────────────
     const pvp = pvpBattles[sender]
     if (pvp && pvp.jid === jid) {
@@ -2167,12 +2624,12 @@ module.exports = {
 
   // ── .seedpokemon — staff command to fetch real moves/stats from PokéAPI ──
   async seedpokemon({ reply, args, isOwner, isMod, isGuardian }) {
-    if (!isOwner && !isMod && !isGuardian) return reply('❌ Staff only.')
+    if (!isOwner && !isMod && !isGuardian) return reply('❗ Staff only.')
     const nameOrId = (args[0] || '').toLowerCase().trim()
     if (!nameOrId) return reply('⚠️ Usage: *.seedpokemon <name or id>*\n\nExample: .seedpokemon pikachu')
     await reply(`⏳ Fetching *${nameOrId}* from PokéAPI...`)
     const poke = await fetchJSON(`https://pokeapi.co/api/v2/pokemon/${nameOrId}`)
-    if (!poke) return reply(`❌ *"${nameOrId}"* not found on PokéAPI.\n\nCheck the spelling and try again.`)
+    if (!poke) return reply(`❗ *"${nameOrId}"* not found on PokéAPI.\n\nCheck the spelling and try again.`)
     const getStat = (n) => (poke.stats || []).find(s => s?.stat?.name === n)?.base_stat || 0
     // Real level-up moves sorted by level
     const levelMoves = (poke.moves || [])
@@ -2202,7 +2659,7 @@ module.exports = {
     try { dex = JSON.parse(fs.readFileSync(DEX_FILE, 'utf8')) } catch {}
     dex[entry.name.toLowerCase()] = entry
     dex[String(entry.id)] = entry
-    try { fs.writeFileSync(DEX_FILE, JSON.stringify(dex, null, 2)) } catch (e) { return reply(`❌ Failed to save: ${e.message}`) }
+    try { fs.writeFileSync(DEX_FILE, JSON.stringify(dex, null, 2)) } catch (e) { return reply(`❗ Failed to save: ${e.message}`) }
     const moveList = entry.moves.length
       ? entry.moves.map((m, i) => `├ ${m}`).join('\n').replace(/├ ([^\n]*)$/, '└ $1')
       : '└ None'
