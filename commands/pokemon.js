@@ -3242,176 +3242,251 @@ async function downloadJson(url, timeoutMs = 8000) {
   })
 }
 
-// ── Party composite image - modern card design ───────────────────────────────
+// ── Party composite image - PARTY STATUS card design ─────────────────────────
 async function _buildPartyImage(party, trainerName) {
   let sharp
   try { sharp = require('sharp') } catch { return null }
 
   const TYPE_COLORS = {
     normal: '#9A9A7A', fire: '#E8601C', water: '#2A70E0', electric: '#E8C010',
-    grass: '#3CAA28', ice: '#60C8C8', fighting: '#C03028', poison: '#8828A0',
+    grass: '#3CAA28', ice: '#60C8C8', fighting: '#C03028', poison: '#A040C0',
     ground: '#D0A030', flying: '#8068E0', psychic: '#E82060', bug: '#78A010',
     rock: '#A88830', ghost: '#584878', dragon: '#4020D8', dark: '#504838',
     steel: '#9898B8', fairy: '#D85898',
   }
-  const tc   = (t) => TYPE_COLORS[(t || 'normal').toLowerCase()] || '#2A70E0'
-  const esc  = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const tc  = (t) => TYPE_COLORS[(t || 'normal').toLowerCase()] || '#2A70E0'
+  const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
   const FONT = 'Arial, Helvetica, sans-serif'
   const trainer = esc((trainerName || 'TRAINER').toUpperCase().slice(0, 20))
 
-  // ── Layout constants ──────────────────────────────────────────
-  const HEADER_H = 76
-  const CELL_W   = 530
-  const CELL_H   = 270
-  const W        = 2 * CELL_W          // 1060
-  const H        = HEADER_H + 3 * CELL_H  // 886
-  const SPR_SZ   = 168
-  const SPR_PAD  = 10
-  const TX       = SPR_PAD + SPR_SZ + 18  // where text block starts
+  // ── Layout ────────────────────────────────────────────────────
+  const GAP      = 10
+  const CARD_W   = 505
+  const CARD_H   = 188
+  const CARD_RX  = 12
+  const HEADER_H = 84
+  const W        = GAP * 3 + CARD_W * 2   // 1040
+  const H        = HEADER_H + GAP * 4 + CARD_H * 3  // 660
+  const SPRITE_W = 186
+  const SPR_SZ   = 162
+  const INFO_X   = SPRITE_W + 14  // info area start (relative to card left)
 
-  // ── Fetch PokéAPI base stats in parallel ──────────────────────
-  const apiStats = await Promise.all(
-    Array.from({ length: 6 }, async (_, i) => {
-      const p = party[i]
-      if (!p?.pokemon_id) return null
-      try {
-        const d = await downloadJson(`https://pokeapi.co/api/v2/pokemon/${p.pokemon_id}`)
-        if (!d?.stats) return null
-        return {
-          hp:  d.stats[0]?.base_stat ?? 45,
-          atk: d.stats[1]?.base_stat ?? 49,
-          def: d.stats[2]?.base_stat ?? 49,
-          spd: d.stats[5]?.base_stat ?? 45,
-        }
-      } catch { return null }
-    })
-  )
+  const cardX = (col) => GAP + col * (CARD_W + GAP)
+  const cardY = (row) => HEADER_H + GAP + row * (CARD_H + GAP)
 
-  // ── Build gradient defs for all 6 cards ──────────────────────
-  let defs = `
-    <linearGradient id="hdr" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#06061a"/>
-      <stop offset="100%" stop-color="#10102a"/>
-    </linearGradient>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#0c0c20"/>
-      <stop offset="100%" stop-color="#09091a"/>
-    </linearGradient>`
-
-  // Per-card gradients
-  for (let i = 0; i < 6; i++) {
-    const p      = party[i]
-    const types  = p ? (Array.isArray(p.types) ? p.types : [p.types || 'normal']) : ['normal']
-    const c1     = tc(types[0])
-    const c2     = types[1] ? tc(types[1]) : c1
-    defs += `
-    <linearGradient id="g${i}" x1="0" y1="0" x2="1" y2="1" gradientUnits="userSpaceOnUse" x1="${(i%2)*CELL_W}" y1="${HEADER_H+Math.floor(i/2)*CELL_H}" x2="${(i%2)*CELL_W+CELL_W}" y2="${HEADER_H+Math.floor(i/2)*CELL_H+CELL_H}">
-      <stop offset="0%" stop-color="${c1}" stop-opacity="0.18"/>
-      <stop offset="100%" stop-color="${c2}" stop-opacity="0.06"/>
-    </linearGradient>`
+  // ── Type decorative background shapes ────────────────────────
+  function typeDecor(type, cx, cy, color) {
+    const t = (type || '').toLowerCase()
+    if (t === 'grass') return `
+      <ellipse cx="${cx+35}" cy="${cy+22}" rx="24" ry="12" fill="${color}" opacity="0.22" transform="rotate(-38,${cx+35},${cy+22})"/>
+      <ellipse cx="${cx+95}" cy="${cy+148}" rx="20" ry="10" fill="${color}" opacity="0.18" transform="rotate(22,${cx+95},${cy+148})"/>
+      <ellipse cx="${cx+148}" cy="${cy+58}" rx="16" ry="8" fill="${color}" opacity="0.14" transform="rotate(-18,${cx+148},${cy+58})"/>
+      <ellipse cx="${cx+62}" cy="${cy+95}" rx="22" ry="11" fill="${color}" opacity="0.16" transform="rotate(42,${cx+62},${cy+95})"/>`
+    if (t === 'fire') return `
+      <ellipse cx="${cx+86}" cy="${cy+155}" rx="32" ry="14" fill="${color}" opacity="0.28"/>
+      <ellipse cx="${cx+52}" cy="${cy+118}" rx="18" ry="30" fill="${color}" opacity="0.20" transform="rotate(-12,${cx+52},${cy+118})"/>
+      <ellipse cx="${cx+116}" cy="${cy+108}" rx="16" ry="28" fill="${color}" opacity="0.18" transform="rotate(12,${cx+116},${cy+108})"/>
+      <circle cx="${cx+86}" cy="${cy+162}" r="22" fill="${color}" opacity="0.22"/>`
+    if (t === 'water') return `
+      <ellipse cx="${cx+32}" cy="${cy+42}" rx="13" ry="20" fill="${color}" opacity="0.24"/>
+      <ellipse cx="${cx+148}" cy="${cy+130}" rx="11" ry="18" fill="${color}" opacity="0.20"/>
+      <circle cx="${cx+82}" cy="${cy+82}" r="24" fill="${color}" opacity="0.12"/>
+      <ellipse cx="${cx+105}" cy="${cy+32}" rx="9" ry="15" fill="${color}" opacity="0.18"/>`
+    if (t === 'electric') return `
+      <polygon points="${cx+82},${cy+18} ${cx+60},${cy+88} ${cx+82},${cy+78} ${cx+56},${cy+162}" fill="${color}" opacity="0.20"/>
+      <polygon points="${cx+122},${cy+28} ${cx+102},${cy+98} ${cx+122},${cy+88} ${cx+102},${cy+170}" fill="${color}" opacity="0.14"/>`
+    if (t === 'ice') return `
+      <line x1="${cx+93}" y1="${cy+10}" x2="${cx+93}" y2="${cy+170}" stroke="${color}" stroke-width="1.5" opacity="0.15"/>
+      <line x1="${cx+20}" y1="${cy+90}" x2="${cx+166}" y2="${cy+90}" stroke="${color}" stroke-width="1.5" opacity="0.15"/>
+      <line x1="${cx+30}" y1="${cy+25}" x2="${cx+156}" y2="${cy+155}" stroke="${color}" stroke-width="1" opacity="0.12"/>
+      <line x1="${cx+156}" y1="${cy+25}" x2="${cx+30}" y2="${cy+155}" stroke="${color}" stroke-width="1" opacity="0.12"/>
+      <circle cx="${cx+93}" cy="${cy+90}" r="30" fill="${color}" opacity="0.08"/>`
+    if (t === 'psychic') return `
+      <circle cx="${cx+62}" cy="${cy+64}" r="36" fill="${color}" opacity="0.12"/>
+      <circle cx="${cx+124}" cy="${cy+122}" r="26" fill="${color}" opacity="0.10"/>
+      <circle cx="${cx+93}" cy="${cy+93}" r="12" fill="${color}" opacity="0.10"/>`
+    return `
+      <circle cx="${cx+72}" cy="${cy+94}" r="52" fill="${color}" opacity="0.12"/>
+      <circle cx="${cx+135}" cy="${cy+52}" r="26" fill="${color}" opacity="0.08"/>`
   }
 
-  // ── Build card cells ──────────────────────────────────────────
-  let cellsSvg = ''
+  // ── Gradient defs ─────────────────────────────────────────────
+  let defs = `
+    <linearGradient id="mainbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#080e1e"/>
+      <stop offset="100%" stop-color="#060a16"/>
+    </linearGradient>
+    <linearGradient id="hdrbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0c1328"/>
+      <stop offset="100%" stop-color="#080e1e"/>
+    </linearGradient>`
+
   for (let i = 0; i < 6; i++) {
-    const col    = i % 2
-    const row    = Math.floor(i / 2)
-    const X      = col * CELL_W
-    const Y      = HEADER_H + row * CELL_H
-    const p      = party[i]
-    const st     = apiStats[i]
-    const slotTxt = `0${i + 1}`.slice(-2)
+    const p     = party[i]
+    const types = p ? (Array.isArray(p.types) ? p.types : [p.types || 'normal']) : ['normal']
+    const c1    = tc(types[0])
+    const c2    = types[1] ? tc(types[1]) : c1
+    const col   = i % 2, row = Math.floor(i / 2)
+    const cx    = cardX(col), cy = cardY(row)
+    defs += `
+    <clipPath id="clip${i}">
+      <rect x="${cx}" y="${cy}" width="${CARD_W}" height="${CARD_H}" rx="${CARD_RX}"/>
+    </clipPath>
+    <linearGradient id="sg${i}" x1="${cx}" y1="${cy}" x2="${cx + SPRITE_W}" y2="${cy + CARD_H}" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="${c1}" stop-opacity="0.58"/>
+      <stop offset="100%" stop-color="${c2}" stop-opacity="0.22"/>
+    </linearGradient>
+    <radialGradient id="rg${i}" cx="${cx + SPRITE_W * 0.5}" cy="${cy + CARD_H * 0.68}" r="${SPRITE_W * 0.72}" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="${c1}" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="${c1}" stop-opacity="0.00"/>
+    </radialGradient>`
+  }
+
+  // ── Build cards ───────────────────────────────────────────────
+  let cardsSvg = ''
+  for (let i = 0; i < 6; i++) {
+    const col = i % 2, row = Math.floor(i / 2)
+    const cx  = cardX(col), cy = cardY(row)
+    const p   = party[i]
 
     if (p) {
-      const types    = Array.isArray(p.types) ? p.types : [p.types || 'normal']
-      const color1   = tc(types[0])
-      const lvl      = p.level || 1
-      const pName    = esc((p.name || '???').toUpperCase().slice(0, 13))
-      const xp       = p.xp || 0
-      const xpNeeded = Math.max(1, (lvl + 1) * (lvl + 1) * 50)
-      const xpPct    = Math.min(1, xp / xpNeeded)
-      const xpBarW   = Math.max(4, Math.round(xpPct * (CELL_W - 10)))
-
-      // ── Stat bars ──
-      const BAR_START = X + TX + 38
-      const BAR_W     = CELL_W - TX - 56
-      const statRows  = [
-        ['HP',  st?.hp  ?? 45, 250, '#28D860'],
-        ['ATK', st?.atk ?? 49, 190, '#F07020'],
-        ['DEF', st?.def ?? 49, 250, '#3878F0'],
-        ['SPD', st?.spd ?? 45, 200, '#E8C820'],
-      ].map(([lbl, val, mx, clr], bi) => {
-        const bY = Y + 120 + bi * 34
-        const fw = Math.max(6, Math.round(val / mx * BAR_W))
-        return `
-          <text x="${X + TX}" y="${bY + 11}" fill="#8888b8" font-size="12" font-weight="700" font-family="${FONT}">${lbl}</text>
-          <rect x="${BAR_START}" y="${bY}" width="${BAR_W}" height="13" rx="6" fill="#0e0e24"/>
-          <rect x="${BAR_START}" y="${bY}" width="${fw}" height="13" rx="6" fill="${clr}" opacity="0.92"/>
-          <text x="${BAR_START + BAR_W + 6}" y="${bY + 11}" fill="#6666a0" font-size="10" font-weight="700" font-family="${FONT}">${val}</text>`
-      }).join('')
-
-      // ── Type badges ──
-      const typeBadges = types.slice(0, 2).map((t, ti) => {
-        const bx = X + TX + ti * 94
-        return `
-          <rect x="${bx}" y="${Y + 78}" width="86" height="24" rx="12" fill="${tc(t)}"/>
-          <text x="${bx + 43}" y="${Y + 95}" fill="white" font-size="12" font-weight="800" text-anchor="middle" font-family="${FONT}">${esc(t.toUpperCase())}</text>`
-      }).join('')
-
-      // ── Shiny badge ──
-      const shinyBadge = p.shiny
-        ? `<rect x="${X + TX}" y="${Y + 57}" width="70" height="18" rx="9" fill="#b8860b"/>
-           <text x="${X + TX + 35}" y="${Y + 70}" fill="#FFD700" font-size="10" font-weight="800" text-anchor="middle" font-family="${FONT}">✦ SHINY</text>`
-        : ''
-
-      // ── HP bar at very bottom ──
+      const types  = Array.isArray(p.types) ? p.types : [p.types || 'normal']
+      const color1 = tc(types[0])
+      const lvl    = p.level || 1
+      const pName  = esc((p.name || '???').toUpperCase().slice(0, 13))
       const hpCur  = p.current_hp ?? ((p.hp || 45) + lvl * 5)
       const hpMax  = (p.hp || 45) + lvl * 5
       const hpPct  = Math.min(1, Math.max(0, hpCur / hpMax))
-      const hpW    = Math.max(4, Math.round(hpPct * (CELL_W - 10)))
-      const hpClr  = hpPct > 0.5 ? '#28D860' : hpPct > 0.25 ? '#F0C820' : '#E82830'
+      const hpBarFull = CARD_W - INFO_X - 18
+      const hpBarFill = Math.max(4, Math.round(hpPct * hpBarFull))
+      const hpClr    = hpPct > 0.5 ? '#2cdc6a' : hpPct > 0.25 ? '#F0C820' : '#E82830'
 
-      cellsSvg += `
-        <rect x="${X}" y="${Y}" width="${CELL_W}" height="${CELL_H}" fill="#101022"/>
-        <rect x="${X}" y="${Y}" width="${CELL_W}" height="${CELL_H}" fill="url(#g${i})"/>
-        <rect x="${X}" y="${Y}" width="7" height="${CELL_H}" fill="${color1}"/>
-        <rect x="${X}" y="${Y}" width="${CELL_W}" height="2" fill="${color1}" opacity="0.35"/>
-        <rect x="${X}" y="${Y + CELL_H - 1}" width="${CELL_W}" height="1" fill="#1c1c32"/>
-        <text x="${X + 12}" y="${Y + 22}" fill="${color1}" font-size="13" font-weight="700" font-family="${FONT}" opacity="0.65">${slotTxt}</text>
-        <text x="${X + TX}" y="${Y + 52}" fill="white" font-size="26" font-weight="900" font-family="${FONT}" letter-spacing="1">${pName}</text>
-        ${shinyBadge}
-        ${typeBadges}
-        ${statRows}
-        <rect x="${X + 5}" y="${Y + CELL_H - 14}" width="${CELL_W - 10}" height="9" rx="4" fill="#0a0a1e"/>
-        <rect x="${X + 5}" y="${Y + CELL_H - 14}" width="${xpBarW}" height="9" rx="4" fill="#6060e8" opacity="0.75"/>
-        <text x="${X + 10}" y="${Y + CELL_H - 5}" fill="#4040a0" font-size="8" font-weight="700" font-family="${FONT}">XP</text>
-        <rect x="${X + CELL_W - 64}" y="${Y + 10}" width="56" height="26" rx="13" fill="#090920" stroke="${color1}" stroke-width="1.5" stroke-opacity="0.7"/>
-        <text x="${X + CELL_W - 36}" y="${Y + 28}" fill="${color1}" font-size="14" font-weight="900" text-anchor="middle" font-family="${FONT}">Lv${lvl}</text>`
+      // Inline badge row: [Lv.X] [TYPE1] [TYPE2]
+      const LV_W = 54, TYPE_W = 72, BADGE_H = 22, BADGE_RX = 11, BGAP = 7
+      const badgeY  = cy + 74
+      const lvBadgeX = cx + INFO_X
+      const lvBadge = `
+        <rect x="${lvBadgeX}" y="${badgeY}" width="${LV_W}" height="${BADGE_H}" rx="${BADGE_RX}" fill="${color1}20" stroke="${color1}" stroke-width="1.5"/>
+        <text x="${lvBadgeX + LV_W/2}" y="${badgeY + 15}" fill="${color1}" font-size="12" font-weight="800" text-anchor="middle" font-family="${FONT}">Lv.${lvl}</text>`
+      const typeBadges = types.slice(0, 2).map((t, ti) => {
+        const bx = lvBadgeX + LV_W + BGAP + ti * (TYPE_W + BGAP)
+        return `
+          <rect x="${bx}" y="${badgeY}" width="${TYPE_W}" height="${BADGE_H}" rx="${BADGE_RX}" fill="${tc(t)}"/>
+          <text x="${bx + TYPE_W/2}" y="${badgeY + 15}" fill="white" font-size="11" font-weight="800" text-anchor="middle" font-family="${FONT}">${esc(t.toUpperCase())}</text>`
+      }).join('')
+
+      // Shiny label
+      const shinyLabel = p.shiny
+        ? `<text x="${cx + INFO_X}" y="${cy + 71}" fill="#FFD700" font-size="10" font-weight="800" font-family="${FONT}">&#x2726; SHINY</text>`
+        : ''
+
+      // Sparkle accents in info area
+      const sparks = `
+        <text x="${cx + INFO_X + 228}" y="${cy + 88}" fill="${color1}" font-size="14" opacity="0.38" font-family="${FONT}">+</text>
+        <text x="${cx + INFO_X + 248}" y="${cy + 110}" fill="${color1}" font-size="10" opacity="0.26" font-family="${FONT}">+</text>`
+
+      // HP row positions
+      const hpRowY  = cy + 122
+      const hpBarY  = cy + 130
+
+      cardsSvg += `
+        <!-- card base -->
+        <rect x="${cx}" y="${cy}" width="${CARD_W}" height="${CARD_H}" rx="${CARD_RX}" fill="#0d1428"/>
+        <!-- sprite panel (clipped) -->
+        <g clip-path="url(#clip${i})">
+          <rect x="${cx}" y="${cy}" width="${SPRITE_W}" height="${CARD_H}" fill="#0a1020"/>
+          <rect x="${cx}" y="${cy}" width="${SPRITE_W}" height="${CARD_H}" fill="url(#sg${i})"/>
+          <rect x="${cx}" y="${cy}" width="${SPRITE_W}" height="${CARD_H}" fill="url(#rg${i})"/>
+          ${typeDecor(types[0], cx, cy, color1)}
+        </g>
+        <!-- sprite panel divider line -->
+        <line x1="${cx + SPRITE_W}" y1="${cy + 2}" x2="${cx + SPRITE_W}" y2="${cy + CARD_H - 2}" stroke="${color1}" stroke-width="1.5" opacity="0.55"/>
+        <!-- card border (type color) -->
+        <rect x="${cx}" y="${cy}" width="${CARD_W}" height="${CARD_H}" rx="${CARD_RX}" fill="none" stroke="${color1}" stroke-width="2" opacity="0.85"/>
+        <!-- pokemon name -->
+        <text x="${cx + INFO_X}" y="${cy + 52}" fill="white" font-size="27" font-weight="900" font-family="${FONT}" letter-spacing="1">${pName}</text>
+        ${shinyLabel}
+        <!-- inline badge row: level + types -->
+        ${lvBadge}${typeBadges}
+        <!-- HP label left, value right (same baseline) -->
+        <text x="${cx + INFO_X}" y="${hpRowY}" fill="#7a90c0" font-size="14" font-weight="700" font-family="${FONT}">HP</text>
+        <text x="${cx + CARD_W - 12}" y="${hpRowY}" fill="white" font-size="14" font-weight="700" text-anchor="end" font-family="${FONT}">${hpCur} / ${hpMax}</text>
+        <!-- HP bar track -->
+        <rect x="${cx + INFO_X}" y="${hpBarY}" width="${hpBarFull}" height="10" rx="5" fill="#08101e"/>
+        <!-- HP bar fill -->
+        <rect x="${cx + INFO_X}" y="${hpBarY}" width="${hpBarFill}" height="10" rx="5" fill="${hpClr}"/>
+        <!-- info area sparkles -->
+        ${sparks}`
     } else {
-      cellsSvg += `
-        <rect x="${X}" y="${Y}" width="${CELL_W}" height="${CELL_H}" fill="#0b0b1c"/>
-        <rect x="${X}" y="${Y + CELL_H - 1}" width="${CELL_W}" height="1" fill="#181830"/>
-        <rect x="${X + 18}" y="${Y + 18}" width="${CELL_W - 36}" height="${CELL_H - 36}" rx="8" fill="none" stroke="#1c1c34" stroke-width="1.5" stroke-dasharray="10,5"/>
-        <text x="${X + CELL_W / 2}" y="${Y + CELL_H / 2 - 6}" fill="#222238" font-size="36" font-weight="700" text-anchor="middle" font-family="${FONT}">○</text>
-        <text x="${X + CELL_W / 2}" y="${Y + CELL_H / 2 + 22}" fill="#22223a" font-size="13" font-weight="700" text-anchor="middle" font-family="${FONT}">EMPTY SLOT</text>`
+      // Empty slot
+      const midX = cx + Math.round(SPRITE_W / 2)
+      const midY = cy + Math.round(CARD_H / 2)
+      cardsSvg += `
+        <!-- empty card -->
+        <rect x="${cx}" y="${cy}" width="${CARD_W}" height="${CARD_H}" rx="${CARD_RX}" fill="#0b1122"/>
+        <rect x="${cx}" y="${cy}" width="${CARD_W}" height="${CARD_H}" rx="${CARD_RX}" fill="none" stroke="#1e2d48" stroke-width="1.5"/>
+        <!-- plus circle -->
+        <circle cx="${midX}" cy="${midY}" r="30" fill="none" stroke="#243858" stroke-width="2"/>
+        <line x1="${midX - 14}" y1="${midY}" x2="${midX + 14}" y2="${midY}" stroke="#243858" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="${midX}" y1="${midY - 14}" x2="${midX}" y2="${midY + 14}" stroke="#243858" stroke-width="2.5" stroke-linecap="round"/>
+        <!-- sparkle dots (4 corners around circle) -->
+        <text x="${midX - 48}" y="${midY - 20}" fill="#1e3050" font-size="12" font-family="${FONT}">+</text>
+        <text x="${midX + 38}" y="${midY - 20}" fill="#1e3050" font-size="12" font-family="${FONT}">+</text>
+        <text x="${midX - 48}" y="${midY + 36}" fill="#1e3050" font-size="12" font-family="${FONT}">+</text>
+        <text x="${midX + 38}" y="${midY + 36}" fill="#1e3050" font-size="12" font-family="${FONT}">+</text>
+        <!-- empty slot text -->
+        <text x="${cx + SPRITE_W + 20}" y="${midY - 4}" fill="#2e4a6a" font-size="18" font-weight="800" font-family="${FONT}" letter-spacing="1">EMPTY SLOT</text>
+        <text x="${cx + SPRITE_W + 20}" y="${midY + 20}" fill="#1e3050" font-size="12" font-family="${FONT}">Add a member</text>`
     }
   }
 
+  // ── Header ────────────────────────────────────────────────────
+  const SLX = 398, SLY = 43
+  const headerSvg = `
+    <rect width="${W}" height="${HEADER_H}" fill="url(#hdrbg)"/>
+    <!-- header bottom teal line -->
+    <rect y="${HEADER_H - 3}" width="${W}" height="3" fill="#00c8ff"/>
+    <!-- ✦ star left -->
+    <text x="16" y="56" fill="#00c8ff" font-size="30" font-weight="900" font-family="${FONT}">&#x2736;</text>
+    <!-- PARTY white -->
+    <text x="56" y="58" fill="white" font-size="40" font-weight="900" font-family="${FONT}" letter-spacing="2">PARTY</text>
+    <!-- STATUS cyan -->
+    <text x="214" y="58" fill="#00c8ff" font-size="40" font-weight="900" font-family="${FONT}" letter-spacing="2">STATUS</text>
+    <!-- small star after title -->
+    <text x="390" y="52" fill="#00c8ff" font-size="22" opacity="0.90" font-family="${FONT}">&#x2736;</text>
+    <!-- floating sparkle + marks -->
+    <text x="372" y="34" fill="#00c8ff" font-size="13" opacity="0.55" font-family="${FONT}">+</text>
+    <text x="420" y="66" fill="#00c8ff" font-size="11" opacity="0.45" font-family="${FONT}">+</text>
+    <text x="434" y="28" fill="#00c8ff" font-size="9" opacity="0.35" font-family="${FONT}">+</text>
+    <!-- slime blob body -->
+    <ellipse cx="${SLX}" cy="${SLY}" rx="20" ry="22" fill="#1a3055"/>
+    <ellipse cx="${SLX - 7}" cy="${SLY + 15}" rx="8" ry="6" fill="#1a3055"/>
+    <ellipse cx="${SLX + 8}" cy="${SLY + 16}" rx="7" ry="5" fill="#1a3055"/>
+    <ellipse cx="${SLX - 14}" cy="${SLY + 10}" rx="6" ry="5" fill="#1a3055"/>
+    <!-- slime eyes -->
+    <circle cx="${SLX - 6}" cy="${SLY - 2}" r="3.8" fill="white" opacity="0.95"/>
+    <circle cx="${SLX + 7}" cy="${SLY - 2}" r="3.8" fill="white" opacity="0.95"/>
+    <circle cx="${SLX - 5}" cy="${SLY - 1}" r="2" fill="#08111f"/>
+    <circle cx="${SLX + 8}" cy="${SLY - 1}" r="2" fill="#08111f"/>
+    <!-- slime highlight -->
+    <ellipse cx="${SLX - 1}" cy="${SLY - 11}" rx="5.5" ry="3.5" fill="white" opacity="0.20"/>
+    <!-- sparkle dots beside slime -->
+    <circle cx="${SLX + 32}" cy="${SLY - 16}" r="2.5" fill="#00c8ff" opacity="0.55"/>
+    <circle cx="${SLX + 44}" cy="${SLY + 5}" r="1.8" fill="#00c8ff" opacity="0.42"/>
+    <circle cx="${SLX + 28}" cy="${SLY + 14}" r="1.5" fill="#00c8ff" opacity="0.35"/>
+    <!-- right divider -->
+    <rect x="${W - 232}" y="18" width="1.5" height="50" fill="#00c8ff" opacity="0.30"/>
+    <!-- KONOSUBA BOT -->
+    <text x="${W - 222}" y="44" fill="white" font-size="17" font-weight="800" font-family="${FONT}" letter-spacing="0.5">KONOSUBA BOT</text>
+    <!-- subtitle / trainer -->
+    <text x="${W - 222}" y="64" fill="#00c8ff" font-size="11" font-family="${FONT}" letter-spacing="0.8">Trainer: ${trainer}</text>`
+
   // ── Full SVG ──────────────────────────────────────────────────
   const bgSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-    <defs>${defs}
-    </defs>
-    <rect width="${W}" height="${H}" fill="url(#bg)"/>
-    <rect width="${W}" height="${HEADER_H}" fill="url(#hdr)"/>
-    <rect width="${W}" height="5" fill="#00C8FF"/>
-    <rect y="${HEADER_H - 1}" width="${W}" height="1" fill="#181830"/>
-    <text x="22" y="48" fill="white" font-size="32" font-weight="900" font-family="${FONT}" letter-spacing="2">KONO</text>
-    <text x="122" y="48" fill="#00C8FF" font-size="32" font-weight="900" font-family="${FONT}" letter-spacing="2">SUBA</text>
-    <rect x="250" y="26" width="2" height="28" rx="1" fill="#00C8FF" opacity="0.35"/>
-    <text x="264" y="47" fill="#55668a" font-size="14" font-weight="700" font-family="${FONT}" letter-spacing="1">PARTY OVERVIEW</text>
-    <text x="${W - 18}" y="48" fill="#404060" font-size="13" font-weight="600" font-family="${FONT}" text-anchor="end">TRAINER  ${trainer}</text>
-    <rect x="${CELL_W}" y="${HEADER_H}" width="2" height="${H - HEADER_H}" fill="#181830"/>
-    ${cellsSvg}
+    <defs>${defs}</defs>
+    <rect width="${W}" height="${H}" fill="url(#mainbg)"/>
+    ${headerSvg}
+    ${cardsSvg}
   </svg>`
 
   let base
@@ -3439,8 +3514,8 @@ async function _buildPartyImage(party, trainerName) {
       const spr = await sharp(buf)
         .resize(SPR_SZ, SPR_SZ, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 }, kernel: 'lanczos3' })
         .png().toBuffer()
-      const left = col * CELL_W + SPR_PAD + 7
-      const top  = HEADER_H + row * CELL_H + Math.round((CELL_H - SPR_SZ) / 2)
+      const left = cardX(col) + Math.round((SPRITE_W - SPR_SZ) / 2)
+      const top  = cardY(row) + Math.round((CARD_H - SPR_SZ) / 2)
       composites.push({ input: spr, left, top })
     } catch {}
   }
