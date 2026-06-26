@@ -564,6 +564,7 @@ async function handleMessage(sock, msg) {
       if (cmd === 'swap' || cmd === 'pswap')     return await pk.swap(ctx)
       if (cmd === 'battle' || cmd === 'pbattle') return await pk.battle(ctx)
       if (cmd === 'gym')                         return await pk.gym(ctx)
+      if (cmd === 'gyms')                        return await pk.gyms(ctx)
       if (cmd === 'challenge')                   return await pk.challenge(ctx)
       if (cmd === 'badges')                      return await pk.badges(ctx)
       if (cmd === 'raid')                        return await pk.raid(ctx)

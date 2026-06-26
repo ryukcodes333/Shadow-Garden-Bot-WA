@@ -328,7 +328,7 @@ module.exports = {
       `┣ .flee\n` +
       `      └ \`Escape from battle\`\n` +
       `┗ .dex <name/id>\n` +
-      `      └ \`View Pokédex information\`\n\n` +
+      `      └ \`View PokéLab information\`\n\n` +
       `*⚔️ BATTLE*\n` +
       `┣ .battle @user\n` +
       `      └ \`Challenge another trainer\`\n` +
@@ -708,7 +708,7 @@ module.exports = {
           `❓ *Shadow-${id}* • Lv. ${randInt(3, 30)}\n` +
           `🔹 Unknown\n\n` +
           `*⚔️ Choose an action*\n` +
-          `> *.dex* — View Pokédex data\n` +
+          `> *.dex* — View PokéLab data\n` +
           `> *#catch <slot>* — Attempt capture\n` +
           `> *.fight <slot>* — Start a battle\n` +
           `> *.flee* — Leave quietly`,
@@ -726,7 +726,7 @@ module.exports = {
       `${rarity.emoji} *${rarity.rarity.charAt(0).toUpperCase() + rarity.rarity.slice(1)}*\n` +
       `_"${data.description || 'A mysterious Pokémon stares at you.'}"_\n\n` +
       `*⚔️ Choose an action*\n` +
-      `> *.dex ${data.name.toLowerCase()}* — View Pokédex data\n` +
+      `> *.dex ${data.name.toLowerCase()}* — View PokéLab data\n` +
       `> *#catch <slot>* — Attempt capture\n` +
       `> *.fight <slot>* — Start a battle\n` +
       `> *.flee* — Leave quietly`
@@ -1095,12 +1095,12 @@ module.exports = {
     ]
 
     const query = args[0]?.toLowerCase()
-    if (!query) return reply(`📘 *POKÉDEX*\n\nUsage: *#dex <name or id>*`)
+    if (!query) return reply(`🔬 *POKÉLAB*\n\nUsage: *#dex <name or id>*`)
 
-    await sock.sendMessage(jid, { text: `🔍 *Searching Pokédex for* *${query}*...` }, { quoted: msg })
+    await sock.sendMessage(jid, { text: `🔍 *Searching PokéLab for* *${query}*...` }, { quoted: msg })
 
     const data = await fetchPokeData(query).catch(() => null)
-    if (!data) return reply(`📭 *${query}* not found in the Pokédex.`)
+    if (!data) return reply(`📭 *${query}* not found in the PokéLab.`)
 
     // ── Species-stable nature & level (seeded by pokemon_id for consistency) ──
     const nature    = NATURES[data.id % NATURES.length]
@@ -1167,8 +1167,19 @@ module.exports = {
   },
 
   // ── #heal ─────────────────────────────────────────────────────
-  async heal({ reply }) {
-    await reply(`✨ *TEAM HEALED!*\n\n💚 All Pokémon fully restored!\n\n_The healing light washes over your team._ 🖤`)
+  async heal({ reply, sender }) {
+    const pokemon = await db.getUserPokemon(sender).catch(() => [])
+    const party   = (pokemon || []).filter(p => p.in_party)
+    if (!party.length) return reply(`❗ You have no Pokémon in your party!`)
+    let healed = 0
+    for (const p of party) {
+      const maxHp = (p.hp || 45) + (p.level || 1) * 5
+      try {
+        await db.updatePokemon(p._id, { current_hp: maxHp, fainted: false })
+        healed++
+      } catch {}
+    }
+    await reply(`🌟 Success! You have successfully healed *${healed} Pokémons* in your party.`)
   },
 
   // ── #boost ────────────────────────────────────────────────────
@@ -1506,12 +1517,27 @@ module.exports = {
     )
   },
 
-  // ── .challenge — start gym battle ─────────────────────────────
+  // ── .challenge [gym#] — start gym battle ──────────────────────
   async challenge({ reply, sender, user, args }) {
     const u       = user || await db.getOrCreateUser(sender)
     const badges  = u.pokemon_badges || 0
-    const gymIdx  = Math.min(badges, GYM_DATA.length - 1)
-    const gym     = GYM_DATA[gymIdx]
+
+    // Accept optional gym number arg (1-indexed)
+    let gymIdx = badges
+    if (args[0]) {
+      const requested = parseInt(args[0]) - 1
+      if (isNaN(requested) || requested < 0 || requested >= GYM_DATA.length) {
+        return reply(`❗ Invalid gym number. Use \`.gyms\` to see available gyms (1–8).`)
+      }
+      if (requested > badges) {
+        return reply(`🔒 You haven't unlocked Gym ${requested + 1} yet!\n\nYou have *${badges}* badge${badges !== 1 ? 's' : ''}. Earn more by defeating gym leaders in order.\n\n💡 Use \`.gyms\` to see your progress.`)
+      }
+      gymIdx = Math.min(requested, GYM_DATA.length - 1)
+    } else {
+      gymIdx = Math.min(badges, GYM_DATA.length - 1)
+    }
+
+    const gym = GYM_DATA[gymIdx]
 
     if (badges >= 8) return reply(`🏆 You've already conquered all 8 Gyms! Use \`.raid\` for raid bosses.`)
     if (pendingGymBattle[sender]) return reply(`❗ You're already in a Gym battle! Use \`.move <1-4>\` to fight or \`.heal\` to reset.`)
@@ -1546,6 +1572,31 @@ module.exports = {
       `Choose a move:\n` +
       (pendingGymBattle[sender].moves.map((m, i) => `* ${m}`).join('\n')) +
       `\n\n💡 Use \`.move <1-${pendingGymBattle[sender].moves.length}>\` to attack!`
+    )
+  },
+
+  // ── .gyms — see all available gyms ───────────────────────────
+  async gyms({ reply, sender, user }) {
+    const u      = user || await db.getOrCreateUser(sender)
+    const badges = u.pokemon_badges || 0
+    const BADGE_NUMS = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣']
+    const gymLines = GYM_DATA.map((g, i) => {
+      const earned  = i < badges
+      const current = i === badges
+      const locked  = i > badges
+      const status  = earned ? '✅' : current ? '⚔️' : '🔒'
+      return (
+        `${status} *Gym ${i + 1}* — ${g.name}\n` +
+        `   👤 ${g.leader}  ${g.typeEmoji} ${g.type}  Rec. Lv.${g.recLevel}\n` +
+        `   🏅 ${g.badge}${current ? `\n   💡 _Use \`.challenge ${i + 1}\` to battle!_` : ''}`
+      )
+    }).join('\n\n')
+    await reply(
+      `🏟️ *Kanto Gym League*\n\n` +
+      `👤 Trainer: ${u.name || sender}\n` +
+      `🏅 Badges: ${badges}/8\n\n` +
+      `${gymLines}\n\n` +
+      `Legend: ✅ Cleared  ⚔️ Current  🔒 Locked`
     )
   },
 
@@ -1788,53 +1839,101 @@ module.exports = {
     const slot = parseInt(args[0]) || 1
     const cd   = await db.getCooldown(sender, `ptrain${slot}`).catch(() => 0)
     if (cd > 0) return reply(`⏳ Wait *${Math.floor(cd / 60000)}m* before training slot #${slot} again.`)
+
     const pokemon = await db.getUserPokemon(sender).catch(() => [])
     const party   = (pokemon || []).filter(p => p.in_party)
     const p       = party[slot - 1]
-    if (!p) return reply(`⚠️ No Pokémon in slot #${slot}`)
-
-    // Very hard XP — 1000 XP per pokemon level
-    const xpGain = randInt(1, 2)
-    const newXp  = (p.xp || 0) + xpGain
-    const oldLvl = p.level || 1
-    const newLvl = Math.floor(newXp / 1000) + 1
-    const leveled = newLvl > oldLvl
+    if (!p) return reply(`❗ No Pokémon in slot #${slot}`)
+    if (p.fainted) return reply(`❗ *${p.name}* has fainted! Use \`.heal\` first.`)
 
     await db.setCooldown(sender, `ptrain${slot}`, 15 * 60)
 
-    // Check for evolution at levels 16 and 36
-    if (leveled && (newLvl === 16 || newLvl === 36)) {
+    const myLvl = p.level || 1
+
+    // ── Pick a wild opponent 1–5 levels lower (min level 1) ──────
+    const WILD_POOL = [
+      { name: 'Rattata', id: 19 }, { name: 'Pidgey', id: 16 }, { name: 'Caterpie', id: 10 },
+      { name: 'Weedle', id: 13 }, { name: 'Spearow', id: 21 }, { name: 'Ekans', id: 23 },
+      { name: 'Sandshrew', id: 27 }, { name: 'Nidoran', id: 32 }, { name: 'Clefairy', id: 35 },
+      { name: 'Jigglypuff', id: 39 }, { name: 'Zubat', id: 41 }, { name: 'Oddish', id: 43 },
+      { name: 'Paras', id: 46 }, { name: 'Venonat', id: 48 }, { name: 'Diglett', id: 50 },
+      { name: 'Meowth', id: 52 }, { name: 'Psyduck', id: 54 }, { name: 'Mankey', id: 56 },
+      { name: 'Growlithe', id: 58 }, { name: 'Poliwag', id: 60 }, { name: 'Abra', id: 63 },
+      { name: 'Machop', id: 66 }, { name: 'Bellsprout', id: 69 }, { name: 'Tentacool', id: 72 },
+    ]
+    const wild    = WILD_POOL[Math.floor(Math.random() * WILD_POOL.length)]
+    const wildLvl = Math.max(1, myLvl - randInt(1, 5))
+
+    // ── Simulate battle outcome (higher level = better chance) ────
+    const myPower   = myLvl * 10 + randInt(0, 30)
+    const wildPower = wildLvl * 10 + randInt(0, 30)
+    const won       = myPower >= wildPower
+
+    // ── XP: truly random 300–800, larger range if opponent was close ──
+    const xpGain = won ? randInt(300, 800) : randInt(80, 200)
+    const newXp  = (p.xp || 0) + xpGain
+    const oldLvl = myLvl
+    const newLvl = Math.min(100, Math.floor(Math.sqrt(newXp / 50)) + 1)
+    const leveled = newLvl > oldLvl
+
+    // ── Build battle log lines ────────────────────────────────────
+    const myMove   = Array.isArray(p.moves) && p.moves[0] ? p.moves[0] : 'Tackle'
+    const wildMove = 'Tackle'
+    const myDmg    = randInt(20 + myLvl * 2, 35 + myLvl * 3)
+    const wildDmg  = randInt(10 + wildLvl, 20 + wildLvl * 2)
+
+    const battleLog =
+      `${p.name} used *${myMove}*! -${myDmg} HP\n` +
+      `${wild.name} used *${wildMove}*! -${wildDmg} HP\n` +
+      (won
+        ? `💥 ${wild.name} fainted! *${p.name}* wins!`
+        : `😵 *${p.name}* barely survived and fled!`)
+
+    // ── Save XP/level ─────────────────────────────────────────────
+    const updates = { xp: newXp, level: newLvl }
+    if (!won) {
+      const curHp = (p.current_hp || (p.hp || 45) + myLvl * 5)
+      updates.current_hp = Math.max(1, curHp - Math.floor(wildDmg * 0.4))
+    }
+    try { await db.updatePokemon(p._id, updates) } catch {}
+
+    // ── Level-up evolution check ──────────────────────────────────
+    if (leveled) {
       try {
-        await db.updatePokemon(p._id, { xp: newXp, level: newLvl })
         const evoName = await getPokeEvolutionTarget(p.pokemon_id, p.name.toLowerCase())
         if (evoName) {
           const newData = await fetchPokeData(evoName).catch(() => null)
-          if (newData) {
+          if (newData && newLvl >= (newData.evoLevel || 16)) {
             await db.updatePokemon(p._id, {
-              name:       newData.name,
-              pokemon_id: newData.id,
-              types:      newData.types,
-              moves:      newData.moves,
-              abilities:  newData.abilities,
-            })
+              name: newData.name, pokemon_id: newData.id,
+              types: newData.types, moves: newData.moves, abilities: newData.abilities,
+            }).catch(() => {})
             const caption =
-              `💪 *TRAINING COMPLETE!*\n\n📛 *${p.name}* trained hard!\n\n⭐ *+${xpGain} XP*\n🔮 *Level:* ${newLvl} 🆙\n\n` +
-              `🌟 *EVOLUTION!*\n\n✨ *${p.name}* evolved into *${newData.name}*!\n⚡ *Type:* ${newData.types.join(' / ')}\n\n_The power within has awakened._ 🖤`
+              `⚔️ *Training Battle — Lv.${wildLvl} ${wild.name}*\n\n${battleLog}\n\n` +
+              `✨ *+${xpGain} XP* | 🆙 Level ${newLvl}\n\n` +
+              `🌟 *${p.name}* evolved into *${newData.name}*!\n\n⏰ Train again in 15 minutes.`
             if (newData.imageUrl) {
               try { await sock.sendMessage(jid, { image: { url: newData.imageUrl }, caption }, { quoted: msg }); return } catch {}
             }
-            await reply(caption)
-            return
+            return reply(caption)
           }
         }
       } catch {}
     }
 
-    try { await db.updatePokemon(p._id, { xp: newXp, level: newLvl }) } catch {}
+    const xpBar   = newLvl * 50
+    const xpNext  = (newLvl + 1) * (newLvl + 1) * 50
+    const lvlLine = leveled ? `\n\n🆙 *LEVEL UP!* ${oldLvl} → ${newLvl} 🎊` : ''
+    const evoHint = leveled && newLvl >= 16 ? `\n💡 Use \`.evolve ${slot}\` — may be eligible!` : ''
+
     await reply(
-      `💪 *TRAINING COMPLETE!*\n\n📛 *${p.name}* trained hard!\n\n⭐ *+${xpGain} XP*\n🔮 *XP:* ${newXp}/${newLvl * 1000}` +
-      (leveled ? `\n\n🆙 *LEVEL UP!* → Level ${newLvl} 🎊${newLvl >= 16 ? '\n\n_Pokémon can now evolve! Use *#evolve ' + slot + '*_' : ''}` : '') +
-      `\n\n⏰ Train again in 15 minutes.\n_Very hard path to mastery…_ 🖤`
+      `⚔️ *Training Battle — Lv.${wildLvl} ${wild.name}*\n\n` +
+      `${battleLog}\n\n` +
+      `${won ? '🏆 *Victory!*' : '🏃 *Ran away!*'}\n\n` +
+      `✨ *+${xpGain} XP*\n` +
+      `📊 XP: ${newXp} | Lv.${newLvl}` +
+      `${lvlLine}${evoHint}\n\n` +
+      `⏰ Train again in 15 minutes.`
     )
   },
 
@@ -3007,28 +3106,34 @@ async function downloadJson(url, timeoutMs = 8000) {
   })
 }
 
-// ── Party composite image (2-col, stat bars, official artwork) ───────────────
+// ── Party composite image — modern card design ───────────────────────────────
 async function _buildPartyImage(party, trainerName) {
   let sharp
   try { sharp = require('sharp') } catch { return null }
 
   const TYPE_COLORS = {
-    normal: '#A8A878', fire: '#F08030', water: '#6890F0', electric: '#F8D030',
-    grass: '#78C850', ice: '#98D8D8', fighting: '#C03028', poison: '#A040A0',
-    ground: '#E0C068', flying: '#A890F0', psychic: '#F85888', bug: '#A8B820',
-    rock: '#B8A038', ghost: '#705898', dragon: '#7038F8', dark: '#705848',
-    steel: '#B8B8D0', fairy: '#EE99AC',
+    normal: '#9A9A7A', fire: '#E8601C', water: '#2A70E0', electric: '#E8C010',
+    grass: '#3CAA28', ice: '#60C8C8', fighting: '#C03028', poison: '#8828A0',
+    ground: '#D0A030', flying: '#8068E0', psychic: '#E82060', bug: '#78A010',
+    rock: '#A88830', ghost: '#584878', dragon: '#4020D8', dark: '#504838',
+    steel: '#9898B8', fairy: '#D85898',
   }
-  const tc  = (t) => TYPE_COLORS[(t || 'normal').toLowerCase()] || '#6890F0'
-  const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-  const trainer = esc((trainerName || 'ME').toUpperCase().slice(0, 18))
+  const tc   = (t) => TYPE_COLORS[(t || 'normal').toLowerCase()] || '#2A70E0'
+  const esc  = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const FONT = 'Arial, Helvetica, sans-serif'
+  const trainer = esc((trainerName || 'TRAINER').toUpperCase().slice(0, 20))
 
-  const HEADER_H = 58, CELL_W = 495, CELL_H = 230
-  const W = 2 * CELL_W, H = HEADER_H + 3 * CELL_H  // 990 × 748
-  const ACCENT_W = 5, SPR_SZ = 128, SPR_PAD = 10
-  const STATS_X  = ACCENT_W + SPR_SZ + SPR_PAD + 10  // ≈153 from cell-left
+  // ── Layout constants ──────────────────────────────────────────
+  const HEADER_H = 76
+  const CELL_W   = 530
+  const CELL_H   = 270
+  const W        = 2 * CELL_W          // 1060
+  const H        = HEADER_H + 3 * CELL_H  // 886
+  const SPR_SZ   = 168
+  const SPR_PAD  = 10
+  const TX       = SPR_PAD + SPR_SZ + 18  // where text block starts
 
-  // Fetch PokéAPI base stats for each slot in parallel
+  // ── Fetch PokéAPI base stats in parallel ──────────────────────
   const apiStats = await Promise.all(
     Array.from({ length: 6 }, async (_, i) => {
       const p = party[i]
@@ -3046,85 +3151,137 @@ async function _buildPartyImage(party, trainerName) {
     })
   )
 
+  // ── Build gradient defs for all 6 cards ──────────────────────
+  let defs = `
+    <linearGradient id="hdr" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#06061a"/>
+      <stop offset="100%" stop-color="#10102a"/>
+    </linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0c0c20"/>
+      <stop offset="100%" stop-color="#09091a"/>
+    </linearGradient>`
+
+  // Per-card gradients
+  for (let i = 0; i < 6; i++) {
+    const p      = party[i]
+    const types  = p ? (Array.isArray(p.types) ? p.types : [p.types || 'normal']) : ['normal']
+    const c1     = tc(types[0])
+    const c2     = types[1] ? tc(types[1]) : c1
+    defs += `
+    <linearGradient id="g${i}" x1="0" y1="0" x2="1" y2="1" gradientUnits="userSpaceOnUse" x1="${(i%2)*CELL_W}" y1="${HEADER_H+Math.floor(i/2)*CELL_H}" x2="${(i%2)*CELL_W+CELL_W}" y2="${HEADER_H+Math.floor(i/2)*CELL_H+CELL_H}">
+      <stop offset="0%" stop-color="${c1}" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="${c2}" stop-opacity="0.06"/>
+    </linearGradient>`
+  }
+
+  // ── Build card cells ──────────────────────────────────────────
   let cellsSvg = ''
   for (let i = 0; i < 6; i++) {
-    const col = i % 2, row = Math.floor(i / 2)
-    const X   = col * CELL_W, Y = HEADER_H + row * CELL_H
-    const p   = party[i]
-    const st  = apiStats[i]
+    const col    = i % 2
+    const row    = Math.floor(i / 2)
+    const X      = col * CELL_W
+    const Y      = HEADER_H + row * CELL_H
+    const p      = party[i]
+    const st     = apiStats[i]
+    const slotTxt = `0${i + 1}`.slice(-2)
 
     if (p) {
-      const types  = Array.isArray(p.types) ? p.types : (p.types ? [p.types] : ['normal'])
-      const accent = tc(types[0])
-      const lvl    = p.level || 1
-      const pName  = esc(p.name.toUpperCase().slice(0, 13))
+      const types    = Array.isArray(p.types) ? p.types : [p.types || 'normal']
+      const color1   = tc(types[0])
+      const lvl      = p.level || 1
+      const pName    = esc((p.name || '???').toUpperCase().slice(0, 13))
+      const xp       = p.xp || 0
+      const xpNeeded = Math.max(1, (lvl + 1) * (lvl + 1) * 50)
+      const xpPct    = Math.min(1, xp / xpNeeded)
+      const xpBarW   = Math.max(4, Math.round(xpPct * (CELL_W - 10)))
 
-      const typeBadges = types.slice(0, 2).map((t, ti) => {
-        const bx = X + STATS_X + ti * 90
-        return `<rect x="${bx}" y="${Y + 56}" width="80" height="19" rx="9" fill="${tc(t)}" opacity="0.88"/>
-          <text x="${bx + 40}" y="${Y + 69}" fill="white" font-size="10" font-weight="bold" text-anchor="middle" font-family="'Courier New',monospace">${esc(t.toUpperCase())}</text>`
-      }).join('\n        ')
-
-      const BAR_W = CELL_W - STATS_X - 50
-      const bars = [
-        ['HP',  st?.hp  ?? 45, 250, '#48D840'],
-        ['ATK', st?.atk ?? 49, 185, '#F08030'],
-        ['DEF', st?.def ?? 49, 250, '#6890F0'],
-        ['SPD', st?.spd ?? 45, 180, '#F8D030'],
+      // ── Stat bars ──
+      const BAR_START = X + TX + 38
+      const BAR_W     = CELL_W - TX - 56
+      const statRows  = [
+        ['HP',  st?.hp  ?? 45, 250, '#28D860'],
+        ['ATK', st?.atk ?? 49, 190, '#F07020'],
+        ['DEF', st?.def ?? 49, 250, '#3878F0'],
+        ['SPD', st?.spd ?? 45, 200, '#E8C820'],
       ].map(([lbl, val, mx, clr], bi) => {
-        const bY = Y + 88 + bi * 30
-        const fw = Math.max(4, Math.round(val / mx * BAR_W))
-        return `<text x="${X + STATS_X}" y="${bY + 9}" fill="#707090" font-size="10" font-family="'Courier New',monospace">${lbl}</text>
-          <text x="${X + CELL_W - 14}" y="${bY + 9}" fill="#9090A8" font-size="10" font-family="'Courier New',monospace" text-anchor="end">${val}</text>
-          <rect x="${X + STATS_X + 28}" y="${bY}" width="${BAR_W}" height="9" rx="4" fill="#1c1c30"/>
-          <rect x="${X + STATS_X + 28}" y="${bY}" width="${fw}" height="9" rx="4" fill="${clr}"/>`
-      }).join('\n        ')
+        const bY = Y + 120 + bi * 34
+        const fw = Math.max(6, Math.round(val / mx * BAR_W))
+        return `
+          <text x="${X + TX}" y="${bY + 11}" fill="#8888b8" font-size="12" font-weight="700" font-family="${FONT}">${lbl}</text>
+          <rect x="${BAR_START}" y="${bY}" width="${BAR_W}" height="13" rx="6" fill="#0e0e24"/>
+          <rect x="${BAR_START}" y="${bY}" width="${fw}" height="13" rx="6" fill="${clr}" opacity="0.92"/>
+          <text x="${BAR_START + BAR_W + 6}" y="${bY + 11}" fill="#6666a0" font-size="10" font-weight="700" font-family="${FONT}">${val}</text>`
+      }).join('')
+
+      // ── Type badges ──
+      const typeBadges = types.slice(0, 2).map((t, ti) => {
+        const bx = X + TX + ti * 94
+        return `
+          <rect x="${bx}" y="${Y + 78}" width="86" height="24" rx="12" fill="${tc(t)}"/>
+          <text x="${bx + 43}" y="${Y + 95}" fill="white" font-size="12" font-weight="800" text-anchor="middle" font-family="${FONT}">${esc(t.toUpperCase())}</text>`
+      }).join('')
+
+      // ── Shiny badge ──
+      const shinyBadge = p.shiny
+        ? `<rect x="${X + TX}" y="${Y + 57}" width="70" height="18" rx="9" fill="#b8860b"/>
+           <text x="${X + TX + 35}" y="${Y + 70}" fill="#FFD700" font-size="10" font-weight="800" text-anchor="middle" font-family="${FONT}">✦ SHINY</text>`
+        : ''
+
+      // ── HP bar at very bottom ──
+      const hpCur  = p.current_hp ?? ((p.hp || 45) + lvl * 5)
+      const hpMax  = (p.hp || 45) + lvl * 5
+      const hpPct  = Math.min(1, Math.max(0, hpCur / hpMax))
+      const hpW    = Math.max(4, Math.round(hpPct * (CELL_W - 10)))
+      const hpClr  = hpPct > 0.5 ? '#28D860' : hpPct > 0.25 ? '#F0C820' : '#E82830'
 
       cellsSvg += `
-        <rect x="${X}" y="${Y}" width="${CELL_W}" height="${CELL_H}" fill="#181828"/>
-        <rect x="${X}" y="${Y}" width="${ACCENT_W}" height="${CELL_H}" fill="${accent}"/>
-        <rect x="${X + ACCENT_W}" y="${Y}" width="3" height="${CELL_H}" fill="${accent}" opacity="0.20"/>
-        <text x="${X + STATS_X}" y="${Y + 40}" fill="white" font-size="19" font-weight="bold" font-family="'Courier New',monospace">${pName}</text>
-        <rect x="${X + CELL_W - 72}" y="${Y + 20}" width="52" height="22" rx="11" fill="#252535"/>
-        <text x="${X + CELL_W - 46}" y="${Y + 36}" fill="#8888b0" font-size="12" font-weight="bold" text-anchor="middle" font-family="'Courier New',monospace">Lv${lvl}</text>
+        <rect x="${X}" y="${Y}" width="${CELL_W}" height="${CELL_H}" fill="#101022"/>
+        <rect x="${X}" y="${Y}" width="${CELL_W}" height="${CELL_H}" fill="url(#g${i})"/>
+        <rect x="${X}" y="${Y}" width="7" height="${CELL_H}" fill="${color1}"/>
+        <rect x="${X}" y="${Y}" width="${CELL_W}" height="2" fill="${color1}" opacity="0.35"/>
+        <rect x="${X}" y="${Y + CELL_H - 1}" width="${CELL_W}" height="1" fill="#1c1c32"/>
+        <text x="${X + 12}" y="${Y + 22}" fill="${color1}" font-size="13" font-weight="700" font-family="${FONT}" opacity="0.65">${slotTxt}</text>
+        <text x="${X + TX}" y="${Y + 52}" fill="white" font-size="26" font-weight="900" font-family="${FONT}" letter-spacing="1">${pName}</text>
+        ${shinyBadge}
         ${typeBadges}
-        ${bars}
-        <line x1="${X}" y1="${Y + CELL_H - 1}" x2="${X + CELL_W}" y2="${Y + CELL_H - 1}" stroke="#222232" stroke-width="1"/>`
+        ${statRows}
+        <rect x="${X + 5}" y="${Y + CELL_H - 14}" width="${CELL_W - 10}" height="9" rx="4" fill="#0a0a1e"/>
+        <rect x="${X + 5}" y="${Y + CELL_H - 14}" width="${xpBarW}" height="9" rx="4" fill="#6060e8" opacity="0.75"/>
+        <text x="${X + 10}" y="${Y + CELL_H - 5}" fill="#4040a0" font-size="8" font-weight="700" font-family="${FONT}">XP</text>
+        <rect x="${X + CELL_W - 64}" y="${Y + 10}" width="56" height="26" rx="13" fill="#090920" stroke="${color1}" stroke-width="1.5" stroke-opacity="0.7"/>
+        <text x="${X + CELL_W - 36}" y="${Y + 28}" fill="${color1}" font-size="14" font-weight="900" text-anchor="middle" font-family="${FONT}">Lv${lvl}</text>`
     } else {
       cellsSvg += `
-        <rect x="${X}" y="${Y}" width="${CELL_W}" height="${CELL_H}" fill="#0f0f1e"/>
-        <rect x="${X + 8}" y="${Y + 8}" width="${CELL_W - 16}" height="${CELL_H - 16}" rx="6" fill="none" stroke="#252535" stroke-width="1.5" stroke-dasharray="8,4"/>
-        <circle cx="${X + 68}" cy="${Y + CELL_H / 2}" r="24" fill="#181828" stroke="#2a2a40" stroke-width="1.5"/>
-        <text x="${X + 68}" y="${Y + CELL_H / 2 + 8}" fill="#333350" font-size="24" font-weight="bold" text-anchor="middle" font-family="'Courier New',monospace">+</text>
-        <text x="${X + 108}" y="${Y + CELL_H / 2 - 4}" fill="#303048" font-size="14" font-family="'Courier New',monospace">NO DATA</text>
-        <text x="${X + 108}" y="${Y + CELL_H / 2 + 16}" fill="#303048" font-size="12" font-family="'Courier New',monospace">EMPTY SLOT</text>
-        <line x1="${X}" y1="${Y + CELL_H - 1}" x2="${X + CELL_W}" y2="${Y + CELL_H - 1}" stroke="#1a1a28" stroke-width="1"/>`
+        <rect x="${X}" y="${Y}" width="${CELL_W}" height="${CELL_H}" fill="#0b0b1c"/>
+        <rect x="${X}" y="${Y + CELL_H - 1}" width="${CELL_W}" height="1" fill="#181830"/>
+        <rect x="${X + 18}" y="${Y + 18}" width="${CELL_W - 36}" height="${CELL_H - 36}" rx="8" fill="none" stroke="#1c1c34" stroke-width="1.5" stroke-dasharray="10,5"/>
+        <text x="${X + CELL_W / 2}" y="${Y + CELL_H / 2 - 6}" fill="#222238" font-size="36" font-weight="700" text-anchor="middle" font-family="${FONT}">○</text>
+        <text x="${X + CELL_W / 2}" y="${Y + CELL_H / 2 + 22}" fill="#22223a" font-size="13" font-weight="700" text-anchor="middle" font-family="${FONT}">EMPTY SLOT</text>`
     }
   }
 
+  // ── Full SVG ──────────────────────────────────────────────────
   const bgSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#0c0c1c"/><stop offset="100%" stop-color="#101020"/>
-      </linearGradient>
+    <defs>${defs}
     </defs>
     <rect width="${W}" height="${H}" fill="url(#bg)"/>
-    <rect x="0" y="0" width="${W}" height="${HEADER_H}" fill="#090918"/>
-    <rect x="0" y="0" width="${W}" height="3" fill="#00BFFF"/>
-    <rect x="0" y="0" width="6" height="${HEADER_H}" fill="#00BFFF"/>
-    <text x="18" y="38" fill="#00BFFF" font-size="26" font-weight="bold" font-family="'Courier New',monospace">|</text>
-    <text x="36" y="38" fill="white" font-size="22" font-weight="bold" font-family="'Courier New',monospace">KONO</text>
-    <text x="134" y="38" fill="#00BFFF" font-size="22" font-weight="bold" font-family="'Courier New',monospace">SUBA</text>
-    <text x="228" y="38" fill="#00BFFF" font-size="18" font-weight="bold" font-family="'Courier New',monospace"> // ACTIVE</text>
-    <line x1="468" y1="32" x2="${W - 220}" y2="32" stroke="#00BFFF" stroke-width="1" stroke-dasharray="6,4" opacity="0.38"/>
-    <text x="${W - 16}" y="38" fill="#606080" font-size="13" font-family="'Courier New',monospace" text-anchor="end">TRAINER: ${trainer}</text>
-    <line x1="${CELL_W}" y1="${HEADER_H}" x2="${CELL_W}" y2="${H}" stroke="#1e1e30" stroke-width="2"/>
+    <rect width="${W}" height="${HEADER_H}" fill="url(#hdr)"/>
+    <rect width="${W}" height="5" fill="#00C8FF"/>
+    <rect y="${HEADER_H - 1}" width="${W}" height="1" fill="#181830"/>
+    <text x="22" y="48" fill="white" font-size="32" font-weight="900" font-family="${FONT}" letter-spacing="2">KONO</text>
+    <text x="122" y="48" fill="#00C8FF" font-size="32" font-weight="900" font-family="${FONT}" letter-spacing="2">SUBA</text>
+    <rect x="250" y="26" width="2" height="28" rx="1" fill="#00C8FF" opacity="0.35"/>
+    <text x="264" y="47" fill="#55668a" font-size="14" font-weight="700" font-family="${FONT}" letter-spacing="1">PARTY OVERVIEW</text>
+    <text x="${W - 18}" y="48" fill="#404060" font-size="13" font-weight="600" font-family="${FONT}" text-anchor="end">TRAINER  ${trainer}</text>
+    <rect x="${CELL_W}" y="${HEADER_H}" width="2" height="${H - HEADER_H}" fill="#181830"/>
     ${cellsSvg}
   </svg>`
 
   let base
   try { base = await sharp(Buffer.from(bgSvg)).png().toBuffer() } catch { return null }
 
+  // ── Composite Pokémon sprites ─────────────────────────────────
   const spriteJobs = await Promise.all(
     Array.from({ length: 6 }, async (_, i) => {
       const p = party[i]
@@ -3146,7 +3303,7 @@ async function _buildPartyImage(party, trainerName) {
       const spr = await sharp(buf)
         .resize(SPR_SZ, SPR_SZ, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 }, kernel: 'lanczos3' })
         .png().toBuffer()
-      const left = col * CELL_W + ACCENT_W + SPR_PAD
+      const left = col * CELL_W + SPR_PAD + 7
       const top  = HEADER_H + row * CELL_H + Math.round((CELL_H - SPR_SZ) / 2)
       composites.push({ input: spr, left, top })
     } catch {}
