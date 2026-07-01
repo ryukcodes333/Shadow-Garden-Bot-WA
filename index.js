@@ -13,6 +13,7 @@ const {
   const fs = require('fs')
 
   require('./web')
+  const botManager = require('./botManager')
 
   const handleMessage = require('./commands/index')
 
@@ -187,6 +188,11 @@ const {
           autoStartLottery('$100,000 Cash', 10)
           console.log('🎰 Auto-lottery started!')
         } catch (e) { console.error('Auto-lottery error:', e.message) }
+
+        if (!global.pairedBotsRestored) {
+          global.pairedBotsRestored = true
+          botManager.restoreAllPairedBots().catch(e => console.error('[botManager] restore error:', e.message))
+        }
       }
 
       if (connection === 'connecting') {

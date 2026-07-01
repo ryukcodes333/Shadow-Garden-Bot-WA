@@ -7,6 +7,8 @@ const mainCmds        = require('./main')
 const adminCmds       = require('./admin')
 const economyCmds     = require('./economy')
 const cardCmds        = require('./cards')
+const framesCmds      = require('./frames')
+const botadminCmds    = require('./botadmin')
 const gameCmds        = require('./games')
 const pokemonCmds     = require('./pokemon')
 const interactionCmds = require('./interactions')
@@ -135,7 +137,12 @@ async function handleInteraction(sock, msg) {
 
 // ── Main message handler ─────────────────────────────────────────────────────
 
-async function handleMessage(sock, msg) {
+async function handleMessage(sock, msg, botIdentity) {
+  // botIdentity is set by botManager.js for additional bots connected via
+  // .pair. It is undefined/omitted for the main (file/web-paired) bot, which
+  // always keeps the default "Aqua" identity and is never renamed.
+  const identity = botIdentity || { isMainBot: true, name: 'Aqua', menuImage: null, menuImageMime: null }
+
   // ── One-time link preview wrapper ────────────────────────────────────────
   if (!sock.__lpWrapped) {
     const _origSend = sock.sendMessage.bind(sock)
@@ -332,6 +339,7 @@ async function handleMessage(sock, msg) {
       pushName: msg.pushName || sender, msgType, textRaw,
       reply: (text) => sock.sendMessage(jid, { text }, { quoted: msg }),
       react:  (emoji) => sock.sendMessage(jid, { react: { text: emoji, key: msg.key } }),
+      botIdentity: identity,
     }
     try { if (mainCmds['s']) await mainCmds['s'](ctx) } catch {}
     return
@@ -390,7 +398,12 @@ async function handleMessage(sock, msg) {
     const nameRegex  = aiName ? new RegExp(`\\b${aiName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i') : null
     const mentionsAiName  = nameRegex ? nameRegex.test(textRaw) : false
     const mentionsAlpha   = /\balpha\b/i.test(textRaw)
-    const mentionsAqua    = /\baqua\b/i.test(textRaw)
+    // For paired bots renamed via .name, "mentions Aqua" means mentioning
+    // whatever that bot is currently named (defaults to "Aqua" for the main bot).
+    const botDisplayName  = (identity.name || 'Aqua').trim()
+    const mentionsAqua    = botDisplayName
+      ? new RegExp(`\\b${botDisplayName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(textRaw)
+      : false
 
     // In DMs, always trigger Aqua (she responds to everything that isn't a command)
     const isDM = !isGroup
@@ -400,7 +413,7 @@ async function handleMessage(sock, msg) {
       // Aqua always wins: any reply to the bot, any @mention of bot, or "aqua" in message
       // She has group-level memory so she remembers the whole conversation
       if (isReplyToBot || isBotMentioned || (mentionsAqua && !mentionsAlpha)) {
-        await aquaChatReply(sock, jid, msg, sender, msg.pushName || sender, textRaw)
+        await aquaChatReply(sock, jid, msg, sender, msg.pushName || sender, textRaw, botDisplayName)
       } else if (persona?.name && mentionsAiName) {
         try {
           await aiCmds.handleAiPersonaReply(sock, jid, msg, textRaw, persona)
@@ -543,9 +556,34 @@ async function handleMessage(sock, msg) {
     reply,
     replyImage: (image, caption) => sock.sendMessage(jid, { image, caption }, { quoted: msg }),
     react: (emoji) => sock.sendMessage(jid, { react: { text: emoji, key: msg.key } }),
+    botIdentity: identity,
   }
 
   try {
+    // ── Custom frames (disambiguated from the built-in numeric frame catalog
+    //    and the existing .upload <card>. <series> <tier> command) ─────────
+    if (cmd === 'upload' && (args[0] || '').toLowerCase() === 'frame') {
+      return await framesCmds.uploadFrame(ctx)
+    }
+    if (cmd === 'frames' && args.length === 0) {
+      return await framesCmds.listFrames(ctx)
+    }
+    if (cmd === 'setframe' && args.length && isNaN(parseInt(args[0], 10))) {
+      return await framesCmds.setCustomFrame(ctx)
+    }
+    if (cmd === 'clearframes') {
+      return await framesCmds.clearFrames(ctx)
+    }
+
+    // ── Multi-bot pairing (owner only; .pfp/.img/.name only apply to bots
+    //    connected via .pair, never to this main bot) ──────────────────────
+    if (cmd === 'pair')  return await botadminCmds.pair(ctx)
+    if (cmd === 'pfp')   return await botadminCmds.pfp(ctx)
+    if (cmd === 'img')   return await botadminCmds.img(ctx)
+    if (cmd === 'name')  return await botadminCmds.name(ctx)
+    if (cmd === 'unpair') return await botadminCmds.unpair(ctx)
+    if (cmd === 'pairedbots' || cmd === 'bots') return await botadminCmds.listBots(ctx)
+
     // ── # prefix → Pokémon commands ──────────────────────────────────────
     if (isPokemon) {
       const pk = pokemonCmds

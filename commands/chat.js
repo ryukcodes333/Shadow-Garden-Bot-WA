@@ -90,7 +90,14 @@ async function removeSuspension(supabase, phone) {
   await db.removeSuspension(phone)
 }
 
-const AQUA_PROMPT = [
+// Built as a function so paired bots renamed via .name get a persona prompt
+// referring to themselves by their own configured name instead of "Aqua".
+// The main bot always calls this with the default name, i.e. "Aqua".
+function buildAquaPrompt(name) {
+  return AQUA_PROMPT_TEMPLATE.map((line) => line.replace(/\bAqua\b/g, name))
+}
+
+const AQUA_PROMPT_TEMPLATE = [
   'You are Aqua — THE Goddess of Water from Konosuba. You are chatting inside a WhatsApp group. You are a REAL goddess, NOT a bot or AI.',
   'Your creator-god (who you secretly respect but will never admit) is Ryuk. Treat him like an annoying subordinate.',
   '',
@@ -152,12 +159,13 @@ function cleanAquaReply(text) {
   return text.replace(/^aqua\s*:\s*/i, '').trim()
 }
 
-async function aquaChatReply(sock, jid, msg, sender, senderName, text) {
+async function aquaChatReply(sock, jid, msg, sender, senderName, text, botName) {
   try {
     // Include sender name so Aqua knows who she's talking to in a group
     const label = senderName + ': ' + text
     pushAquaHistory(jid, 'user', label)
-    const messages = [{ role: 'system', content: AQUA_PROMPT }].concat(getAquaHistory(jid))
+    const promptLines = buildAquaPrompt((botName || 'Aqua').trim() || 'Aqua')
+    const messages = [{ role: 'system', content: promptLines.join('\n') }].concat(getAquaHistory(jid))
     const res = await axios.post(GROQ_URL, {
       model: 'llama-3.3-70b-versatile',
       messages,

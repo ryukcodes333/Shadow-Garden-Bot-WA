@@ -45,7 +45,7 @@ async function buildPhoneMap(sock, jid) {
 
 module.exports = {
 
-  async menu({ sock, msg, jid, sender, pushName }) {
+  async menu({ sock, msg, jid, sender, pushName, botIdentity }) {
     const userName = pushName || sender || 'Traveller'
     const menuText =
       `Hᴇʏʏʏʏʏ ${userName}... ɪ'ᴍ Aǫᴜᴀ ꜰʀᴏᴍ ᴛʜᴇ 𝐊𝚯𝐍𝚯𝐒𝐔𝐁𝚫 ᴄᴏᴍᴜɴɪᴛʏ ɴɪᴄᴇ ᴛᴏ ᴍᴇᴇᴛ ʏᴏᴜ!\n\n` +
@@ -335,7 +335,12 @@ module.exports = {
       `┃\n` +
       `╰━━━━━━━━━━━━━━━━`
 
-    if (fs.existsSync(MENU_IMAGE)) {
+    // Paired bots (connected via .pair) can have their own custom menu image
+    // set with .img — falls back to the default menu.jpg used by the main bot.
+    if (botIdentity && !botIdentity.isMainBot && botIdentity.menuImage) {
+      const buf = Buffer.from(botIdentity.menuImage, 'base64')
+      await sock.sendMessage(jid, { image: buf, caption: menuText }, { quoted: msg })
+    } else if (fs.existsSync(MENU_IMAGE)) {
       await sock.sendMessage(jid, { image: { url: MENU_IMAGE }, caption: menuText }, { quoted: msg })
     } else {
       await sock.sendMessage(jid, { text: menuText }, { quoted: msg })

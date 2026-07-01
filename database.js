@@ -61,6 +61,7 @@ const userSchema = new mongoose.Schema({
   profile_pp:     { type: String, default: null },
   profile_bg:     { type: String, default: null },
   profile_frame:  { type: Number, default: 1 },
+  equipped_frame: { type: String, default: null },
   jid:            { type: String, unique: true, sparse: true },
 }, { timestamps: true })
 
@@ -209,6 +210,27 @@ const aiBotPersonaSchema = new mongoose.Schema({
   facts:     { type: [String], default: [] },
 }, { timestamps: true })
 
+// Custom staff-uploaded frames — image stored as base64, equipped via .setframe <name>
+const frameSchema = new mongoose.Schema({
+  name:       { type: String, required: true, unique: true, lowercase: true, trim: true },
+  image:      { type: String, required: true },
+  mimeType:   { type: String, default: 'image/png' },
+  uploadedBy: { type: String, default: null },
+  createdAt:  { type: Date, default: Date.now },
+})
+
+// Additional bot instances connected by the owner via .pair <number>
+const pairedBotSchema = new mongoose.Schema({
+  phone:         { type: String, required: true, unique: true },
+  jid:           { type: String, default: null },
+  name:          { type: String, default: 'Aqua' },
+  menuImage:     { type: String, default: null },
+  menuImageMime: { type: String, default: null },
+  pairedBy:      { type: String, default: null },
+  connected:     { type: Boolean, default: false },
+  createdAt:     { type: Date, default: Date.now },
+})
+
 // ── Models ─────────────────────────────────────────────────────────────────
 
 const User           = mongoose.model('User',           userSchema)
@@ -229,6 +251,8 @@ const GuildMember    = mongoose.model('GuildMember',    guildMemberSchema)
 const Loan           = mongoose.model('Loan',           loanSchema)
 const Blacklist      = mongoose.model('Blacklist',      blacklistSchema)
 const DisabledCommand= mongoose.model('DisabledCommand',disabledCommandSchema)
+const Frame          = mongoose.model('Frame',          frameSchema)
+const PairedBot       = mongoose.model('PairedBot',       pairedBotSchema)
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -1197,6 +1221,61 @@ async function getUserByJid(jid) {
   }
 }
 
+// ── Custom Frames (.upload frame / .frames / .setframe / .clearframes) ────
+
+async function addFrame(name, image, mimeType, uploadedBy) {
+  const clean = String(name).trim().toLowerCase()
+  return Frame.findOneAndUpdate(
+    { name: clean },
+    { name: clean, image, mimeType, uploadedBy, createdAt: new Date() },
+    { upsert: true, new: true }
+  )
+}
+
+async function getFrames() {
+  return Frame.find().sort({ createdAt: 1 }).lean()
+}
+
+async function getFrameByName(name) {
+  return Frame.findOne({ name: String(name).trim().toLowerCase() }).lean()
+}
+
+async function clearFrames() {
+  const res = await Frame.deleteMany({})
+  await User.updateMany({}, { $set: { equipped_frame: null } })
+  return res.deletedCount || 0
+}
+
+async function setEquippedFrame(phone, frameName) {
+  return User.findOneAndUpdate({ phone }, { equipped_frame: frameName }, { new: true })
+}
+
+// ── Paired Bots (.pair / .pfp / .img / .name) ──────────────────────────────
+
+async function addPairedBot(phone, pairedBy) {
+  return PairedBot.findOneAndUpdate(
+    { phone },
+    { $setOnInsert: { phone, pairedBy, name: 'Aqua', createdAt: new Date() } },
+    { upsert: true, new: true }
+  )
+}
+
+async function getPairedBots() {
+  return PairedBot.find().lean()
+}
+
+async function getPairedBot(phone) {
+  return PairedBot.findOne({ phone }).lean()
+}
+
+async function updatePairedBot(phone, updates) {
+  return PairedBot.findOneAndUpdate({ phone }, updates, { new: true })
+}
+
+async function removePairedBot(phone) {
+  return PairedBot.deleteOne({ phone })
+}
+
 module.exports = {
   supabase,
   // Users
@@ -1255,4 +1334,8 @@ module.exports = {
   trackCurrencyGenerated, trackCurrencyRemoved, getEconStats, getEconTotals,
   // Mongoose instance
   mongoose,
+  // Custom Frames
+  addFrame, getFrames, getFrameByName, clearFrames, setEquippedFrame,
+  // Paired Bots
+  addPairedBot, getPairedBots, getPairedBot, updatePairedBot, removePairedBot,
 }
