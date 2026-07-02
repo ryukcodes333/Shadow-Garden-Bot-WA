@@ -1,0 +1,706 @@
+const db = require('../database')
+const { downloadMediaMessage } = require('@whiskeysockets/baileys')
+const { generateProfileCard, generateAnimatedProfileCard, generateFrameCatalog, fetchBuffer, getFrame, FRAMES } = require('../profileHelper')
+const { execFile } = require('child_process')
+const os = require('os')
+const path = require('path')
+const fs = require('fs')
+
+// MongoDB-based image storage - stores images as base64 data URLs in the user document
+
+// Download an attached or quoted image from a message, returns buffer or null
+async function getImageBuffer(sock, msg) {
+  const imgMsg =
+    msg.message?.imageMessage ||
+    msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage
+
+  if (!imgMsg) return null
+
+  const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
+  const targetMsg = quoted
+    ? {
+        message: quoted,
+        key: {
+          remoteJid: msg.key.remoteJid,
+          id: msg.message.extendedTextMessage.contextInfo.stanzaId,
+          participant: msg.message.extendedTextMessage.contextInfo.participant,
+        },
+      }
+    : msg
+
+  return downloadMediaMessage(
+    targetMsg, 'buffer', {},
+    { logger: console, reuploadRequest: sock.updateMediaMessage }
+  )
+}
+
+// Search raw binary for the first embedded JPEG (SOI…EOI)
+function extractJpegFromBinary(buf) {
+  let start = -1
+  for (let i = 0; i < buf.length - 2; i++) {
+    if (buf[i] === 0xFF && buf[i + 1] === 0xD8 && buf[i + 2] === 0xFF) { start = i; break }
+  }
+  if (start === -1) return null
+  let end = -1
+  for (let i = buf.length - 2; i > start; i--) {
+    if (buf[i] === 0xFF && buf[i + 1] === 0xD9) { end = i + 2; break }
+  }
+  if (end === -1 || end - start < 500) return null
+  return buf.slice(start, end)
+}
+
+// Download the raw video from a message - returns the mp4 buffer as-is.
+async function getRawVideoBuffer(sock, msg) {
+  const vidMsg =
+    msg.message?.videoMessage ||
+    msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage
+  if (!vidMsg) return null
+
+  const fileSize = Number(vidMsg.fileLength || 0)
+  if (fileSize > 50 * 1024 * 1024) {
+    throw new Error('Video too large (max 50 MB). Try sending a shorter clip.')
+  }
+
+  const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
+  const targetMsg = quoted
+    ? {
+        message: quoted,
+        key: {
+          remoteJid: msg.key.remoteJid,
+          id: msg.message.extendedTextMessage.contextInfo.stanzaId,
+          participant: msg.message.extendedTextMessage.contextInfo.participant,
+        },
+      }
+    : msg
+
+  let videoBuf
+  try {
+    videoBuf = await downloadMediaMessage(
+      targetMsg, 'buffer', {},
+      { logger: { level: 'silent', ...console }, reuploadRequest: sock.updateMediaMessage }
+    )
+  } catch (err) {
+    throw new Error('Could not download video: ' + err.message)
+  }
+
+  if (!videoBuf || videoBuf.length < 100) {
+    throw new Error('Downloaded video is empty. Try sending it again.')
+  }
+
+  return videoBuf
+}
+
+// Use ffmpeg to extract the first frame of a video buffer as a PNG buffer.
+// Used when rendering profile cards where the bg/pp is a saved video.
+async function extractVideoFrame(videoBuf) {
+  const tmpDir = os.tmpdir()
+  const tmpIn  = path.join(tmpDir, `sgbot_vin_${Date.now()}.mp4`)
+  const tmpOut = path.join(tmpDir, `sgbot_frm_${Date.now()}.png`)
+  try {
+    fs.writeFileSync(tmpIn, videoBuf)
+    await new Promise((resolve, reject) => {
+      execFile('ffmpeg', [
+        '-y', '-i', tmpIn,
+        '-frames:v', '1',
+        '-q:v', '2',
+        tmpOut,
+      ], { timeout: 20000 }, (err, _out, stderr) => {
+        if (err) reject(new Error('ffmpeg frame error: ' + (stderr || err.message).slice(0, 200)))
+        else resolve()
+      })
+    })
+    const frameBuf = fs.readFileSync(tmpOut)
+    if (frameBuf && frameBuf.length > 100) return frameBuf
+    throw new Error('Frame output is empty.')
+  } finally {
+    try { fs.unlinkSync(tmpIn)  } catch {}
+    try { fs.unlinkSync(tmpOut) } catch {}
+  }
+}
+
+// Convert a video buffer to an animated GIF (high-quality, max 5 s, 12 fps, 500px wide)
+async function videoToAnimatedGif(videoBuf) {
+  const sid    = Date.now()
+  const tmpDir = os.tmpdir()
+  const tmpIn  = path.join(tmpDir, `sgbot_v2g_in_${sid}.mp4`)
+  const tmpOut = path.join(tmpDir, `sgbot_v2g_out_${sid}.gif`)
+  try {
+    fs.writeFileSync(tmpIn, videoBuf)
+    // 280px wide, 6 fps, max 3 s — keeps GIF well under MongoDB's 16 MB BSON limit
+    await new Promise((resolve, reject) => {
+      execFile('ffmpeg', [
+        '-y', '-i', tmpIn,
+        '-t', '3',
+        '-vf', 'fps=6,scale=280:-2:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer',
+        tmpOut,
+      ], { timeout: 60000 }, (err, _o, stderr) => {
+        if (err) reject(new Error('GIF convert error: ' + (stderr || err.message).slice(0, 200)))
+        else resolve()
+      })
+    })
+    const gifBuf = fs.readFileSync(tmpOut)
+    if (gifBuf.length < 200) throw new Error('GIF output empty')
+    // Guard: base64 in MongoDB must stay under 16 MB BSON limit
+    const estimatedBase64 = Math.ceil(gifBuf.length * 4 / 3)
+    if (estimatedBase64 > 9 * 1024 * 1024) {
+      throw new Error(
+        `Animated GIF is too large to store (${(gifBuf.length / 1024 / 1024).toFixed(1)} MB). ` +
+        `Please use a shorter clip (≤ 3s) or a video with less motion.`
+      )
+    }
+    return gifBuf
+  } finally {
+    try { fs.unlinkSync(tmpIn)  } catch {}
+    try { fs.unlinkSync(tmpOut) } catch {}
+  }
+}
+
+// Store image buffer as base64 data URL (saved directly in MongoDB user document)
+async function uploadToStorage(buffer, storagePath, mime = 'image/jpeg') {
+  const base64 = buffer.toString('base64')
+  return `data:${mime};base64,${base64}`
+}
+
+module.exports = {
+  // ─── .p - image profile card ──────────────────────────────────────────────
+  async p({ sock, msg, jid, sender, user, reply, isOwner, isMod, isGuardian }) {
+    await sock.sendMessage(jid, { react: { text: '👤', key: msg.key } })
+
+    const u = user || await db.getOrCreateUser(sender)
+    if (!u) return reply('❌ Could not load your profile. Make sure the database is set up.')
+
+    // Override displayed role using runtime permission flags so owner/mod/guardian
+    // always shows the correct badge even if the DB role column hasn't been set
+    const effectiveRole = isOwner ? 'owner'
+      : isMod                     ? 'mod'
+      : isGuardian                ? 'guardian'
+      : (u.role || 'member')
+    const displayUser = { ...u, role: effectiveRole }
+
+    // Fetch custom bg + pp if set
+    let ppBuffer         = null
+    let bgBuffer         = null
+    let animatedGifBgBuf = null   // full GIF buffer → triggers animated card
+
+    try {
+      if (u.profile_pp) {
+        const raw = await fetchBuffer(u.profile_pp)
+        const isVideo = u.profile_pp.startsWith('data:video/') || u.profile_pp.endsWith('.mp4')
+        ppBuffer = isVideo ? await extractVideoFrame(raw) : raw
+      }
+    } catch { ppBuffer = null }
+
+    try {
+      if (u.profile_bg) {
+        const raw     = await fetchBuffer(u.profile_bg)
+        const isVideo = u.profile_bg.startsWith('data:video/') || u.profile_bg.endsWith('.mp4')
+        const isGif   = u.profile_bg.startsWith('data:image/gif')
+        if (isGif) {
+          animatedGifBgBuf = raw   // keep full GIF; card will be animated
+        } else {
+          bgBuffer = isVideo ? await extractVideoFrame(raw) : raw
+        }
+      }
+    } catch { bgBuffer = null }
+
+    // Compute global rank (leaderboard position)
+    let rankNum = null
+    try {
+      const lb = await db.getLeaderboard(9999).catch(() => [])
+      const idx = lb.findIndex(u => u.phone === sender)
+      rankNum = idx >= 0 ? idx + 1 : lb.length + 1
+    } catch {}
+    const displayUserWithRank = { ...displayUser, rank: rankNum }
+
+    const frameId   = u.profile_frame || 1
+    const frameName = getFrame(frameId).name
+    const cardCount = await db.getUserCardCount(sender).catch(() => '?')
+    const joinDate  = u.created_at ? new Date(u.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown'
+    const xpNeeded  = (u.level || 1) * 300   // matches economy.js xpForLevel: level * 300
+    const xpFill    = Math.min(Math.round(((u.xp || 0) / xpNeeded) * 10), 10)
+    const xpBar     = '🟦'.repeat(xpFill) + '⬛'.repeat(10 - xpFill)
+    const netWorth  = (Number(u.wallet || 0) + Number(u.bank || 0))
+    const rank      = effectiveRole.charAt(0).toUpperCase() + effectiveRole.slice(1)
+    const title     = u.title || 'Newcomer'
+
+    // Pokemon stats
+    let pokemonOwned = 0, partyCount = 0, gymBadges = 0, battleWins = 0, battleLosses = 0
+    try {
+      const pData = await db.getUserPokemon(sender).catch(() => [])
+      pokemonOwned = Array.isArray(pData) ? pData.length : 0
+      partyCount   = Array.isArray(pData) ? pData.filter(p => p.in_party).length : 0
+      gymBadges    = u.gym_badges || 0
+      battleWins   = u.battle_wins || 0
+      battleLosses = u.battle_losses || 0
+    } catch {}
+
+    const isVerified = isOwner || isMod || isGuardian || !!u.premium
+    let statusLine = 'This user is not banned. ✅'
+    if (u.banned) {
+      statusLine = 'This user is currently banned. 🚫'
+    } else {
+      try {
+        const susp = await db.getSuspension(sender).catch(() => null)
+        if (susp) statusLine = 'Account is currently suspended. 🚫'
+      } catch {}
+    }
+
+    const caption =
+      `🌟 𝗨𝗦𝗘𝗥 𝗖𝗔𝗥𝗗 🌟\n` +
+      `ꕤ 𝗡𝗮𝗺𝗲: ${u.name || sender}\n` +
+      `ꕤ 𝗛𝗮𝗻𝗱𝗹𝗲: @${sender}\n` +
+      `ꕤ 𝗜𝗗: ${sender}\n` +
+      `ꕤ 𝗔𝗯𝗼𝘂𝘁: ${u.bio || 'No bio set'}\n` +
+      `ꕤ 𝗝𝗼𝗶𝗻𝗲𝗱: ${joinDate}\n` +
+      `ꕤ 𝗕𝗮𝗱𝗴𝗲𝘀: ${u.pokemon_badges || gymBadges || 0}\n` +
+      `ꕤ 𝗩𝗲𝗿𝗶𝗳𝗶𝗲𝗱: ${isVerified ? 'Yes ✓' : 'No'}\n` +
+      `\n` +
+      `> ${statusLine}`
+
+    // ── Animated bg path ──────────────────────────────────────────────────────
+    if (animatedGifBgBuf) {
+      await reply('⏳ Rendering animated profile card…')
+      try {
+        const mp4Buf = await generateAnimatedProfileCard(displayUserWithRank, ppBuffer, animatedGifBgBuf)
+        await sock.sendMessage(
+          jid,
+          { video: mp4Buf, gifPlayback: true, caption },
+          { quoted: msg }
+        )
+      } catch (err) {
+        console.error('[profile] Animated card error:', err)
+        // Fallback: render static card with first GIF frame
+        try {
+          const { execFile: ef } = require('child_process')
+          const os2 = require('os'), path2 = require('path'), fs2 = require('fs')
+          const tmpGif = path2.join(os2.tmpdir(), `sgbot_gframe_${Date.now()}.gif`)
+          const tmpPng = path2.join(os2.tmpdir(), `sgbot_gframe_${Date.now()}.png`)
+          fs2.writeFileSync(tmpGif, animatedGifBgBuf)
+          await new Promise((res, rej) => ef('ffmpeg', ['-y','-i',tmpGif,'-frames:v','1',tmpPng], {timeout:15000}, (e,_,se) => e ? rej(new Error(se||e.message)) : res()))
+          const firstFrame = fs2.readFileSync(tmpPng)
+          try { fs2.unlinkSync(tmpGif) } catch {}
+          try { fs2.unlinkSync(tmpPng) } catch {}
+          const cardBuffer = await generateProfileCard(displayUserWithRank, ppBuffer, firstFrame)
+          await sock.sendMessage(jid, { image: cardBuffer, caption }, { quoted: msg })
+        } catch (err2) {
+          return reply(`❌ Failed to generate profile card: ${err2.message}`)
+        }
+      }
+      return
+    }
+
+    // ── Static card path ──────────────────────────────────────────────────────
+    let cardBuffer
+    try {
+      cardBuffer = await generateProfileCard(displayUserWithRank, ppBuffer, bgBuffer)
+    } catch (err) {
+      console.error('[profile] Card gen error:', err)
+      return reply(`❌ Failed to generate profile card: ${err.message}`)
+    }
+
+    await sock.sendMessage(jid, { image: cardBuffer, caption }, { quoted: msg })
+  },
+
+  // ─── .profile - text profile ─────────────────────────────────────────────
+  async profile({ reply, sender, user, msg }) {
+    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+    const targetPhone = mentioned.length ? mentioned[0].split('@')[0] : sender
+    const u = (user && targetPhone === sender) ? user : await db.getOrCreateUser(targetPhone)
+    if (!u) return reply('❌ Could not load profile.')
+
+    const xpNeeded = (u.level || 1) * 1000
+    const joinDate = u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Unknown'
+
+    await reply(
+      `👤 *USER PROFILE*\n\n` +
+      `🧑 *Name:* ${u.name || targetPhone}\n` +
+      `🆔 *User ID:* ${targetPhone}\n\n` +
+      `📊 *Level:* ${u.level || 1}\n` +
+      `🔥 *XP:* ${u.xp || 0} / ${xpNeeded}\n` +
+      `⭐ *Rank:* ${u.role || 'member'}\n\n` +
+      `💰 *Wallet:* ${u.wallet || 0} coins\n` +
+      `🏦 *Bank:* ${u.bank || 0} coins\n` +
+      `💎 *Gems:* ${u.gems || 0}\n\n` +
+      `🎮 *Games Won:* 0\n` +
+      `❌ *Games Lost:* 0\n\n` +
+      `📈 *Streak:* ${u.streak || 0} days\n` +
+      `⚡ *Status:* Active\n\n` +
+      `🧠 *Title:* ${u.title || 'Newcomer'}\n` +
+      `🎴 *Card Tier:* N/A\n\n` +
+      `🚫 *Banned:* ${u.banned ? 'Yes' : 'No'}\n` +
+      `📅 *Joined:* ${joinDate}\n` +
+      `🌍 *Registered:* ${u.created_at ? 'Yes' : 'No'}\n\n` +
+      `_The system records everything… even what you don't notice._ 🖤`
+    )
+  },
+
+  // ─── .setpp ───────────────────────────────────────────────────────────────
+  async setpp({ sock, msg, jid, sender, user, reply, isOwner, isMod, isGuardian }) {
+    const isStaff = isOwner || isMod || isGuardian
+
+    // Check for video first (staff only)
+    const isVideoMsg =
+      !!msg.message?.videoMessage ||
+      !!msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage
+
+    if (isVideoMsg && isStaff) {
+      await reply('⏳ Converting video to animated GIF for your profile picture…')
+      let videoBuf
+      try {
+        videoBuf = await getRawVideoBuffer(sock, msg)
+      } catch (err) {
+        return reply(`❌ Video error: ${err.message}`)
+      }
+      if (!videoBuf) {
+        return reply('❌ Could not read the video. Make sure you\'re sending or quoting a video.')
+      }
+      try {
+        const gifBuf = await videoToAnimatedGif(videoBuf)
+        const url = await uploadToStorage(gifBuf, `profiles/pp/${sender}.gif`, 'image/gif')
+        await db.updateUser(sender, { profile_pp: url })
+        await sock.sendMessage(
+          jid,
+          {
+            image: gifBuf,
+            caption:
+              `✅ *PROFILE PICTURE UPDATED*\n\n` +
+              `Your animated PP has been saved! 🎬\n\n` +
+              `📸 Type *.p* to see your updated card.\n\n` +
+              `_You carry the spirit of Konosuba._ 🖤`,
+          },
+          { quoted: msg }
+        )
+      } catch (err) {
+        await reply(`❌ Failed to save animated profile picture: ${err.message}`)
+      }
+      return
+    }
+
+    // Image path
+    let buffer = null
+    try { buffer = await getImageBuffer(sock, msg) } catch {}
+
+    if (!buffer) {
+      const staffNote = isStaff
+        ? '\n\n👑 *Staff perk:* You can also send/quote a *video* to use it as your PP.'
+        : ''
+      return reply(
+        `🖼️ *SET PROFILE PICTURE*\n\n` +
+        `Reply to an image (or send one) with *.setpp* to set your profile picture.\n\n` +
+        `This sets the inner circle of your profile card.\n\n` +
+        `_The image will be cropped to a circle._ 🖤${staffNote}`
+      )
+    }
+
+    await reply('⏳ Uploading your profile picture…')
+
+    try {
+      const storagePath = `profiles/pp/${sender}.jpg`
+      const url = await uploadToStorage(buffer, storagePath, 'image/jpeg')
+      await db.updateUser(sender, { profile_pp: url })
+      await sock.sendMessage(
+        jid,
+        {
+          image: buffer,
+          caption:
+            `✅ *PROFILE PICTURE UPDATED*\n\n` +
+            `Your PP has been saved.\n\n` +
+            `📸 Type *.p* to see your updated card.\n\n` +
+            `_You carry the spirit of Konosuba._ 🖤`,
+        },
+        { quoted: msg }
+      )
+    } catch (err) {
+      await reply(`❌ Failed to save profile picture: ${err.message}`)
+    }
+  },
+
+  // ─── .setbg ───────────────────────────────────────────────────────────────
+  async setbg({ sock, msg, jid, sender, user, reply, isOwner, isMod, isGuardian }) {
+    const isStaff = isOwner || isMod || isGuardian
+
+    // Check for video first (staff only)
+    const isVideoMsg =
+      !!msg.message?.videoMessage ||
+      !!msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage
+
+    if (isVideoMsg && isStaff) {
+      await reply('⏳ Converting video to animated GIF for your background… (may take ~15s)')
+      let videoBuf
+      try {
+        videoBuf = await getRawVideoBuffer(sock, msg)
+      } catch (err) {
+        return reply(`❌ Video error: ${err.message}`)
+      }
+      if (!videoBuf) {
+        return reply('❌ Could not read the video. Make sure you\'re sending or quoting a video.')
+      }
+      try {
+        const gifBuf = await videoToAnimatedGif(videoBuf)
+        const url = await uploadToStorage(gifBuf, `profiles/bg/${sender}.gif`, 'image/gif')
+        await db.updateUser(sender, { profile_bg: url })
+        await sock.sendMessage(
+          jid,
+          {
+            image: gifBuf,
+            caption:
+              `✅ *PROFILE BACKGROUND UPDATED*\n\n` +
+              `Your animated background has been saved! 🎬\n\n` +
+              `📸 Type *.p* to see your *animated* profile card.\n\n` +
+              `_A new backdrop for your legend._ 🖤`,
+          },
+          { quoted: msg }
+        )
+      } catch (err) {
+        await reply(`❌ Failed to save animated background: ${err.message}`)
+      }
+      return
+    }
+
+    // Image path
+    let buffer = null
+    try { buffer = await getImageBuffer(sock, msg) } catch {}
+
+    if (!buffer) {
+      const staffNote = isStaff
+        ? '\n\n👑 *Staff perk:* You can also send/quote a *video* to use it as your background.'
+        : ''
+      return reply(
+        `🎨 *SET PROFILE BACKGROUND*\n\n` +
+        `Reply to an image (or send one) with *.setbg* to set your profile card background.\n\n` +
+        `This sets the background of your profile card.\n\n` +
+        `_Any image works — landscapes, gradients, anime screenshots, etc._ 🖤${staffNote}`
+      )
+    }
+
+    await reply('⏳ Uploading your background…')
+
+    try {
+      const storagePath = `profiles/bg/${sender}.jpg`
+      const url = await uploadToStorage(buffer, storagePath, 'image/jpeg')
+      await db.updateUser(sender, { profile_bg: url })
+      await sock.sendMessage(
+        jid,
+        {
+          image: buffer,
+          caption:
+            `✅ *PROFILE BACKGROUND UPDATED*\n\n` +
+            `Your background has been saved.\n\n` +
+            `📸 Type *.p* to see your updated card.\n\n` +
+            `_A new backdrop for your legend._ 🖤`,
+        },
+        { quoted: msg }
+      )
+    } catch (err) {
+      await reply(`❌ Failed to save background: ${err.message}`)
+    }
+  },
+
+  // ─── .frames ──────────────────────────────────────────────────────────────
+  async frames({ sock, msg, jid, reply, args }) {
+    const page = parseInt(args[0]) || 1
+
+    if (page < 1 || page > 3) {
+      return reply(
+        `🖼️ *FRAMES CATALOG*\n\n` +
+        `Usage:\n` +
+        `• *.frames* or *.frames 1* - Page 1 (frames 1–35, Basic)\n` +
+        `• *.frames 2* - Page 2 (frames 36–70, Anime)\n` +
+        `• *.frames 3* - Page 3 (frames 71–100, 3D Prestige)\n\n` +
+        `_100 frames total across three pages._ 🖤`
+      )
+    }
+
+    await reply(`⏳ Generating frames catalog page ${page}…`)
+
+    let catalog
+    try {
+      catalog = await generateFrameCatalog(page)
+    } catch (err) {
+      console.error('[frames] Catalog gen error:', err)
+      return reply(`❌ Failed to generate catalog: ${err.message}`)
+    }
+
+    const captions = {
+      1:
+        `🖼️ *FRAMES COLLECTION - Page 1/3 (Basic)*\n\n` +
+        `*35 frames* across 7 categories:\n` +
+        `• Basic (1–5)  • Neon (6–10)  • Gradient (11–15)\n` +
+        `• Ornate (16–20)  • Nature (21–25)\n` +
+        `• Prestige (26–30)  • Extra (31–35)\n\n` +
+        `📖 *.frames 2* - Anime frames (36–70)\n` +
+        `📖 *.frames 3* - 3D Prestige frames (71–100)\n` +
+        `⚙️ *.setframe <id>* - Equip a frame\n\n` +
+        `_e.g. .setframe 14_ 🖤`,
+
+      2:
+        `🎌 *FRAMES COLLECTION - Page 2/3 (Anime)*\n\n` +
+        `*35 anime & cartoon frames* (36–70):\n` +
+        `• Anime Basics (36–40)  • Anime Fantasy (41–45)\n` +
+        `• Anime Magic (46–50)  • Anime Nature (51–55)\n` +
+        `• Cyberpunk (56–60)  • Anime Prestige (61–65)\n` +
+        `• Anime Ultimate (66–70)\n\n` +
+        `📖 *.frames* - Page 1 (basic)  |  *.frames 3* - 3D frames\n` +
+        `⚙️ *.setframe <id>* - Equip a frame\n\n` +
+        `_Cartoonish, anime-styled shadows await._ 🖤`,
+
+      3:
+        `✨ *FRAMES COLLECTION - Page 3/3 (3D Prestige)*\n\n` +
+        `*30 three-dimensional prestige frames* (71–100):\n` +
+        `• Shadow Depth (71–80)  • Neon 3D (81–90)\n` +
+        `• Void Prism (91–100)\n\n` +
+        `💎 These frames feature: radial gradients, bevel edges,\n` +
+        `   specular highlights, glow rings & accent gems.\n\n` +
+        `📖 *.frames* - Page 1  |  *.frames 2* - Anime\n` +
+        `⚙️ *.setframe <id>* - Equip a frame\n\n` +
+        `_Only the strongest carry these marks._ 🖤`,
+    }
+
+    await sock.sendMessage(
+      jid,
+      { image: catalog, caption: captions[page] },
+      { quoted: msg }
+    )
+  },
+
+  // ─── .setframe <id> ───────────────────────────────────────────────────────
+  async setframe({ reply, sender, args }) {
+    const id = parseInt(args[0])
+
+    if (!id || id < 1 || id > 100) {
+      return reply(
+        `🖼️ *SET FRAME*\n\n` +
+        `Usage: *.setframe <1–100>*\n\n` +
+        `• *.frames*   - Page 1 (frames 1–35, Basic)\n` +
+        `• *.frames 2* - Page 2 (frames 36–70, Anime)\n` +
+        `• *.frames 3* - Page 3 (frames 71–100, 3D Prestige)\n\n` +
+        `_e.g. .setframe 88_ 🖤`
+      )
+    }
+
+    const frame = getFrame(id)
+    const result = await db.updateUser(sender, { profile_frame: id })
+
+    if (!result) {
+      return reply('❌ Could not update frame. Make sure your profile exists. Try `.p` first.')
+    }
+
+    await reply(
+      `✅ *FRAME EQUIPPED*\n\n` +
+      `🖼️ *Frame:* ${frame.name}\n` +
+      `🏷️ *Category:* ${frame.category}\n` +
+      `🔢 *ID:* #${frame.id}\n\n` +
+      `Type *.profile* to see it on your card.\n\n` +
+      `_Your shadow wears a new crown._ 🖤`
+    )
+  },
+
+  // ── .signup — show sign-up guide ────────────────────────────────────────
+  async signup({ reply }) {
+    const WEB_URL = 'https://konosubacommunity.onrender.com/signup'
+    return reply(
+      `╔═════ ⋆⋅☆⋅⋆ ═════╗\n` +
+      `🌑 *KONOSUBA SIGN UP*\n` +
+      `╚═════ ⋆⋅☆⋅⋆ ═════╝\n\n` +
+      `Follow these steps to join the community:\n\n` +
+      `*Step 1 — Register on the web:*\n` +
+      `> ${WEB_URL}\n\n` +
+      `Enter your WhatsApp number with country code\n` +
+      `_(no + or spaces — e.g. *23470xxxxxxxx*)_\n\n` +
+      `The bot will send an OTP to your WhatsApp.\n` +
+      `Enter it on the website to complete sign up.\n\n` +
+      `*Step 2 — Link here in the group:*\n` +
+      `Type: *.reg <your phone number>*\n` +
+      `e.g. *.reg 23470xxxxxxxx*\n\n` +
+      `*Step 3 — Confirm with OTP:*\n` +
+      `An OTP will be sent here. Then type:\n` +
+      `*.link <otp>*\n\n` +
+      `_That's it — you're in! 🖤_`
+    )
+  },
+
+  // ── .reg <phone> — link WhatsApp to web account ────────────────────────
+  async reg({ reply, sender, senderJid, args, textRaw }) {
+    const rawInput = (textRaw || '').replace(/^\.\s*reg\s*/i, '').trim()
+    const db = require('../database')
+    const WEB_URL = 'https://konosubacommunity.onrender.com/signup'
+
+    // No number provided — direct them to .signup
+    if (!rawInput) {
+      return reply(
+        `📋 *Usage:* *.reg <phone number>*\n\n` +
+        `Enter the number you signed up with (country code, no + or spaces).\n` +
+        `e.g. *.reg 23470xxxxxxxx*\n\n` +
+        `Haven't signed up yet? Type *.signup* first.`
+      )
+    }
+
+    // Phone-link flow: .reg 23470xxxxxxxx
+    if (/^\d{7,15}$/.test(rawInput)) {
+      const phone = rawInput
+      const effectiveJid = senderJid || `${sender}@s.whatsapp.net`
+      try {
+        const otp = await db.requestWaLink(effectiveJid, phone)
+        return reply(
+          `🔐 *Link Your Account*\n\n` +
+          `An OTP has been sent! Your code:\n*${otp}*\n\n` +
+          `Now type in this group:\n*.link ${otp}*\n\n` +
+          `This links your WhatsApp to web account *${phone}*.\n\n` +
+          `_OTP expires in 5 minutes. Do not share it._`
+        )
+      } catch (err) {
+        return reply(
+          `⚠️ ${err.message}\n\n` +
+          `Make sure you signed up first at:\n> ${WEB_URL}\n\n` +
+          `Type *.signup* for the full guide.`
+        )
+      }
+    }
+
+    // Not a valid phone number
+    return reply(
+      `⚠️ That doesn't look like a valid phone number.\n\n` +
+      `*Usage:* *.reg <phone number>*\n` +
+      `e.g. *.reg 23470xxxxxxxx*\n\n` +
+      `Country code, no + or spaces. Type *.signup* for help.`
+    )
+  },
+
+    // ── .link <otp> — verify and link WhatsApp to web account ───────────────
+  async link({ reply, sender, senderJid, args }) {
+    const otp = args[0]
+    if (!otp) {
+      return reply(
+        `Usage: *.link <OTP>*\n\nFirst run *.reg <phone>* to get your OTP.`
+      )
+    }
+    const db = require('../database')
+    const effectiveJid = senderJid || `${sender}@s.whatsapp.net`
+    // ── DEBUG LOG ────────────────────────────────────────────────────────
+    console.log('[.LINK] ── DEBUG ──────────────────────────')
+    console.log('[.LINK] effectiveJid:', effectiveJid)
+    console.log('[.LINK] OTP submitted:', otp)
+    console.log('[.LINK] Will query WaLinkOtp WHERE jid =', effectiveJid)
+    console.log('[.LINK] ─────────────────────────────────────')
+    // ── END DEBUG ────────────────────────────────────────────────────────
+    try {
+      const user = await db.verifyAndLinkJid(effectiveJid, otp)
+      // ── DEBUG LOG — post-link ─────────────────────────────────────────
+      console.log('[.LINK] ── SUCCESS ────────────────────────')
+      console.log('[.LINK] Final DB row jid:', user?.jid)
+      console.log('[.LINK] Final DB row phone:', user?.phone)
+      console.log('[.LINK] Full merged row:', JSON.stringify(user, null, 2))
+      console.log('[.LINK] ─────────────────────────────────────')
+      // ── END DEBUG ────────────────────────────────────────────────────
+      return reply(
+        `✅ *Account Linked!*\n\n` +
+        `Your WhatsApp is now connected to *${user.name || user.phone}*.\n\n` +
+        `Your web and WhatsApp data are now unified! 🎉\n` +
+        `Any duplicate account has been merged.`
+      )
+    } catch (err) {
+      console.error('[.LINK] ERROR:', err.message)
+      return reply(`❌ ${err.message}`)
+    }
+  },
+}
