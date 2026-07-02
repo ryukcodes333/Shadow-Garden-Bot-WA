@@ -214,6 +214,13 @@ module.exports = {
 
     const frameId   = u.profile_frame || 1
     const frameName = getFrame(frameId).name
+
+    // Fetch custom frame document if the user has one equipped
+    let customFrameDoc = null
+    if (u.equipped_frame) {
+      try { customFrameDoc = await db.getFrameByName(u.equipped_frame) } catch { /* ignore */ }
+    }
+
     const cardCount = await db.getUserCardCount(sender).catch(() => '?')
     const joinDate  = u.created_at ? new Date(u.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown'
     const xpNeeded  = (u.level || 1) * 300   // matches economy.js xpForLevel: level * 300
@@ -254,6 +261,7 @@ module.exports = {
       `ꕤ 𝗝𝗼𝗶𝗻𝗲𝗱: ${joinDate}\n` +
       `ꕤ 𝗕𝗮𝗱𝗴𝗲𝘀: ${u.pokemon_badges || gymBadges || 0}\n` +
       `ꕤ 𝗩𝗲𝗿𝗶𝗳𝗶𝗲𝗱: ${isVerified ? 'Yes ✓' : 'No'}\n` +
+      `\n` +
       `> ${statusLine}`
 
     // ── Animated bg path ──────────────────────────────────────────────────────
@@ -279,7 +287,7 @@ module.exports = {
           const firstFrame = fs2.readFileSync(tmpPng)
           try { fs2.unlinkSync(tmpGif) } catch {}
           try { fs2.unlinkSync(tmpPng) } catch {}
-          const cardBuffer = await generateProfileCard(displayUserWithRank, ppBuffer, firstFrame)
+          const cardBuffer = await generateProfileCard(displayUserWithRank, ppBuffer, firstFrame, customFrameDoc)
           await sock.sendMessage(jid, { image: cardBuffer, caption }, { quoted: msg })
         } catch (err2) {
           return reply(`❌ Failed to generate profile card: ${err2.message}`)
@@ -291,7 +299,7 @@ module.exports = {
     // ── Static card path ──────────────────────────────────────────────────────
     let cardBuffer
     try {
-      cardBuffer = await generateProfileCard(displayUserWithRank, ppBuffer, bgBuffer)
+      cardBuffer = await generateProfileCard(displayUserWithRank, ppBuffer, bgBuffer, customFrameDoc)
     } catch (err) {
       console.error('[profile] Card gen error:', err)
       return reply(`❌ Failed to generate profile card: ${err.message}`)
@@ -562,11 +570,48 @@ module.exports = {
     )
   },
 
-  // ─── .setframe <id> ───────────────────────────────────────────────────────
+  // ─── .setframe <id|name> ──────────────────────────────────────────────────
+  // Accepts:
+  //   .setframe 14          — built-in frame by numeric ID (1–100)
+  //   .setframe sakura      — custom uploaded frame by name
   async setframe({ reply, sender, args }) {
-    const id = parseInt(args[0])
+    const raw = (args[0] || '').trim()
+    const id  = parseInt(raw, 10)
 
-    if (!id || id < 1 || id > 100) {
+    // ── Custom named frame path ───────────────────────────────────────────────
+    // If the first arg is non-numeric or doesn't round-trip to itself, treat as name
+    if (!raw || isNaN(id) || String(id) !== raw) {
+      if (!raw) {
+        return reply(
+          `🖼️ *SET FRAME*\n\n` +
+          `Usage:\n` +
+          `• *.setframe <1–100>*    — built-in frame (use *.frames* to browse)\n` +
+          `• *.setframe <name>*     — custom frame uploaded by staff\n\n` +
+          `_e.g. .setframe 14   or   .setframe sakura_ 🖤`
+        )
+      }
+      const name        = args.join(' ').trim().toLowerCase()
+      const customFrame = await db.getFrameByName(name).catch(() => null)
+      if (!customFrame) {
+        return reply(
+          `❌ No frame named *${name}* found.\n\n` +
+          `Use *.frames* to see custom frames, or *.setframe <1–100>* for built-ins.`
+        )
+      }
+      const result = await db.setEquippedFrame(sender, customFrame.name)
+      if (!result) return reply('❌ Could not update frame. Try *.p* first to create your profile.')
+      const bgNote = customFrame.has_background
+        ? '\n🌟 This frame includes a *custom background*.' : ''
+      return reply(
+        `✅ *FRAME EQUIPPED*\n\n` +
+        `🖼️ *Frame:* ${customFrame.name}${bgNote}\n\n` +
+        `Type *.p* to see it on your card.\n\n` +
+        `_Your shadow wears a new crown._ 🖤`
+      )
+    }
+
+    // ── Built-in numeric frame path ───────────────────────────────────────────
+    if (id < 1 || id > 100) {
       return reply(
         `🖼️ *SET FRAME*\n\n` +
         `Usage: *.setframe <1–100>*\n\n` +
@@ -578,7 +623,8 @@ module.exports = {
     }
 
     const frame = getFrame(id)
-    const result = await db.updateUser(sender, { profile_frame: id })
+    // Equip built-in frame and clear any custom frame so the SVG ring takes over
+    const result = await db.updateUser(sender, { profile_frame: id, equipped_frame: null })
 
     if (!result) {
       return reply('❌ Could not update frame. Make sure your profile exists. Try `.p` first.')
@@ -589,7 +635,7 @@ module.exports = {
       `🖼️ *Frame:* ${frame.name}\n` +
       `🏷️ *Category:* ${frame.category}\n` +
       `🔢 *ID:* #${frame.id}\n\n` +
-      `Type *.profile* to see it on your card.\n\n` +
+      `Type *.p* to see it on your card.\n\n` +
       `_Your shadow wears a new crown._ 🖤`
     )
   },

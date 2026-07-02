@@ -1,8 +1,9 @@
 // Custom frame system:
-//   .upload frame <name>   (staff only, reply to an image)
-//   .frames                (anyone — shows every uploaded frame as one image)
-//   .setframe <name>       (anyone — equips a named custom frame)
-//   .clearframes           (owner only — wipes all custom frames)
+//   .upload frame <name>      (staff only, reply to an image — transparent overlay)
+//   .upload frame <name> bg   (staff only — image becomes the card background)
+//   .frames                   (anyone — shows every uploaded frame as one image)
+//   .setframe <name>          (anyone — equips a named custom frame)
+//   .clearframes              (owner only — wipes all custom frames)
 const db = require('../database')
 const { downloadMediaMessage } = require('@whiskeysockets/baileys')
 const { buildFramesGridImage } = require('../frameHelper')
@@ -28,8 +29,22 @@ module.exports = {
     if (!isOwner && !isMod && !isGuardian) {
       return reply('*🚫 Access Denied* — only staff (mods, guardians, owner) can upload frames.')
     }
-    const name = args.slice(1).join(' ').trim()
-    if (!name) return reply('⚠️ Usage: *.upload frame <name>* (reply to an image)')
+
+    // Parse: .upload frame <name> [bg]
+    // args[0] = "frame", rest = name parts, optional trailing "bg" keyword
+    const rawParts = args.slice(1)
+    const hasBgFlag = rawParts.length > 0 && rawParts[rawParts.length - 1].toLowerCase() === 'bg'
+    const nameParts = hasBgFlag ? rawParts.slice(0, -1) : rawParts
+    const name = nameParts.join(' ').trim()
+
+    if (!name) {
+      return reply(
+        '⚠️ Usage:\n' +
+        '• *.upload frame <name>*    — transparent overlay frame\n' +
+        '• *.upload frame <name> bg* — frame image becomes the card background\n\n' +
+        '_(Reply to an image)_'
+      )
+    }
 
     const target = getQuotedImageTarget(msg)
     if (!target) return reply('↩️ Reply to an image with *.upload frame <name>*')
@@ -47,7 +62,10 @@ module.exports = {
 
     try {
       const frame = await db.addFrame(name, buffer.toString('base64'), 'image/png', sender)
-      await reply(`✅ Frame *${frame.name}* uploaded!\n\nUse *.frames* to view it or *.setframe ${frame.name}* to equip it.`)
+      // Set the has_background flag if the bg keyword was used
+      if (hasBgFlag) await db.setFrameBackground(frame.name, true)
+      const bgNote = hasBgFlag ? '\n🌟 Marked as *background frame* — it will replace the user\'s wallpaper.' : ''
+      await reply(`✅ Frame *${frame.name}* uploaded!${bgNote}\n\nUse *.frames* to view it or *.setframe ${frame.name}* to equip it.`)
     } catch (err) {
       await reply(`❌ Failed to save frame: ${err.message}`)
     }
@@ -66,7 +84,7 @@ module.exports = {
         jid,
         {
           image: png,
-          caption: `🖼️ *CUSTOM FRAMES GALLERY*\n\n${frames.map((f) => `⌬ ${f.name}`).join('\n')}\n\n⚙️ Use *.setframe <name>* to equip one.`,
+          caption: `🖼️ *CUSTOM FRAMES GALLERY*\n\n${frames.map((f) => `⌬ ${f.name}${f.has_background ? ' *(bg)*' : ''}`).join('\n')}\n\n⚙️ Use *.setframe <name>* to equip one.\n🌟 *(bg)* = frame includes a custom background`,
         },
         { quoted: msg }
       )
@@ -80,8 +98,17 @@ module.exports = {
     if (!name) return reply('⚠️ Usage: *.setframe <name>*')
     const frame = await db.getFrameByName(name).catch(() => null)
     if (!frame) return reply(`❌ No frame named *${name}* found. Use *.frames* to see available frames.`)
+    // Equip custom frame and clear built-in frame selection so the card uses this one
     await db.setEquippedFrame(sender, frame.name)
-    await reply(`✅ Equipped frame *${frame.name}*!`)
+    const bgNote = frame.has_background
+      ? '\n\n🌟 This frame includes a *custom background* — it will replace your wallpaper on the card.'
+      : ''
+    await reply(
+      `✅ *FRAME EQUIPPED*\n\n` +
+      `🖼️ *Frame:* ${frame.name}${bgNote}\n\n` +
+      `Type *.p* to see it on your card.\n\n` +
+      `_Your shadow wears a new crown._ 🖤`
+    )
   },
 
   async clearFrames({ reply, isOwner }) {
