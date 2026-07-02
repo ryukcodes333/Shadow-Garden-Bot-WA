@@ -214,11 +214,14 @@ const aiBotPersonaSchema = new mongoose.Schema({
 
 // Custom staff-uploaded frames — image stored as base64, equipped via .setframe <name>
 const frameSchema = new mongoose.Schema({
-  name:       { type: String, required: true, unique: true, lowercase: true, trim: true },
-  image:      { type: String, required: true },
-  mimeType:   { type: String, default: 'image/png' },
-  uploadedBy: { type: String, default: null },
-  createdAt:  { type: Date, default: Date.now },
+  name:           { type: String,  required: true, unique: true, lowercase: true, trim: true },
+  image:          { type: String,  required: true },
+  mimeType:       { type: String,  default: 'image/png' },
+  uploadedBy:     { type: String,  default: null },
+  // When true, this frame's image IS the card background (wallpaper replaced at full quality).
+  // When false (default), the image is a transparent overlay composited on top of the card.
+  has_background: { type: Boolean, default: false },
+  createdAt:      { type: Date,    default: Date.now },
 })
 
 // Additional bot instances connected by the owner via .pair <number>
@@ -1252,6 +1255,15 @@ async function setEquippedFrame(phone, frameName) {
   return User.findOneAndUpdate({ phone }, { equipped_frame: frameName }, { new: true })
 }
 
+// Toggle the has_background flag on a custom frame (staff only).
+async function setFrameBackground(name, hasBg) {
+  return Frame.findOneAndUpdate(
+    { name: String(name).trim().toLowerCase() },
+    { has_background: !!hasBg },
+    { new: true }
+  )
+}
+
 // ── Paired Bots (.pair / .pfp / .img / .name) ──────────────────────────────
 
 async function addPairedBot(phone, pairedBy) {
@@ -1337,7 +1349,7 @@ module.exports = {
   // Mongoose instance
   mongoose,
   // Custom Frames
-  addFrame, getFrames, getFrameByName, clearFrames, setEquippedFrame,
+  addFrame, getFrames, getFrameByName, clearFrames, setEquippedFrame, setFrameBackground,
   // Paired Bots
   addPairedBot, getPairedBots, getPairedBot, updatePairedBot, removePairedBot,
 }

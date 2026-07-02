@@ -10,7 +10,7 @@ const CARD_W = 1280
 const CARD_H = 1280
 const AV_CX  = 640
 const AV_CY  = 490
-const AV_R   = 125
+const AV_R   = 220
 
 // ─── 70 FRAMES ──────────────────────────────────────────────────────────────
 const FRAMES = [
@@ -562,6 +562,7 @@ function buildImageFrameSvg(frame) {
 }
 
 // ─── FRAME OVERLAY SVG (transparent layer over the full card) ────────────────
+// Legacy helper kept for catalog use; card rendering now uses buildPremiumFrameOverlaySvg.
 function buildCardFrameSvg(frame) {
   const r = AV_R + 6
   const { defs, circles } = buildFrameElements(frame, AV_CX, AV_CY, r, `cf${frame.id}`)
@@ -570,6 +571,236 @@ function buildCardFrameSvg(frame) {
     ${circles}
   </svg>`
 }
+
+// ─── PREMIUM FRAME OVERLAY SVG ───────────────────────────────────────────────
+// Generates a 1280×1280 transparent SVG with a full premium anime-style
+// decorative ring: 3D metallic ring, top bow/ribbon, bottom hanging charms,
+// side flowers, diagonal gems, and sparkle accents.
+// NOTE: No SVG <filter> elements — all depth via layered shapes (libvips compat).
+function buildPremiumFrameOverlaySvg(frame, cx, cy, avR) {
+  const uid = `pf${frame.id}`
+
+  // ── Resolve palette from frame definition ────────────────────────────────
+  let primary, lt, dk, accent, accent2, glowC
+
+  if (frame.type === 'image') {
+    primary = frame.mid    || '#888888'
+    lt      = frame.light  || '#ffffff'
+    dk      = frame.dark   || '#111111'
+    accent  = frame.accent  || lt
+    accent2 = frame.accent2 || accent
+    glowC   = frame.glow   || primary
+  } else {
+    primary = frame.color  || '#ffffff'
+    lt      = lighten(primary, 0.48)
+    dk      = darken(primary,  0.55)
+    accent  = frame.color2 || primary
+    accent2 = frame.color3 || accent
+    glowC   = primary
+  }
+
+  // ── Ring geometry ─────────────────────────────────────────────────────────
+  const R  = avR + 16        // ring midpoint radius (236 when avR=220)
+  const RW = 24              // ring stroke width
+
+  const topY  = cy - R       // (490 - 236) = 254
+  const botY  = cy + R       // (490 + 236) = 726
+  const ltX   = cx - R       // (640 - 236) = 404
+  const rtX   = cx + R       // (640 + 236) = 876
+
+  const d45   = R * 0.7071
+  const neX = (cx + d45).toFixed(0), neY = (cy - d45).toFixed(0)  // ~807, 323
+  const nwX = (cx - d45).toFixed(0), nwY = (cy - d45).toFixed(0)  // ~473, 323
+  const seX = (cx + d45).toFixed(0), seY = (cy + d45).toFixed(0)  // ~807, 657
+  const swX = (cx - d45).toFixed(0), swY = (cy + d45).toFixed(0)  // ~473, 657
+
+  // Gradient source: offset upper-left for 3D pop illusion
+  const gCx = Math.round(cx - avR * 0.38)  // 556
+  const gCy = Math.round(cy - avR * 0.52)  // 376
+  const gR  = Math.round(avR * 1.42)       // 312
+
+  // Specular arc — upper-left quadrant: 200° → 290°
+  const a1x = Math.round(cx + R * Math.cos(200 * Math.PI / 180))  // ≈ 418
+  const a1y = Math.round(cy + R * Math.sin(200 * Math.PI / 180))  // ≈ 409
+  const a2x = Math.round(cx + R * Math.cos(290 * Math.PI / 180))  // ≈ 721
+  const a2y = Math.round(cy + R * Math.sin(290 * Math.PI / 180))  // ≈ 268
+
+  // Bow anchor (centre of ring top, slightly inside)
+  const bCx = cx, bCy = topY + 4
+
+  // Charm anchors
+  const cBot  = botY          // 726 — ring bottom
+  const cDrop = cBot + 13     // 739 — end of chain
+  const cCY   = cBot + 40     // 766 — pendant centre y
+
+  // ── Inner helpers (all return SVG strings, no filters) ───────────────────
+  function star4(px, py, outerR, innerR, col, op) {
+    const pts = []
+    for (let i = 0; i < 8; i++) {
+      const r2 = i % 2 === 0 ? outerR : innerR
+      const a  = i * Math.PI / 4 - Math.PI / 2
+      pts.push(`${(px + r2 * Math.cos(a)).toFixed(1)},${(py + r2 * Math.sin(a)).toFixed(1)}`)
+    }
+    return `<polygon points="${pts.join(' ')}" fill="${col}" opacity="${op}"/>`
+  }
+
+  function diamond(px, py, hw, hh, col) {
+    return (
+      `<polygon points="${px},${py - hh} ${px + hw},${py} ${px},${py + hh} ${px - hw},${py}" fill="${col}" opacity="0.93"/>` +
+      `<polygon points="${px},${py - hh} ${px + hw * 0.42},${py - hh * 0.16} ${px},${py - hh * 0.28} ${px - hw * 0.42},${py - hh * 0.16}" fill="white" opacity="0.26"/>` +
+      `<circle cx="${(px - hw * 0.12).toFixed(1)}" cy="${(py - hh * 0.45).toFixed(1)}" r="${(hw * 0.14).toFixed(1)}" fill="white" opacity="0.50"/>`
+    )
+  }
+
+  function heartShape(px, py, s, col) {
+    const hw = s * 0.5, hh = s * 0.88
+    return (
+      `<path d="M ${px},${py + s * 0.3} ` +
+      `C ${px},${py} ${px - hw},${py - s * 0.38} ${px - hw},${py + s * 0.05} ` +
+      `C ${px - hw},${py + s * 0.55} ${px},${py + hh} ${px},${py + hh} ` +
+      `C ${px},${py + hh} ${px + hw},${py + s * 0.55} ${px + hw},${py + s * 0.05} ` +
+      `C ${px + hw},${py - s * 0.38} ${px},${py} ${px},${py + s * 0.3} Z" fill="${col}" opacity="0.93"/>` +
+      `<circle cx="${(px - hw * 0.3).toFixed(1)}" cy="${(py + s * 0.08).toFixed(1)}" r="${(s * 0.12).toFixed(1)}" fill="white" opacity="0.42"/>`
+    )
+  }
+
+  function gemOrb(gx, gy, r, col) {
+    return (
+      `<circle cx="${+gx}" cy="${+gy}" r="${r + 4}" fill="${col}" opacity="0.18"/>` +
+      `<circle cx="${+gx}" cy="${+gy}" r="${r}" fill="${col}" opacity="0.93"/>` +
+      `<circle cx="${(+gx - r * 0.32).toFixed(1)}" cy="${(+gy - r * 0.32).toFixed(1)}" r="${(r * 0.38).toFixed(1)}" fill="white" opacity="0.45"/>` +
+      `<circle cx="${(+gx - r * 0.10).toFixed(1)}" cy="${(+gy - r * 0.10).toFixed(1)}" r="${(r * 0.15).toFixed(1)}" fill="white" opacity="0.62"/>` +
+      `<circle cx="${+gx}" cy="${+gy}" r="${r}" fill="none" stroke="${lt}" stroke-width="1.5" opacity="0.40"/>`
+    )
+  }
+
+  function flower4(fx, fy, pLen, pW, col) {
+    return (
+      `<ellipse cx="${fx}" cy="${fy}" rx="${pLen}" ry="${pW}" fill="${col}" opacity="0.82"/>` +
+      `<ellipse cx="${fx}" cy="${fy}" rx="${pW}" ry="${pLen}" fill="${col}" opacity="0.82"/>` +
+      `<ellipse cx="${fx}" cy="${fy}" rx="${pLen}" ry="${pW}" fill="${col}" opacity="0.68" transform="rotate(45 ${fx} ${fy})"/>` +
+      `<ellipse cx="${fx}" cy="${fy}" rx="${pLen}" ry="${pW}" fill="${col}" opacity="0.68" transform="rotate(-45 ${fx} ${fy})"/>` +
+      `<circle cx="${fx}" cy="${fy}" r="${pW}" fill="${lt}" opacity="0.95"/>` +
+      `<circle cx="${+fx - 2}" cy="${+fy - 2}" r="${Math.max(1, pW * 0.42).toFixed(1)}" fill="white" opacity="0.55"/>`
+    )
+  }
+
+  return `<svg width="${CARD_W}" height="${CARD_H}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="ring-${uid}" gradientUnits="userSpaceOnUse"
+        cx="${gCx}" cy="${gCy}" r="${gR}">
+      <stop offset="0%"   stop-color="${lt}"/>
+      <stop offset="44%"  stop-color="${primary}"/>
+      <stop offset="100%" stop-color="${dk}"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Outer bloom (glow simulation — no filter) -->
+  <circle cx="${cx}" cy="${cy}" r="${R + 14}" fill="none" stroke="${glowC}" stroke-width="7"  opacity="0.09"/>
+  <circle cx="${cx}" cy="${cy}" r="${R + 8}"  fill="none" stroke="${glowC}" stroke-width="5"  opacity="0.14"/>
+
+  <!-- Drop shadow -->
+  <circle cx="${cx + 5}" cy="${cy + 6}" r="${R}" fill="none" stroke="rgba(0,0,0,0.55)" stroke-width="${RW + 5}"/>
+
+  <!-- Main 3D ring (radial gradient gives lit top-left, dark bottom-right) -->
+  <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="url(#ring-${uid})" stroke-width="${RW}"/>
+
+  <!-- Bevel edges -->
+  <circle cx="${cx}" cy="${cy}" r="${R - RW / 2 + 2}" fill="none" stroke="${dk}" stroke-width="2.5" opacity="0.68"/>
+  <circle cx="${cx}" cy="${cy}" r="${R - RW / 2 + 5}" fill="none" stroke="${lt}" stroke-width="1.5" opacity="0.22"/>
+  <circle cx="${cx}" cy="${cy}" r="${R + RW / 2 - 2}" fill="none" stroke="${dk}" stroke-width="2.0" opacity="0.55"/>
+  <circle cx="${cx}" cy="${cy}" r="${R + RW / 2 - 5}" fill="none" stroke="${lt}" stroke-width="1.5" opacity="0.18"/>
+
+  <!-- Specular highlight arc — upper-left quadrant -->
+  <path d="M ${a1x},${a1y} A ${R},${R} 0 0 0 ${a2x},${a2y}"
+    fill="none" stroke="white" stroke-width="11" stroke-linecap="round" opacity="0.12"/>
+  <path d="M ${a1x},${a1y} A ${R},${R} 0 0 0 ${a2x},${a2y}"
+    fill="none" stroke="white" stroke-width="4"  stroke-linecap="round" opacity="0.30"/>
+
+  <!-- Inner ring glow line -->
+  <circle cx="${cx}" cy="${cy}" r="${R - RW / 2 + 8}" fill="none" stroke="${glowC}" stroke-width="4" opacity="0.20"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- BOW / RIBBON at ring top                                           -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- Left wing -->
+  <path d="M ${bCx},${bCy} C ${bCx - 22},${bCy - 13} ${bCx - 52},${bCy - 12} ${bCx - 45},${bCy + 9} C ${bCx - 38},${bCy + 23} ${bCx - 14},${bCy + 17} ${bCx},${bCy + 9}"
+    fill="${primary}" opacity="0.93"/>
+  <!-- Right wing -->
+  <path d="M ${bCx},${bCy} C ${bCx + 22},${bCy - 13} ${bCx + 52},${bCy - 12} ${bCx + 45},${bCy + 9} C ${bCx + 38},${bCy + 23} ${bCx + 14},${bCy + 17} ${bCx},${bCy + 9}"
+    fill="${primary}" opacity="0.93"/>
+  <!-- Wing highlights -->
+  <path d="M ${bCx},${bCy} C ${bCx - 18},${bCy - 8} ${bCx - 42},${bCy - 8} ${bCx - 38},${bCy + 3} C ${bCx - 32},${bCy + 10} ${bCx - 11},${bCy + 9} ${bCx},${bCy + 5}"
+    fill="white" opacity="0.20"/>
+  <path d="M ${bCx},${bCy} C ${bCx + 18},${bCy - 8} ${bCx + 42},${bCy - 8} ${bCx + 38},${bCy + 3} C ${bCx + 32},${bCy + 10} ${bCx + 11},${bCy + 9} ${bCx},${bCy + 5}"
+    fill="white" opacity="0.20"/>
+  <!-- Knot -->
+  <ellipse cx="${bCx}" cy="${bCy + 5}" rx="11" ry="8" fill="${lt}" opacity="0.96"/>
+  <ellipse cx="${bCx - 2}" cy="${bCy + 2}" rx="5" ry="3.5" fill="white" opacity="0.45"/>
+  <!-- Ribbon tails -->
+  <path d="M ${bCx - 7},${bCy + 11} C ${bCx - 12},${bCy + 18} ${bCx - 24},${bCy + 30} ${bCx - 20},${bCy + 40} L ${bCx - 11},${bCy + 38} C ${bCx - 14},${bCy + 30} ${bCx - 2},${bCy + 18} ${bCx + 2},${bCy + 13}"
+    fill="${primary}" opacity="0.80"/>
+  <path d="M ${bCx + 7},${bCy + 11} C ${bCx + 12},${bCy + 18} ${bCx + 24},${bCy + 30} ${bCx + 20},${bCy + 40} L ${bCx + 11},${bCy + 38} C ${bCx + 14},${bCy + 30} ${bCx + 2},${bCy + 18} ${bCx - 2},${bCy + 13}"
+    fill="${primary}" opacity="0.80"/>
+  <!-- Tail sheen -->
+  <path d="M ${bCx - 6},${bCy + 13} C ${bCx - 9},${bCy + 20} ${bCx - 18},${bCy + 28} ${bCx - 16},${bCy + 34}"
+    fill="none" stroke="white" stroke-width="1.8" opacity="0.28" stroke-linecap="round"/>
+  <path d="M ${bCx + 6},${bCy + 13} C ${bCx + 9},${bCy + 20} ${bCx + 18},${bCy + 28} ${bCx + 16},${bCy + 34}"
+    fill="none" stroke="white" stroke-width="1.8" opacity="0.28" stroke-linecap="round"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- HANGING CHARMS — 3 pendants below ring                            -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- Horizontal chain bar -->
+  <line x1="${cx - 28}" y1="${cBot}" x2="${cx + 28}" y2="${cBot}" stroke="${lt}" stroke-width="2" opacity="0.55"/>
+  <!-- Left chain -->
+  <line x1="${cx - 28}" y1="${cBot}" x2="${cx - 28}" y2="${cDrop}" stroke="${lt}" stroke-width="1.8" opacity="0.62"/>
+  <circle cx="${cx - 28}" cy="${cBot + 5}"  r="2.5" fill="${lt}" opacity="0.72"/>
+  <circle cx="${cx - 28}" cy="${cBot + 10}" r="2.5" fill="${lt}" opacity="0.72"/>
+  <!-- Centre chain -->
+  <line x1="${cx}" y1="${cBot}" x2="${cx}" y2="${cDrop}" stroke="${lt}" stroke-width="1.8" opacity="0.62"/>
+  <circle cx="${cx}" cy="${cBot + 5}"  r="2.5" fill="${lt}" opacity="0.72"/>
+  <circle cx="${cx}" cy="${cBot + 10}" r="2.5" fill="${lt}" opacity="0.72"/>
+  <!-- Right chain -->
+  <line x1="${cx + 28}" y1="${cBot}" x2="${cx + 28}" y2="${cDrop}" stroke="${lt}" stroke-width="1.8" opacity="0.62"/>
+  <circle cx="${cx + 28}" cy="${cBot + 5}"  r="2.5" fill="${lt}" opacity="0.72"/>
+  <circle cx="${cx + 28}" cy="${cBot + 10}" r="2.5" fill="${lt}" opacity="0.72"/>
+  <!-- Left pendant — diamond -->
+  ${diamond(cx - 28, cCY, 11, 14, accent)}
+  <!-- Centre pendant — 4-pt star -->
+  ${star4(cx, cCY, 13, 5.5, accent2, 0.96)}
+  <circle cx="${cx - 2}" cy="${cCY - 3}" r="3" fill="white" opacity="0.38"/>
+  <!-- Right pendant — heart -->
+  ${heartShape(cx + 28, cCY - 7, 14, accent)}
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- DIAGONAL ACCENT GEMS — NE / NW / SE / SW                          -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  ${gemOrb(neX, neY, 9, accent)}
+  ${gemOrb(nwX, nwY, 9, accent2)}
+  ${gemOrb(seX, seY, 9, accent2)}
+  ${gemOrb(swX, swY, 9, accent)}
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- SIDE FLOWERS — 9 o'clock and 3 o'clock                            -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  ${flower4(ltX, cy, 14, 5, accent)}
+  ${flower4(rtX, cy, 14, 5, accent)}
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- MINI SPARKLE STARS scattered around ring                           -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  ${star4(bCx - 58, bCy - 22, 6, 2.5, lt,      0.55)}
+  ${star4(bCx + 58, bCy - 22, 6, 2.5, lt,      0.55)}
+  ${star4(cx - 184, cy - 148, 8, 3.5, accent,  0.50)}
+  ${star4(cx + 184, cy - 148, 8, 3.5, accent,  0.50)}
+  ${star4(cx - 184, cy + 148, 7, 3.0, accent2, 0.45)}
+  ${star4(cx + 184, cy + 148, 7, 3.0, accent2, 0.45)}
+  ${star4(bCx - 30, bCy - 36, 5, 2.0, lt,      0.42)}
+  ${star4(bCx + 30, bCy - 36, 5, 2.0, lt,      0.42)}
+</svg>`
+}
+module.exports.buildPremiumFrameOverlaySvg = buildPremiumFrameOverlaySvg
 
 // ─── STATS OVERLAY SVG (Konosuba card style) ─────────────────────────────────
 function buildStatsSvg(user) {
@@ -586,51 +817,62 @@ function buildStatsSvg(user) {
   const title  = esc((user.title || 'Newcomer').substring(0, 28))
   const level  = user.level || 1
   const xp     = Number(user.xp || 0)
-  const xpNeed = level * 1000
+  const xpNeed = level * 300              // matches economy.js xpForLevel: level * 300
   const xpPct  = Math.min(xp / xpNeed, 1)
   const rank   = user.rank != null ? user.rank : (user.phone ? user.phone.slice(-4) : '???')
   const bank   = user.bank   || 0
   const wallet = user.wallet || 0
 
-  // XP bar dimensions — 760×58px centred, 30px radius
+  // XP bar — 760×58px centred, fully rounded (rx = barH/2)
   const barW    = 760
   const barH    = 58
   const barX    = (CARD_W - barW) / 2      // 260
-  const barR    = 30
-  const barFill = Math.max(Math.min(Math.round(barW * xpPct), barW), barR * 2)
+  const barR    = barH / 2                 // fully rounded pill
+  // No forced minimum — 0 XP shows a fully empty bar
+  const barFill = Math.min(Math.max(Math.round(barW * xpPct), 0), barW)
 
-  // Vertical layout anchors
+  // Vertical layout anchors — calibrated for AV_R = 220
   const bankY     = 90
   const walletY   = 150
-  const avatarBot = AV_CY + AV_R            // 615
-  const nameY     = avatarBot + 90          // 705
-  const subtitleY = nameY + 55              // 760
-  const rankY     = subtitleY + 72          // 832
-  const barTop    = rankY + 62              // 894
-  const barTextY  = barTop + Math.round(barH / 2) + 12  // ~941
+  const avatarBot = AV_CY + AV_R            // 710  (490 + 220)
+  const nameY     = avatarBot + 82          // 792
+  const subtitleY = nameY + 52              // 844
+  const rankY     = subtitleY + 70          // 914
+  const barTop    = rankY + 56              // 970
+  const barTextY  = barTop + Math.round(barH / 2) + 12  // ~1011
 
   return `<svg width="${CARD_W}" height="${CARD_H}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="xpFill" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#5DBFFF"/>
-      <stop offset="100%" stop-color="#2A97E8"/>
+    <!-- Horizontal blue gradient: #39A9F9 → #58B9FF per spec -->
+    <linearGradient id="xpFill" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#39A9F9"/>
+      <stop offset="100%" stop-color="#58B9FF"/>
+    </linearGradient>
+    <!-- Soft top-sheen on filled bar -->
+    <linearGradient id="xpSheen" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="rgba(255,255,255,0.22)"/>
+      <stop offset="55%"  stop-color="rgba(255,255,255,0.06)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
     </linearGradient>
     <clipPath id="barClip">
       <rect x="${barX}" y="${barTop}" width="${barW}" height="${barH}" rx="${barR}"/>
     </clipPath>
+    <clipPath id="barFillClip">
+      <rect x="${barX}" y="${barTop}" width="${barFill}" height="${barH}" rx="${barR}"/>
+    </clipPath>
   </defs>
 
-  <!-- Black readability overlay (~38%) -->
-  <rect x="0" y="0" width="${CARD_W}" height="${CARD_H}" fill="black" opacity="0.38"/>
+  <!-- Black readability overlay (~37%) -->
+  <rect x="0" y="0" width="${CARD_W}" height="${CARD_H}" fill="black" opacity="0.37"/>
 
-  <!-- Avatar soft shadow (simulated — no filter) -->
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 32}" fill="black" opacity="0.14"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 20}" fill="black" opacity="0.20"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 10}" fill="black" opacity="0.28"/>
+  <!-- Avatar depth vignette (behind the frame ring) -->
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 28}" fill="black" opacity="0.12"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 16}" fill="black" opacity="0.18"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 6}"  fill="black" opacity="0.24"/>
 
-  <!-- Bank (top-left) — shadow then fill -->
+  <!-- Bank (top-left) -->
   <text x="62" y="${bankY + 2}"
-    fill="black" font-size="44" font-weight="bold" opacity="0.55"
+    fill="black" font-size="44" font-weight="bold" opacity="0.50"
     font-family="Liberation Sans,sans-serif">Bank: ${fmtMoney(bank)}</text>
   <text x="60" y="${bankY}"
     fill="#FFFFFF" font-size="44" font-weight="bold"
@@ -638,7 +880,7 @@ function buildStatsSvg(user) {
 
   <!-- Wallet (top-left) -->
   <text x="62" y="${walletY + 2}"
-    fill="black" font-size="44" font-weight="bold" opacity="0.55"
+    fill="black" font-size="44" font-weight="bold" opacity="0.50"
     font-family="Liberation Sans,sans-serif">Wallet: ${fmtMoney(wallet)}</text>
   <text x="60" y="${walletY}"
     fill="#FFFFFF" font-size="44" font-weight="bold"
@@ -646,34 +888,38 @@ function buildStatsSvg(user) {
 
   <!-- Username -->
   <text x="${AV_CX + 2}" y="${nameY + 2}"
-    fill="black" font-size="78" font-weight="bold" text-anchor="middle" opacity="0.55"
+    fill="black" font-size="79" font-weight="bold" text-anchor="middle" opacity="0.52"
     font-family="Liberation Sans,sans-serif">${name}</text>
   <text x="${AV_CX}" y="${nameY}"
-    fill="#FFFFFF" font-size="78" font-weight="bold" text-anchor="middle"
+    fill="#FFFFFF" font-size="79" font-weight="bold" text-anchor="middle"
     font-family="Liberation Sans,sans-serif">${name}</text>
 
   <!-- Title / Subtitle -->
   <text x="${AV_CX + 1}" y="${subtitleY + 2}"
-    fill="black" font-size="36" text-anchor="middle" opacity="0.45"
+    fill="black" font-size="36" text-anchor="middle" opacity="0.42"
     font-family="Liberation Sans,sans-serif">(${title})</text>
   <text x="${AV_CX}" y="${subtitleY}"
     fill="rgba(255,255,255,0.82)" font-size="36" text-anchor="middle"
     font-family="Liberation Sans,sans-serif">(${title})</text>
 
-  <!-- Rank + Level -->
+  <!-- Rank · Level -->
   <text x="${AV_CX + 2}" y="${rankY + 2}"
-    fill="black" font-size="52" font-weight="bold" text-anchor="middle" opacity="0.50"
+    fill="black" font-size="54" font-weight="bold" text-anchor="middle" opacity="0.48"
     font-family="Liberation Sans,sans-serif">Rank #${rank}  ·  Level ${level}</text>
   <text x="${AV_CX}" y="${rankY}"
-    fill="#FFFFFF" font-size="52" font-weight="bold" text-anchor="middle"
+    fill="#FFFFFF" font-size="54" font-weight="bold" text-anchor="middle"
     font-family="Liberation Sans,sans-serif">Rank #${rank}  ·  Level ${level}</text>
 
-  <!-- XP bar track -->
+  <!-- XP bar track (charcoal) -->
   <rect x="${barX}" y="${barTop}" width="${barW}" height="${barH}" fill="#4B4B4B" rx="${barR}"/>
 
-  <!-- XP bar fill (gradient, clipped to track shape) -->
+  <!-- XP bar fill — gradient, clipped to pill shape -->
   <rect x="${barX}" y="${barTop}" width="${barFill}" height="${barH}"
     fill="url(#xpFill)" clip-path="url(#barClip)"/>
+
+  <!-- XP bar premium sheen highlight -->
+  <rect x="${barX}" y="${barTop}" width="${barFill}" height="${barH}"
+    fill="url(#xpSheen)" clip-path="url(#barFillClip)"/>
 
   <!-- XP text centred inside bar -->
   <text x="${AV_CX}" y="${barTextY}"
@@ -733,18 +979,38 @@ function fetchBuffer(url) {
   })
 }
 
-// ─── MAIN: GENERATE PROFILE CARD (Konosuba style) ────────────────────────────
-async function generateProfileCard(user, ppBuffer = null, bgBuffer = null) {
-  const diameter = AV_R * 2   // 270px
+// ─── MAIN: GENERATE PROFILE CARD ────────────────────────────────────────────
+// customFrameDoc — optional MongoDB Frame document from db.getFrameByName().
+//   • has_background=true  → frame image IS the background (user wallpaper ignored).
+//   • has_background=false → frame image is a transparent overlay (no built-in ring drawn).
+//   • null                 → draw built-in premium SVG ring from user.profile_frame.
+async function generateProfileCard(user, ppBuffer = null, bgBuffer = null, customFrameDoc = null) {
+  const diameter = AV_R * 2   // 440px (AV_R = 220)
 
   // ── Layer 1: Background ──
   let bgLayer
-  if (bgBuffer) {
+  let frameBgUsed = false
+
+  // Custom frame background path — full-quality, no double-wallpaper
+  if (customFrameDoc && customFrameDoc.has_background) {
+    try {
+      const rawBuf = Buffer.from(customFrameDoc.image, 'base64')
+      bgLayer = await sharp(rawBuf)
+        .resize(CARD_W, CARD_H, { fit: 'cover' })
+        .png()
+        .toBuffer()
+      frameBgUsed = true
+    } catch { bgLayer = null }
+  }
+
+  if (!bgLayer && bgBuffer) {
     bgLayer = await sharp(bgBuffer)
       .resize(CARD_W, CARD_H, { fit: 'cover' })
       .png()
       .toBuffer()
-  } else {
+  }
+
+  if (!bgLayer) {
     // Starry night default background
     const stars = Array.from({ length: 90 }, (_, i) => {
       const x  = Math.abs(((i * 137 + 43) * 7) % CARD_W)
@@ -786,22 +1052,38 @@ async function generateProfileCard(user, ppBuffer = null, bgBuffer = null) {
   } else {
     avatarBuf = await makeInitialsAvatar(user.name || user.phone || '?', diameter)
   }
-  const avatarTop  = AV_CY - AV_R   // 265 - 135 = 130
-  const avatarLeft = AV_CX - AV_R   // 250 - 135 = 115
+  const avatarTop  = AV_CY - AV_R   // 490 - 220 = 270
+  const avatarLeft = AV_CX - AV_R   // 640 - 220 = 420
 
-  // ── Layer 3: Stats overlay (ring + text + banner) ──
+  // ── Layer 3: Stats overlay (black vignette + text) ──
   const overlayBuf = Buffer.from(buildStatsSvg(user))
 
-  // ── Composite: bg → avatar → overlay ──
-  const cardBuf = await sharp(bgLayer)
-    .composite([
-      { input: avatarBuf,  top: avatarTop,  left: avatarLeft },
-      { input: overlayBuf, top: 0,          left: 0          },
-    ])
+  // ── Layer 4: Frame overlay ──
+  // • Custom overlay frame (transparent PNG uploaded by staff, no bg)
+  // • Built-in premium SVG ring (when no custom frame or custom bg)
+  // • Nothing extra when the custom frame already supplied the background
+  let frameOverlayBuf = null
+  if (customFrameDoc && !customFrameDoc.has_background) {
+    try { frameOverlayBuf = Buffer.from(customFrameDoc.image, 'base64') } catch { /* ignore */ }
+  } else if (!frameBgUsed) {
+    const frameId = user.profile_frame || 1
+    const frame   = getFrame(frameId)
+    frameOverlayBuf = Buffer.from(buildPremiumFrameOverlaySvg(frame, AV_CX, AV_CY, AV_R))
+  }
+
+  // ── Composite: bg → avatar → stats overlay → frame ring (topmost) ──
+  const layers = [
+    { input: avatarBuf,  top: avatarTop,  left: avatarLeft },
+    { input: overlayBuf, top: 0,          left: 0 },
+  ]
+  if (frameOverlayBuf) {
+    layers.push({ input: frameOverlayBuf, top: 0, left: 0 })
+  }
+
+  return sharp(bgLayer)
+    .composite(layers)
     .png()
     .toBuffer()
-
-  return cardBuf
 }
 module.exports.generateProfileCard = generateProfileCard
 
