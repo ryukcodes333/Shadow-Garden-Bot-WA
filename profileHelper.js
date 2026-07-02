@@ -6,11 +6,11 @@ const os = require('os')
 const path = require('path')
 const fs = require('fs')
 
-const CARD_W = 500
-const CARD_H = 720
-const AV_CX = 250
-const AV_CY = 265
-const AV_R  = 135
+const CARD_W = 1280
+const CARD_H = 1280
+const AV_CX  = 640
+const AV_CY  = 490
+const AV_R   = 125
 
 // ─── 70 FRAMES ──────────────────────────────────────────────────────────────
 const FRAMES = [
@@ -583,77 +583,102 @@ function buildStatsSvg(user) {
   }
 
   const name   = esc((user.name || user.phone || 'Unknown').substring(0, 18))
-  const title  = esc((user.title || 'Newcomer').substring(0, 22))
+  const title  = esc((user.title || 'Newcomer').substring(0, 28))
   const level  = user.level || 1
   const xp     = Number(user.xp || 0)
   const xpNeed = level * 1000
   const xpPct  = Math.min(xp / xpNeed, 1)
-  const barMaxW = 376
-  const barX   = 38
-  const xpBarW = Math.max(Math.round(barMaxW * xpPct), 6)
   const rank   = user.rank != null ? user.rank : (user.phone ? user.phone.slice(-4) : '???')
   const bank   = user.bank   || 0
   const wallet = user.wallet || 0
 
-  const botY = AV_CY + AV_R  // y of avatar bottom edge = 400
+  // XP bar dimensions — 760×58px centred, 30px radius
+  const barW    = 760
+  const barH    = 58
+  const barX    = (CARD_W - barW) / 2      // 260
+  const barR    = 30
+  const barFill = Math.max(Math.min(Math.round(barW * xpPct), barW), barR * 2)
+
+  // Vertical layout anchors
+  const bankY     = 90
+  const walletY   = 150
+  const avatarBot = AV_CY + AV_R            // 615
+  const nameY     = avatarBot + 90          // 705
+  const subtitleY = nameY + 55              // 760
+  const rankY     = subtitleY + 72          // 832
+  const barTop    = rankY + 62              // 894
+  const barTextY  = barTop + Math.round(barH / 2) + 12  // ~941
 
   return `<svg width="${CARD_W}" height="${CARD_H}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="xpGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#0088EE"/>
-      <stop offset="100%" stop-color="#00CCFF"/>
+    <linearGradient id="xpFill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#5DBFFF"/>
+      <stop offset="100%" stop-color="#2A97E8"/>
     </linearGradient>
+    <clipPath id="barClip">
+      <rect x="${barX}" y="${barTop}" width="${barW}" height="${barH}" rx="${barR}"/>
+    </clipPath>
   </defs>
 
-  <!-- ── BANK / WALLET (top-left) ── -->
-  <text x="14" y="30"
-    fill="rgba(255,255,255,0.92)" font-size="14" font-weight="bold"
+  <!-- Black readability overlay (~38%) -->
+  <rect x="0" y="0" width="${CARD_W}" height="${CARD_H}" fill="black" opacity="0.38"/>
+
+  <!-- Avatar soft shadow (simulated — no filter) -->
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 32}" fill="black" opacity="0.14"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 20}" fill="black" opacity="0.20"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 10}" fill="black" opacity="0.28"/>
+
+  <!-- Bank (top-left) — shadow then fill -->
+  <text x="62" y="${bankY + 2}"
+    fill="black" font-size="44" font-weight="bold" opacity="0.55"
     font-family="Liberation Sans,sans-serif">Bank: ${fmtMoney(bank)}</text>
-  <text x="14" y="52"
-    fill="rgba(255,255,255,0.75)" font-size="13"
+  <text x="60" y="${bankY}"
+    fill="#FFFFFF" font-size="44" font-weight="bold"
+    font-family="Liberation Sans,sans-serif">Bank: ${fmtMoney(bank)}</text>
+
+  <!-- Wallet (top-left) -->
+  <text x="62" y="${walletY + 2}"
+    fill="black" font-size="44" font-weight="bold" opacity="0.55"
+    font-family="Liberation Sans,sans-serif">Wallet: ${fmtMoney(wallet)}</text>
+  <text x="60" y="${walletY}"
+    fill="#FFFFFF" font-size="44" font-weight="bold"
     font-family="Liberation Sans,sans-serif">Wallet: ${fmtMoney(wallet)}</text>
 
-  <!-- ── AVATAR RING (glow layers, sky-blue palette) ── -->
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 22}" fill="#0099FF" opacity="0.04"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 17}" fill="#0099FF" opacity="0.06"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 12}" fill="#0066CC" opacity="0.08"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 8}"  fill="none" stroke="#0099FF" stroke-width="2"   opacity="0.28"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 5}"  fill="none" stroke="#00AAFF" stroke-width="2.5" opacity="0.50"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 3}"  fill="none" stroke="#33BBFF" stroke-width="3.5" opacity="0.72"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 1}"  fill="none" stroke="#66CCFF" stroke-width="4.5" opacity="0.90"/>
-  <!-- Inner white ring at avatar edge -->
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R - 3}"  fill="none" stroke="rgba(255,255,255,0.92)" stroke-width="2"/>
+  <!-- Username -->
+  <text x="${AV_CX + 2}" y="${nameY + 2}"
+    fill="black" font-size="78" font-weight="bold" text-anchor="middle" opacity="0.55"
+    font-family="Liberation Sans,sans-serif">${name}</text>
+  <text x="${AV_CX}" y="${nameY}"
+    fill="#FFFFFF" font-size="78" font-weight="bold" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif">${name}</text>
 
-  <!-- ── NAME ── -->
-  <text x="${AV_CX}" y="${botY + 52}"
-    fill="white" font-size="40" font-weight="bold" text-anchor="middle"
-    font-family="Liberation Sans,sans-serif" letter-spacing="2">${name}</text>
-
-  <!-- ── SUBTITLE ── -->
-  <text x="${AV_CX}" y="${botY + 80}"
-    fill="#99CCFF" font-size="15" text-anchor="middle"
+  <!-- Title / Subtitle -->
+  <text x="${AV_CX + 1}" y="${subtitleY + 2}"
+    fill="black" font-size="36" text-anchor="middle" opacity="0.45"
+    font-family="Liberation Sans,sans-serif">(${title})</text>
+  <text x="${AV_CX}" y="${subtitleY}"
+    fill="rgba(255,255,255,0.82)" font-size="36" text-anchor="middle"
     font-family="Liberation Sans,sans-serif">(${title})</text>
 
-  <!-- ── DIAMOND SEPARATOR ── -->
-  <text x="${AV_CX}" y="${botY + 100}"
-    fill="#4499CC" font-size="13" text-anchor="middle"
-    font-family="Liberation Sans,sans-serif">◇</text>
-
-  <!-- ── RANK + LEVEL (combined) ── -->
-  <text x="${AV_CX}" y="${botY + 130}"
-    fill="white" font-size="16" font-weight="bold" text-anchor="middle"
+  <!-- Rank + Level -->
+  <text x="${AV_CX + 2}" y="${rankY + 2}"
+    fill="black" font-size="52" font-weight="bold" text-anchor="middle" opacity="0.50"
+    font-family="Liberation Sans,sans-serif">Rank #${rank}  ·  Level ${level}</text>
+  <text x="${AV_CX}" y="${rankY}"
+    fill="#FFFFFF" font-size="52" font-weight="bold" text-anchor="middle"
     font-family="Liberation Sans,sans-serif">Rank #${rank}  ·  Level ${level}</text>
 
-  <!-- ── PROGRESS BAR ── -->
-  <!-- Track -->
-  <rect x="${barX}" y="${botY + 148}" width="${barMaxW}" height="26" fill="#081828" rx="13"/>
-  <!-- Fill -->
-  <rect x="${barX}" y="${botY + 148}" width="${xpBarW}" height="26" fill="url(#xpGrad)" rx="13"/>
-  <!-- XP counter inside bar -->
-  <text x="${barX + barMaxW / 2}" y="${botY + 167}"
-    fill="white" font-size="12" font-weight="bold" text-anchor="middle"
-    font-family="Liberation Sans,sans-serif" opacity="0.95">${xp} / ${xpNeed} XP</text>
+  <!-- XP bar track -->
+  <rect x="${barX}" y="${barTop}" width="${barW}" height="${barH}" fill="#4B4B4B" rx="${barR}"/>
 
+  <!-- XP bar fill (gradient, clipped to track shape) -->
+  <rect x="${barX}" y="${barTop}" width="${barFill}" height="${barH}"
+    fill="url(#xpFill)" clip-path="url(#barClip)"/>
+
+  <!-- XP text centred inside bar -->
+  <text x="${AV_CX}" y="${barTextY}"
+    fill="white" font-size="34" font-weight="bold" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif">${xp} / ${xpNeed} XP</text>
 </svg>`
 }
 
@@ -776,11 +801,7 @@ async function generateProfileCard(user, ppBuffer = null, bgBuffer = null) {
     .png()
     .toBuffer()
 
-  // Always upscale 2× for crisp output (works with custom bg / pp / video frame too)
-  return sharp(cardBuf)
-    .resize(CARD_W * 2, CARD_H * 2, { kernel: 'lanczos3' })
-    .png()
-    .toBuffer()
+  return cardBuf
 }
 module.exports.generateProfileCard = generateProfileCard
 
