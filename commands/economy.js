@@ -11,7 +11,8 @@ const FISH_IMG         = path.join(__dirname, '../assets/fish.png')
 // Daily: small guaranteed reward, tier-scaled by streak
 const DAILY_COINS = [50, 75, 100, 125, 150]   // was [20,23,26,30,35]
 const DAILY_GEMS  = [1, 1, 1, 2, 2]
-const DAILY_XP    = 10                          // was 21 — reduced significantly
+const DAILY_XP_MIN = 30
+const DAILY_XP_MAX = 50
 
 // XP formula: xpForLevel(level) = level * 300
 // Gives: Lv1→2: 300xp | Lv5→6: 1500xp | Lv10→11: 3000xp | Lv20→21: 6000xp
@@ -151,15 +152,16 @@ module.exports = {
       streak: newStreak,
       last_daily: new Date().toISOString(),
     })
-    const xpResult = await applyXP(sender, null, DAILY_XP)
+    const dailyXp  = Math.floor(Math.random() * (DAILY_XP_MAX - DAILY_XP_MIN + 1)) + DAILY_XP_MIN
+    const xpResult = await applyXP(sender, null, dailyXp)
     await db.setCooldown(sender, 'daily', CD_DAILY)
-    console.log(`[economy] daily: ${sender} +£${coins} +${DAILY_XP}XP streak=${newStreak}`)
+    console.log(`[economy] daily: ${sender} +£${coins} +${dailyXp}XP streak=${newStreak}`)
     await db.trackCurrencyGenerated(coins)
     await reply(
       `🌟 *Daily Reward Claimed!*\n\n` +
       `💰 +£${coins}\n` +
       `💎 +${gems} gems\n` +
-      `⭐ +${DAILY_XP} XP\n` +
+      `⭐ +${dailyXp} XP\n` +
       `🔥 Streak: ${newStreak} days\n` +
       (xpResult.leveledUp ? `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊\n` : '') +
       `\n_Come back in 24 hours!_`
@@ -177,8 +179,8 @@ module.exports = {
       const mins = Math.floor((remaining % 3600000) / 60000)
       return reply(`⏳ You are on cooldown for *${hrs}h ${mins}m*.`)
     }
-    const coins = Math.floor(Math.random() * 201) + 350  // 350–550 base, steak adds more
-    const weeklyXp = 50
+    const coins = Math.floor(Math.random() * 201) + 350  // 350–550 base
+    const weeklyXp = 100
     await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
     const xpResult = await applyXP(sender, null, weeklyXp)
     await db.setCooldown(sender, 'weekly', 7 * 24 * 3600)
@@ -204,7 +206,7 @@ module.exports = {
       return reply(`⏳ You are on cooldown for *${days}d ${hrs}h*.`)
     }
     const coins = Math.floor(Math.random() * 1001) + 1750  // 1750–2750
-    const monthlyXp = 200
+    const monthlyXp = 300
     await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
     const xpResult = await applyXP(sender, null, monthlyXp)
     await db.setCooldown(sender, 'monthly', 30 * 24 * 3600)
@@ -226,19 +228,15 @@ module.exports = {
     if (await checkCooldown(sender, 'work', reply)) return
     const jobs   = ['hacked a server', 'sold rare items', 'completed a bounty', 'trained disciples', 'patrolled the shadows', 'decoded encrypted files', 'delivered a package', 'repaired shadow gear', 'escorted a merchant', 'decrypted intel files']
     const job    = jobs[Math.floor(Math.random() * jobs.length)]
-    const earned = Math.floor(Math.random() * 31) + 15   // 15–45 coins
-    const workXp = Math.floor(Math.random() * 4) + 5     // 5–8 XP
+    const earned = Math.floor(Math.random() * 201) + 100  // 100–300 coins, no XP
     await db.updateUser(sender, { wallet: (u.wallet || 0) + earned })
-    const xpResult = await applyXP(sender, null, workXp)
     await db.setCooldown(sender, 'work', CD_WORK)
     await db.trackCurrencyGenerated(earned)
-    console.log(`[economy] work: ${sender} +£${earned} +${workXp}XP`)
+    console.log(`[economy] work: ${sender} +£${earned}`)
     await reply(
       `💼 *Work Complete!*\n\n` +
       `You ${job}\n` +
       `💰 +£${earned}\n` +
-      `⭐ +${workXp} XP\n` +
-      (xpResult.leveledUp ? `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊\n` : '') +
       `\n⏳ Next work in *20 minutes*`
     )
   },
@@ -250,41 +248,38 @@ module.exports = {
     if (await checkCooldown(sender, 'dig', reply)) return
 
     const roll   = Math.random()
-    let result, earned = 0, gems = 0, digXp = Math.floor(Math.random() * 3) + 2  // 2–4 XP
+    let result, earned = 0, gems = 0
 
     if (roll < 0.02) {
-      // Legendary (2%): Shadow Crystal
-      earned = Math.floor(Math.random() * 1301) + 200  // 200–1500
+      // Legendary (2%): Shadow Crystal — £600–1000 + 2 gems
+      earned = Math.floor(Math.random() * 401) + 600
       gems   = 2
       result = `a *Shadow Crystal* ✨ (legendary find!)`
     } else if (roll < 0.08) {
-      // Rare (6%): gem + decent coins
-      earned = Math.floor(Math.random() * 41) + 40   // 40–80
+      // Rare (6%): gem + £400–800
+      earned = Math.floor(Math.random() * 401) + 400
       gems   = 1
-      result = `a rare gem! 💎 +${earned} coins`
+      result = `a rare gem! 💎 +£${earned}`
     } else if (roll < 0.25) {
-      // Uncommon (17%): decent coins
-      earned = Math.floor(Math.random() * 21) + 15   // 15–35
-      result = `${earned} coins worth of buried treasure 🪙`
-    } else if (roll < 0.55) {
-      // Common (30%): small coins
-      earned = Math.floor(Math.random() * 11) + 5    // 5–15
-      result = `a rusty coin worth £${earned}`
+      // Uncommon (17%): £250–500
+      earned = Math.floor(Math.random() * 251) + 250
+      result = `buried treasure worth £${earned} 🪙`
+    } else if (roll < 0.70) {
+      // Common (45%): £100–250
+      earned = Math.floor(Math.random() * 151) + 100
+      result = `some coins worth £${earned}`
     } else {
-      // Nothing (45%)
+      // Nothing (30%)
       result = 'nothing useful 😐'
     }
 
     if (earned > 0) await db.updateUser(sender, { wallet: (u.wallet || 0) + earned })
     if (gems > 0)   await db.updateUser(sender, { gems: (u.gems || 0) + gems })
     if (earned > 0) await db.trackCurrencyGenerated(earned)
-    const xpResult = await applyXP(sender, null, digXp)
     await db.setCooldown(sender, 'dig', CD_DIG)
 
     let caption = `⛏️ *Digging Result*\n\nYou found: ${result}`
-    if (digXp > 0) caption += `\n⭐ +${digXp} XP`
-    if (xpResult.leveledUp) caption += `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊`
-    if (earned === 0 && gems === 0) caption += `\n\n_You did not catch anything this time._`
+    if (earned === 0 && gems === 0) caption += `\n\n_You did not find anything this time._`
     await reply(caption)
   },
 
@@ -294,37 +289,33 @@ module.exports = {
     const u = user || await db.getOrCreateUser(sender)
     if (await checkCooldown(sender, 'fish', reply)) return
 
-    // Weighted catch table: common→frequent, rare→uncommon, legendary→very rare
+    // Weighted catch table: rewards scaled to £100–1000 range, no XP
     const catches = [
-      { label: '🐟 Common Fish',     weight: 28, coins: [5, 15]   },
-      { label: '🐠 Tropical Fish',   weight: 22, coins: [10, 25]  },
-      { label: '🐡 Puffer Fish',     weight: 14, coins: [15, 30]  },
-      { label: '🦐 Shrimp',          weight: 12, coins: [8, 18]   },
-      { label: '👢 Old Boot',        weight: 10, coins: [0, 0]    },
-      { label: '🌿 Seaweed',         weight: 7,  coins: [0, 0]    },
-      { label: '🦈 Shark!',          weight: 4,  coins: [50, 100] },
-      { label: '💎 Shadow Pearl',    weight: 2,  coins: [120, 200] },
-      { label: '🐉 Sea Serpent Egg', weight: 1,  coins: [500, 1500] },
+      { label: '🐟 Common Fish',     weight: 28, coins: [100, 200]  },
+      { label: '🐠 Tropical Fish',   weight: 22, coins: [150, 300]  },
+      { label: '🐡 Puffer Fish',     weight: 14, coins: [200, 400]  },
+      { label: '🦐 Shrimp',          weight: 12, coins: [100, 250]  },
+      { label: '👢 Old Boot',        weight: 10, coins: [0, 0]      },
+      { label: '🌿 Seaweed',         weight: 7,  coins: [0, 0]      },
+      { label: '🦈 Shark!',          weight: 4,  coins: [400, 700]  },
+      { label: '💎 Shadow Pearl',    weight: 2,  coins: [600, 850]  },
+      { label: '🐉 Sea Serpent Egg', weight: 1,  coins: [800, 1000] },
     ]
     const totalWeight = catches.reduce((a, c) => a + c.weight, 0)
     let rand = Math.random() * totalWeight, caught = catches[catches.length - 1]
     for (const c of catches) { rand -= c.weight; if (rand <= 0) { caught = c; break } }
 
-    const coins   = caught.coins[0] + Math.floor(Math.random() * (caught.coins[1] - caught.coins[0] + 1))
-    const fishXp  = Math.floor(Math.random() * 3) + 2  // 2–4 XP
+    const coins = caught.coins[0] + Math.floor(Math.random() * (caught.coins[1] - caught.coins[0] + 1))
 
     if (coins > 0) {
       await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
       await db.trackCurrencyGenerated(coins)
     }
-    const xpResult = await applyXP(sender, null, fishXp)
     await db.setCooldown(sender, 'fish', CD_FISH)
 
     let caption = `🎣 *Fishing Result*\n\nCaught: *${caught.label}*`
-    if (coins > 0) caption += `\n💰 +£${coins} Eris`
+    if (coins > 0) caption += `\n💰 +£${coins}`
     else caption += `\n\n_You did not catch anything this time._`
-    caption += `\n⭐ +${fishXp} XP`
-    if (xpResult.leveledUp) caption += `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊`
     await reply(caption)
   },
 
@@ -332,14 +323,11 @@ module.exports = {
   async beg({ reply, sender, user }) {
     const u = user || await db.getOrCreateUser(sender)
     if (await checkCooldown(sender, 'beg', reply)) return
-    const success = Math.random() < 0.5
-    const coins   = success ? Math.floor(Math.random() * 1499) + 2 : 0
-    if (success) {
-      await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
-      await db.trackCurrencyGenerated(coins)
-    }
+    const coins = Math.floor(Math.random() * 10) + 1  // £1–10, no XP
+    await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
+    await db.trackCurrencyGenerated(coins)
     await db.setCooldown(sender, 'beg', CD_BEG)
-    await reply(success ? `🙏 Someone felt generous — *+£${coins}*` : `🚶 Nobody stopped to help.`)
+    await reply(`🙏 Someone felt generous — *+£${coins}*`)
   },
 
   // ── .crime ───────────────────────────────────────────────────────────────
@@ -357,21 +345,17 @@ module.exports = {
     await db.setCooldown(sender, 'crime', CD_CRIME)
 
     if (success) {
-      const gain   = Math.floor(Math.random() * 41) + 40  // 40–80 coins
-      const crimeXp = Math.floor(Math.random() * 4) + 3   // 3–6 XP
+      const gain = Math.floor(Math.random() * 451) + 50  // £50–500, no XP
       await db.updateUser(sender, { wallet: (u.wallet || 0) + gain })
       await db.trackCurrencyGenerated(gain)
-      const xpResult = await applyXP(sender, null, crimeXp)
       const acts = ['robbed a merchant', 'pickpocketed a noble', 'hacked a guild vault', 'stole a shipment', 'conned a trader', 'looted an abandoned estate']
       await reply(
         `🦹 *Crime Successful!*\n\n` +
         `You ${acts[Math.floor(Math.random() * acts.length)]}.\n` +
-        `💰 +£${gain}\n` +
-        `⭐ +${crimeXp} XP` +
-        (xpResult.leveledUp ? `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊` : '')
+        `💰 +£${gain}`
       )
     } else {
-      const fine = Math.min(Math.floor(Math.random() * 31) + 20, u.wallet || 0)  // 20–50 coins fine
+      const fine = Math.min(Math.floor(Math.random() * 201) + 50, u.wallet || 0)  // £50–250 fine
       await db.updateUser(sender, { wallet: Math.max(0, (u.wallet || 0) - fine) })
       await db.trackCurrencyRemoved(fine)
       await reply(`👮 *Caught!*\n\nYou were caught and fined *£${fine}*. Better luck next time.`)
@@ -470,16 +454,12 @@ module.exports = {
     await db.setCooldown(sender, 'heist', CD_HEIST)
 
     if (success) {
-      const heistXp = Math.floor(Math.random() * 16) + 15  // 15–30 XP
       await db.updateUser(sender, { wallet: (u.wallet || 0) + reward })
       await db.trackCurrencyGenerated(reward)
-      const xpResult = await applyXP(sender, null, heistXp)
       const targets = ['Shadow Bank vault', 'merchant convoy', 'guild treasury', 'noble estate', 'forbidden archive']
       await reply(
         `💰 *Heist Successful!*\n\n` +
-        `Your crew cracked the ${targets[Math.floor(Math.random() * targets.length)]} and got away with *£${reward.toLocaleString()}*!\n` +
-        `⭐ +${heistXp} XP` +
-        (xpResult.leveledUp ? `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊` : '')
+        `Your crew cracked the ${targets[Math.floor(Math.random() * targets.length)]} and got away with *£${reward.toLocaleString()}*!`
       )
     } else {
       // Heist failed — loss is capped to protect player progress
@@ -941,6 +921,7 @@ module.exports = {
     const loan = await db.createLoan(sender, amount, tier)
     await db.updateUser(sender, { wallet: (u.wallet || 0) + amount })
     await db.trackCurrencyGenerated(amount)
+    const loanXpResult = await applyXP(sender, null, 7)  // exactly 7 XP per guide
     await reply(
       `✅ *LOAN APPROVED!*\n\n` +
       `🏦 *Konosuba Bank*\n\n` +
@@ -949,8 +930,10 @@ module.exports = {
       `*Interest:* ${(interest * 100).toFixed(0)}%\n` +
       `*Total Due:* £${total_due.toLocaleString()}\n` +
       `*Due Date:* ${new Date(loan.due_date).toLocaleDateString('en-GB')}\n\n` +
-      `💵 £${amount.toLocaleString()} added to your wallet.\n\n` +
-      `Use *.repay <amount>* to pay back your loan. 🖤`
+      `💵 £${amount.toLocaleString()} added to your wallet.\n` +
+      `⭐ +7 XP\n` +
+      (loanXpResult.leveledUp ? `🆙 *LEVEL UP!* ${loanXpResult.oldLevel} → ${loanXpResult.newLevel} 🎊\n` : '') +
+      `\nUse *.repay <amount>* to pay back your loan. 🖤`
     )
   },
 
