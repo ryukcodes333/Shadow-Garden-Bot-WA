@@ -249,12 +249,13 @@ module.exports = {
   },
 
   // ── Moderation ────────────────────────────────────────────────
-  async ban({ reply, msg, args, isOwner, isMod, isGuardian }) {
+  async ban({ reply, msg, args, sender, isOwner, isMod, isGuardian }) {
     if (!isOwner && !isMod && !isGuardian) return reply('*🚫 Access Denied*')
     const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
     if (!mentioned.length) return reply('❌ Usage: `.ban @user [reason]`')
     const reason = args.filter(a => !a.includes('@')).join(' ') || 'No reason given'
-    for (const j of mentioned) await db.updateUser(j.split('@')[0].split(':')[0], { banned: true })
+    const modPhone = sender || 'Staff'
+    for (const j of mentioned) await db.updateUser(j.split('@')[0].split(':')[0], { banned: true, ban_reason: reason, ban_mod: modPhone })
     await reply(`🔨 *BANNED*\n\n${mentioned.map(j => `@${j.split('@')[0].split(':')[0]}`).join(', ')}\nReason: ${reason}`)
   },
 

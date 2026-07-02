@@ -47,6 +47,8 @@ const userSchema = new mongoose.Schema({
   level:      { type: Number, default: 1 },
   streak:     { type: Number, default: 0 },
   banned:     { type: Boolean, default: false },
+  ban_reason: { type: String,  default: '' },
+  ban_mod:    { type: String,  default: '' },
   premium:    { type: Boolean, default: false },
   role:       { type: String, default: 'member' },
   title:      { type: String, default: 'Newcomer' },

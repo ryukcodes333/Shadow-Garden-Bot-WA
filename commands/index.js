@@ -447,7 +447,16 @@ async function handleMessage(sock, msg, botIdentity) {
   const user = await db.getOrCreateUser(sender, msg.pushName || sender, senderJid).catch(() => null)
   const canonicalSender = user?.phone || sender
 
-  if (user?.banned && !isOwner) return
+  if (user?.banned && !isOwner) {
+    await sock.sendMessage(jid, {
+      text:
+        `🚫 You are currently *banned* from using this bot.\n\n` +
+        `*Reason:* ${user.ban_reason || 'No reason given'}\n` +
+        `*Moderator:* ${user.ban_mod || 'Staff'}\n\n` +
+        `> If you believe this was a mistake, contact a staff member to appeal.`,
+    }, { quoted: msg })
+    return
+  }
 
   // ── Suspension check (sender) ─────────────────────────────────────────────
   if (!isOwner && cmd !== 'p' && cmd !== 'profile') {

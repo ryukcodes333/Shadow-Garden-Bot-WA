@@ -164,7 +164,7 @@ async function uploadToStorage(buffer, storagePath, mime = 'image/jpeg') {
 module.exports = {
   // ─── .p - image profile card ──────────────────────────────────────────────
   async p({ sock, msg, jid, sender, user, reply, isOwner, isMod, isGuardian }) {
-    await reply('⏳ Generating your profile card…')
+    await sock.sendMessage(jid, { react: { text: '👤', key: msg.key } })
 
     const u = user || await db.getOrCreateUser(sender)
     if (!u) return reply('❌ Could not load your profile. Make sure the database is set up.')
@@ -234,27 +234,27 @@ module.exports = {
       battleLosses = u.battle_losses || 0
     } catch {}
 
+    const isVerified = isOwner || isMod || isGuardian || !!u.premium
+    let statusLine = 'This user is not banned. ✅'
+    if (u.banned) {
+      statusLine = 'This user is currently banned. 🚫'
+    } else {
+      try {
+        const susp = await db.getSuspension(sender).catch(() => null)
+        if (susp) statusLine = 'Account is currently suspended. 🚫'
+      } catch {}
+    }
+
     const caption =
-      `✦ ${u.name || sender}'s Profile ✦\n\n` +
-      `*👤 Rank:* ${rank} | 🏷️ Title: ${title}  \n` +
-      `*⭐ Level:* ${u.level || 1}\n` +
-      `*🔥 Streak:* ${u.streak || 0} days  \n` +
-      `*📊 XP:* ${u.xp || 0} / ${xpNeeded}  \n` +
-      `\`[${xpBar}]\`\n\n` +
-      `*💰 Wallet:* ${Number(u.wallet || 0).toLocaleString()}  \n` +
-      `*🏦 Bank:* ${Number(u.bank || 0).toLocaleString()}  \n` +
-      `*💎 Gems:* ${Number(u.gems || 0).toLocaleString()}  \n` +
-      `*💵 Net Worth:* ${netWorth.toLocaleString()}\n\n` +
-      `*🃏 Cards Owned:* ${cardCount}  \n` +
-      `*🖼️ Frame:* ${frameName}\n\n` +
-      `\`🎮 Trainer Stats\` \n` +
-      `*🐾 Pokémon Owned:* ${pokemonOwned}\n` +
-      `*🎒 In Party:* ${partyCount}  \n` +
-      `*🏆 Gym Badges:* ${gymBadges}  \n` +
-      `*⚔️ Battle Wins:* ${battleWins}\n` +
-      `*💥 Losses:* ${battleLosses}\n\n` +
-      `*📅 Joined:* ${joinDate}  \n\n` +
-      `> Type .frames to browse all 30 frames`
+      `🌟 𝗨𝗦𝗘𝗥 𝗖𝗔𝗥𝗗 🌟\n` +
+      `ꕤ 𝗡𝗮𝗺𝗲: ${u.name || sender}\n` +
+      `ꕤ 𝗛𝗮𝗻𝗱𝗹𝗲: @${sender}\n` +
+      `ꕤ 𝗜𝗗: ${sender}\n` +
+      `ꕤ 𝗔𝗯𝗼𝘂𝘁: ${u.bio || 'No bio set'}\n` +
+      `ꕤ 𝗝𝗼𝗶𝗻𝗲𝗱: ${joinDate}\n` +
+      `ꕤ 𝗕𝗮𝗱𝗴𝗲𝘀: ${u.pokemon_badges || gymBadges || 0}\n` +
+      `ꕤ 𝗩𝗲𝗿𝗶𝗳𝗶𝗲𝗱: ${isVerified ? 'Yes ✓' : 'No'}\n` +
+      `> ${statusLine}`
 
     // ── Animated bg path ──────────────────────────────────────────────────────
     if (animatedGifBgBuf) {

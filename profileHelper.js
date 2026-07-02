@@ -654,37 +654,6 @@ function buildStatsSvg(user) {
     fill="white" font-size="12" font-weight="bold" text-anchor="middle"
     font-family="Liberation Sans,sans-serif" opacity="0.95">${xp} / ${xpNeed} XP</text>
 
-  <!-- ── STAR ABOVE BOTTOM BANNER ── -->
-  <line x1="${AV_CX - 46}" y1="${CARD_H - 79}" x2="${AV_CX - 18}" y2="${CARD_H - 79}"
-    stroke="#C4920A" stroke-width="1" opacity="0.65"/>
-  <text x="${AV_CX}" y="${CARD_H - 73}"
-    fill="#C4920A" font-size="15" text-anchor="middle"
-    font-family="Liberation Sans,sans-serif">✦</text>
-  <line x1="${AV_CX + 18}" y1="${CARD_H - 79}" x2="${AV_CX + 46}" y2="${CARD_H - 79}"
-    stroke="#C4920A" stroke-width="1" opacity="0.65"/>
-
-  <!-- ── BOTTOM BANNER ── -->
-  <rect x="28" y="${CARD_H - 66}" width="444" height="54" fill="#0a1628" rx="10"/>
-  <rect x="29" y="${CARD_H - 65}" width="442" height="18" fill="white" opacity="0.04" rx="9"/>
-  <!-- Banner HUD corner brackets (gold) -->
-  <line x1="28"  y1="${CARD_H - 66}" x2="50"  y2="${CARD_H - 66}" stroke="#C4920A" stroke-width="1.5" opacity="0.60"/>
-  <line x1="28"  y1="${CARD_H - 66}" x2="28"  y2="${CARD_H - 46}" stroke="#C4920A" stroke-width="1.5" opacity="0.60"/>
-  <line x1="472" y1="${CARD_H - 66}" x2="450" y2="${CARD_H - 66}" stroke="#C4920A" stroke-width="1.5" opacity="0.60"/>
-  <line x1="472" y1="${CARD_H - 66}" x2="472" y2="${CARD_H - 46}" stroke="#C4920A" stroke-width="1.5" opacity="0.60"/>
-  <line x1="28"  y1="${CARD_H - 12}" x2="50"  y2="${CARD_H - 12}" stroke="#C4920A" stroke-width="1.5" opacity="0.60"/>
-  <line x1="28"  y1="${CARD_H - 12}" x2="28"  y2="${CARD_H - 32}" stroke="#C4920A" stroke-width="1.5" opacity="0.60"/>
-  <line x1="472" y1="${CARD_H - 12}" x2="450" y2="${CARD_H - 12}" stroke="#C4920A" stroke-width="1.5" opacity="0.60"/>
-  <line x1="472" y1="${CARD_H - 12}" x2="472" y2="${CARD_H - 32}" stroke="#C4920A" stroke-width="1.5" opacity="0.60"/>
-  <!-- Banner main text: Kono (white) + suba (cyan) + · FAMILY (gold) -->
-  <text x="${AV_CX}" y="${CARD_H - 34}"
-    font-size="17" font-weight="bold" text-anchor="middle"
-    font-family="Liberation Sans,sans-serif" letter-spacing="3">
-    <tspan fill="white">KONO</tspan><tspan fill="#00CFFF">SUBA</tspan><tspan fill="#C4920A"> · FAMILY</tspan>
-  </text>
-  <!-- Star inside banner (below text) -->
-  <text x="${AV_CX}" y="${CARD_H - 18}"
-    fill="#C4920A" font-size="11" text-anchor="middle"
-    font-family="Liberation Sans,sans-serif">✦</text>
 </svg>`
 }
 
