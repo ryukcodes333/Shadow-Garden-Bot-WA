@@ -77,7 +77,9 @@ async function checkCooldown(sender, cmd, reply) {
     if (hrs > 0)  parts.push(`${hrs}h`)
     if (mins > 0) parts.push(`${mins}m`)
     if (secs > 0 || parts.length === 0) parts.push(`${secs}s`)
-    await reply(`⏳ You are on cooldown for *${parts.join(' ')}*.`)
+    const duration = parts.join(' ')
+    const cdMsg = getResponse(cmd, 'cooldown') || `⏳ You are on cooldown for *{duration}*.`
+    await reply(fillTemplate(cdMsg, { hrs, mins, secs, duration }))
     return true
   }
   return false
@@ -174,9 +176,12 @@ module.exports = {
     const u = user || await db.getOrCreateUser(sender)
     const remaining = await db.getCooldown(sender, 'weekly')
     if (remaining > 0) {
-      const hrs = Math.floor(remaining / 3600000)
+      const hrs  = Math.floor(remaining / 3600000)
       const mins = Math.floor((remaining % 3600000) / 60000)
-      return reply(`⏳ You are on cooldown for *${hrs}h ${mins}m*.`)
+      const secs = Math.floor((remaining % 60000) / 1000)
+      const duration = [hrs > 0 && `${hrs}h`, mins > 0 && `${mins}m`, (secs > 0 || (!hrs && !mins)) && `${secs}s`].filter(Boolean).join(' ')
+      const cdMsg = getResponse('weekly', 'cooldown') || `⏳ You are on cooldown for *{duration}*.`
+      return reply(fillTemplate(cdMsg, { hrs, mins, secs, duration }))
     }
     const coins = Math.floor(Math.random() * 201) + 350  // 350–550 base
     const weeklyXp = 100
@@ -185,13 +190,10 @@ module.exports = {
     await db.setCooldown(sender, 'weekly', 7 * 24 * 3600)
     await db.trackCurrencyGenerated(coins)
     console.log(`[economy] weekly: ${sender} +£${coins} +${weeklyXp}XP`)
-    await reply(
-      `📅 *Weekly Reward!*\n\n` +
-      `💰 +£${coins.toLocaleString()}\n` +
-      `⭐ +${weeklyXp} XP\n` +
-      (xpResult.leveledUp ? `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊\n` : '') +
-      `\n_Come back in 7 days!_`
-    )
+    const levelUpW = xpResult.leveledUp ? `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊` : ''
+    const weeklyMsg = getResponse('weekly', 'success') ||
+      `📅 *Weekly Reward!*\n\n💰 +£{coins}\n⭐ +{xp} XP{levelUp}\n\n_Come back in 7 days!_`
+    await reply(fillTemplate(weeklyMsg, { coins: coins.toLocaleString(), xp: weeklyXp, levelUp: levelUpW }))
   },
 
   // ── .monthly ─────────────────────────────────────────────────────────────
@@ -202,7 +204,10 @@ module.exports = {
     if (remaining > 0) {
       const days = Math.floor(remaining / 86400000)
       const hrs  = Math.floor((remaining % 86400000) / 3600000)
-      return reply(`⏳ You are on cooldown for *${days}d ${hrs}h*.`)
+      const mins = Math.floor((remaining % 3600000) / 60000)
+      const duration = [days > 0 && `${days}d`, hrs > 0 && `${hrs}h`, mins > 0 && `${mins}m`].filter(Boolean).join(' ') || '1m'
+      const cdMsg = getResponse('monthly', 'cooldown') || `⏳ You are on cooldown for *{duration}*.`
+      return reply(fillTemplate(cdMsg, { days, hrs, mins, duration }))
     }
     const coins = Math.floor(Math.random() * 1001) + 1750  // 1750–2750
     const monthlyXp = 300
@@ -211,13 +216,10 @@ module.exports = {
     await db.setCooldown(sender, 'monthly', 30 * 24 * 3600)
     await db.trackCurrencyGenerated(coins)
     console.log(`[economy] monthly: ${sender} +£${coins} +${monthlyXp}XP`)
-    await reply(
-      `🗓️ *Monthly Reward!*\n\n` +
-      `💰 +£${coins.toLocaleString()}\n` +
-      `⭐ +${monthlyXp} XP\n` +
-      (xpResult.leveledUp ? `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊\n` : '') +
-      `\n_Come back in 30 days!_`
-    )
+    const levelUpM = xpResult.leveledUp ? `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊` : ''
+    const monthlyMsg = getResponse('monthly', 'success') ||
+      `🗓️ *Monthly Reward!*\n\n💰 +£{coins}\n⭐ +{xp} XP{levelUp}\n\n_Come back in 30 days!_`
+    await reply(fillTemplate(monthlyMsg, { coins: coins.toLocaleString(), xp: monthlyXp, levelUp: levelUpM }))
   },
 
   // ── .work ────────────────────────────────────────────────────────────────
@@ -232,12 +234,9 @@ module.exports = {
     await db.setCooldown(sender, 'work', CD_WORK)
     await db.trackCurrencyGenerated(earned)
     console.log(`[economy] work: ${sender} +£${earned}`)
-    await reply(
-      `💼 *Work Complete!*\n\n` +
-      `You ${job}\n` +
-      `💰 +£${earned}\n` +
-      `\n⏳ Next work in *20 minutes*`
-    )
+    const workMsg = getResponse('work', 'success') ||
+      `💼 *Work Complete!*\n\nYou {job}\n💰 +£{coins}\n\n⏳ Next work in *20 minutes*`
+    await reply(fillTemplate(workMsg, { job, coins: earned.toLocaleString() }))
   },
 
   // ── .dig ─────────────────────────────────────────────────────────────────
@@ -277,9 +276,15 @@ module.exports = {
     if (earned > 0) await db.trackCurrencyGenerated(earned)
     await db.setCooldown(sender, 'dig', CD_DIG)
 
-    let caption = `⛏️ *Digging Result*\n\nYou found: ${result}`
-    if (earned === 0 && gems === 0) caption += `\n\n_You did not find anything this time._`
-    await reply(caption)
+    const digOutcome = earned === 0 && gems === 0 ? 'nothing'
+      : roll < 0.02 ? 'legendary'
+      : roll < 0.08 ? 'rare'
+      : roll < 0.25 ? 'uncommon'
+      : 'common'
+    const digTpl = getResponse('dig', digOutcome) || (digOutcome === 'nothing'
+      ? `⛏️ *Digging Result*\n\nYou found: {result}\n\n_You did not find anything this time._`
+      : `⛏️ *Digging Result*\n\nYou found: {result}`)
+    await reply(fillTemplate(digTpl, { result, earned: earned.toLocaleString(), gems }))
   },
 
   // ── .fish ────────────────────────────────────────────────────────────────
@@ -312,10 +317,11 @@ module.exports = {
     }
     await db.setCooldown(sender, 'fish', CD_FISH)
 
-    let caption = `🎣 *Fishing Result*\n\nCaught: *${caught.label}*`
-    if (coins > 0) caption += `\n💰 +£${coins}`
-    else caption += `\n\n_You did not catch anything this time._`
-    await reply(caption)
+    const fishOutcome = coins > 0 ? 'success' : 'nothing'
+    const fishTpl = getResponse('fish', fishOutcome) || (fishOutcome === 'success'
+      ? `🎣 *Fishing Result*\n\nCaught: *{catch}*\n💰 +£{coins}`
+      : `🎣 *Fishing Result*\n\nCaught: *{catch}*\n\n_You did not catch anything this time._`)
+    await reply(fillTemplate(fishTpl, { catch: caught.label, coins: coins.toLocaleString() }))
   },
 
   // ── .beg ─────────────────────────────────────────────────────────────────
@@ -326,7 +332,8 @@ module.exports = {
     await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
     await db.trackCurrencyGenerated(coins)
     await db.setCooldown(sender, 'beg', CD_BEG)
-    await reply(`🙏 Someone felt generous — *+£${coins}*`)
+    const begMsg = getResponse('beg', 'success') || `🙏 Someone felt generous — *+£{coins}*`
+    await reply(fillTemplate(begMsg, { coins }))
   },
 
   // ── .crime ───────────────────────────────────────────────────────────────
@@ -337,7 +344,9 @@ module.exports = {
     if (remaining > 0) {
       const mins = Math.floor(remaining / 60000)
       const secs = Math.floor((remaining % 60000) / 1000)
-      return reply(`⏳ You are on cooldown for *${mins}m ${secs}s*.`)
+      const duration = [mins > 0 && `${mins}m`, (secs > 0 || !mins) && `${secs}s`].filter(Boolean).join(' ')
+      const cdMsg = getResponse('crime', 'cooldown') || `⏳ You are on cooldown for *{duration}*.`
+      return reply(fillTemplate(cdMsg, { mins, secs, duration }))
     }
 
     const success = Math.random() < 0.40  // 40% success rate
@@ -348,16 +357,15 @@ module.exports = {
       await db.updateUser(sender, { wallet: (u.wallet || 0) + gain })
       await db.trackCurrencyGenerated(gain)
       const acts = ['robbed a merchant', 'pickpocketed a noble', 'hacked a guild vault', 'stole a shipment', 'conned a trader', 'looted an abandoned estate']
-      await reply(
-        `🦹 *Crime Successful!*\n\n` +
-        `You ${acts[Math.floor(Math.random() * acts.length)]}.\n` +
-        `💰 +£${gain}`
-      )
+      const act = acts[Math.floor(Math.random() * acts.length)]
+      const crimeWin = getResponse('crime', 'success') || `🦹 *Crime Successful!*\n\nYou {act}.\n💰 +£{coins}`
+      await reply(fillTemplate(crimeWin, { act, coins: gain.toLocaleString() }))
     } else {
       const fine = Math.min(Math.floor(Math.random() * 201) + 50, u.wallet || 0)  // £50–250 fine
       await db.updateUser(sender, { wallet: Math.max(0, (u.wallet || 0) - fine) })
       await db.trackCurrencyRemoved(fine)
-      await reply(`👮 *Caught!*\n\nYou were caught and fined *£${fine}*. Better luck next time.`)
+      const crimeFail = getResponse('crime', 'fail') || `👮 *Caught!*\n\nYou were caught and fined *£{fine}*. Better luck next time.`
+      await reply(fillTemplate(crimeFail, { fine: fine.toLocaleString() }))
     }
   },
 
@@ -376,7 +384,7 @@ module.exports = {
       target = quotedParticipant
       tp     = quotedParticipant.split('@')[0].split(':')[0]
     } else {
-      return reply('⚠️ Mention or *quote* a user to rob them.')
+      return reply(getResponse('rob', 'noTarget') || '⚠️ Mention or *quote* a user to rob them.')
     }
 
     // ── Resolve @lid to real phone number ────────────────────────────────────
@@ -398,16 +406,17 @@ module.exports = {
     const remaining = await db.getCooldown(sender, 'rob')
     if (remaining > 0) {
       const mins = Math.floor(remaining / 60000)
-      return reply(`⏳ You are on cooldown for *${mins}m*.`)
+      const cdMsg = getResponse('rob', 'cooldown') || `⏳ You are on cooldown for *{mins}m*.`
+      return reply(fillTemplate(cdMsg, { mins }))
     }
 
-    if (tp === sender) return reply("🪞 You can't rob yourself.")
+    if (tp === sender) return reply(getResponse('rob', 'selfRob') || "🪞 You can't rob yourself.")
 
     const tu = await db.getOrCreateUser(tp)
     const targetWallet = tu.wallet || 0
 
     // Minimum $200 to be robbed (protects early players)
-    if (targetWallet < 200) return reply(`🪙 Target has nothing worth stealing. (Need £200+ in wallet)`)
+    if (targetWallet < 200) return reply(getResponse('rob', 'poorTarget') || `🪙 Target has nothing worth stealing. (Need £200+ in wallet)`)
 
     const success = Math.random() < 0.40  // 40% success
     await db.setCooldown(sender, 'rob', CD_ROB)
@@ -449,7 +458,10 @@ module.exports = {
     const remaining = await db.getCooldown(sender, 'heist')
     if (remaining > 0) {
       const mins = Math.floor(remaining / 60000)
-      return reply(`⏳ You are on cooldown for *${mins}m*.`)
+      const secs = Math.floor((remaining % 60000) / 1000)
+      const duration = [mins > 0 && `${mins}m`, (secs > 0 || !mins) && `${secs}s`].filter(Boolean).join(' ')
+      const cdMsg = getResponse('heist', 'cooldown') || `⏳ You are on cooldown for *{duration}*.`
+      return reply(fillTemplate(cdMsg, { mins, secs, duration }))
     }
 
     const success = Math.random() < 0.30  // 30% success — failure is common
@@ -460,21 +472,18 @@ module.exports = {
       await db.updateUser(sender, { wallet: (u.wallet || 0) + reward })
       await db.trackCurrencyGenerated(reward)
       const targets = ['Shadow Bank vault', 'merchant convoy', 'guild treasury', 'noble estate', 'forbidden archive']
-      await reply(
-        `💰 *Heist Successful!*\n\n` +
-        `Your crew cracked the ${targets[Math.floor(Math.random() * targets.length)]} and got away with *£${reward.toLocaleString()}*!`
-      )
+      const target = targets[Math.floor(Math.random() * targets.length)]
+      const heistWin = getResponse('heist', 'success') ||
+        `💰 *Heist Successful!*\n\nYour crew cracked the {target} and got away with *£{coins}*!`
+      await reply(fillTemplate(heistWin, { target, coins: reward.toLocaleString() }))
     } else {
-      // Heist failed — loss is capped to protect player progress
-      const maxLoss = Math.floor((u.wallet || 0) * 0.15)  // Never lose more than 15% wallet
+      const maxLoss = Math.floor((u.wallet || 0) * 0.15)
       const loss    = Math.min(Math.floor(reward * 0.25), maxLoss, u.wallet || 0)
       await db.updateUser(sender, { wallet: Math.max(0, (u.wallet || 0) - loss) })
       if (loss > 0) await db.trackCurrencyRemoved(loss)
-      await reply(
-        `🚨 *The heist failed.*\n\n` +
-        `The guards caught your crew. You lost *£${loss.toLocaleString()}* in the chaos.\n\n` +
-        `_Lay low for 90 minutes before trying again._`
-      )
+      const heistFail = getResponse('heist', 'fail') ||
+        `🚨 *The heist failed.*\n\nThe guards caught your crew. You lost *£{loss}* in the chaos.\n\n_Lay low for 90 minutes before trying again._`
+      await reply(fillTemplate(heistFail, { loss: loss.toLocaleString() }))
     }
   },
 
@@ -485,13 +494,17 @@ module.exports = {
     if (remaining > 0) {
       const hrs  = Math.floor(remaining / 3600000)
       const mins = Math.floor((remaining % 3600000) / 60000)
-      return reply(`⏳ You are on cooldown for *${hrs}h ${mins}m*.`)
+      const secs = Math.floor((remaining % 60000) / 1000)
+      const duration = [hrs > 0 && `${hrs}h`, mins > 0 && `${mins}m`, (secs > 0 || (!hrs && !mins)) && `${secs}s`].filter(Boolean).join(' ')
+      const cdMsg = getResponse('bonus', 'cooldown') || `⏳ You are on cooldown for *{duration}*.`
+      return reply(fillTemplate(cdMsg, { hrs, mins, secs, duration }))
     }
     const coins = Math.floor(Math.random() * 16) + 10  // 10–25 coins
     await db.updateUser(sender, { wallet: (u.wallet || 0) + coins })
     await db.setCooldown(sender, 'bonus', CD_BONUS)
     await db.trackCurrencyGenerated(coins)
-    await reply(`🎁 *Bonus Collected!*\n\n💰 +£${coins}\n\n_Next bonus in 4 hours._`)
+    const bonusMsg = getResponse('bonus', 'success') || `🎁 *Bonus Collected!*\n\n💰 +£{coins}\n\n_Next bonus in 4 hours._`
+    await reply(fillTemplate(bonusMsg, { coins }))
   },
 
   // ── .pay / .donate ────────────────────────────────────────────────────────

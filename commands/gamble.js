@@ -67,7 +67,8 @@ function withCooldown(fn) {
       const wait = checkGambleCooldown(ctx.sender)
       if (wait > 0) {
         const secs = Math.ceil(wait / 1000)
-        return await ctx.reply(`⏳ You are on cooldown for *${secs}s*.`)
+        const cdMsg = getResponse('bet', 'cooldown') || `⏳ You are on cooldown for *{secs}s*.`
+        return await ctx.reply(fillTemplate(cdMsg, { secs }))
       }
       return await fn(ctx)
     } catch (err) {
@@ -85,6 +86,14 @@ async function genCoins(amount) {
   try { await db.trackCurrencyGenerated(amount) } catch {}
 }
 
+// Shared daily-limit reply — returns true if limit was hit so caller can early-return
+async function replyIfLimitHit(reply, sender) {
+  if (!checkDailyLimit(sender)) return false
+  const limitMsg = getResponse('bet', 'limit') || `🚫 *Daily limit reached!*\n\nYou've used all *{limit}* gambles today.\n\n_Come back tomorrow._ 🖤`
+  await reply(fillTemplate(limitMsg, { limit: DAILY_LIMIT }))
+  return true
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GAMES
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,7 +107,7 @@ module.exports = {
     const amount = parseAmount(args[0], u.wallet || 0)
     const err    = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
-    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
+    if (await replyIfLimitHit(reply, sender)) return
 
     const win  = Math.random() < 0.42
     const net  = win ? Math.floor(amount * 0.85) : -amount  // net gain/loss
@@ -125,7 +134,7 @@ module.exports = {
     }
     const err = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
-    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
+    if (await replyIfLimitHit(reply, sender)) return
 
     const normalised = (choice === 'h') ? 'heads' : (choice === 't') ? 'tails' : choice
     const highStake  = amount >= 110000
@@ -134,13 +143,13 @@ module.exports = {
     const net        = playerWins ? amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     if (!playerWins) await sinkCoins(amount); else await genCoins(amount)
-    const rem = getRemainingGambles(sender)
-    return reply(
-      `🪙 *Coin Flip!*\n\n` +
-      `Your bet: *${normalised.toUpperCase()}* | Result: *${flip.toUpperCase()}*\n\n` +
-      `${playerWins ? `🪙 Flipped ${flip.toUpperCase()}! You won *+£${(amount).toLocaleString()}*` : `🪙 Flipped ${flip === 'heads' ? 'tails' : 'heads'}! You lost *-£${amount.toLocaleString()}*`}\n` +
-      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
-    )
+    const rem     = getRemainingGambles(sender)
+    const balance = ((u.wallet || 0) + net).toLocaleString()
+    const cfKey   = playerWins ? 'win' : 'lose'
+    const cfTpl   = getResponse('cf', cfKey) || (playerWins
+      ? `🪙 *Coin Flip!*\n\nYou bet *{choice}* — Flipped *{flip}*!\n\n💰 +£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._`
+      : `🪙 *Coin Flip!*\n\nYou bet *{choice}* — Flipped *{flip}*!\n\n💸 -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._`)
+    return reply(fillTemplate(cfTpl, { choice: normalised.toUpperCase(), flip: flip.toUpperCase(), amount: amount.toLocaleString(), balance, remaining: rem }))
   }),
 
   // ── .slots — slot machine ──────────────────────────────────────────────
@@ -150,7 +159,7 @@ module.exports = {
     const amount = parseAmount(args[0], u.wallet || 0)
     const err    = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
-    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
+    if (await replyIfLimitHit(reply, sender)) return
 
     // Weighted symbol pool: higher weight = more common
     const SYMBOLS = [
@@ -195,12 +204,18 @@ module.exports = {
     if (net < 0) await sinkCoins(Math.abs(net)); else if (net > 0) await genCoins(net)
     const rem = getRemainingGambles(sender)
 
+    const balance   = ((u.wallet || 0) + net).toLocaleString()
+    const slotsKey  = net >= 0 ? 'win' : 'lose'
+    const slotsTpl  = getResponse('slots', slotsKey) || (net >= 0
+      ? `🎰 *Slots!*\n\n│ {r1} │ {r2} │ {r3} │\n\n🎉 {label}\n> *+£{payout}*\n💵 £{balance}\n\n_{remaining} gambles left today._`
+      : `🎰 *Slots!*\n\n│ {r1} │ {r2} │ {r3} │\n\n😔 {label}\n> *-£{amount}*\n💵 £{balance}\n\n_{remaining} gambles left today._`)
     await new Promise(r => setTimeout(r, 700))
     return sock.sendMessage(jid, {
-      text:
-        `⏳ *Stopping...*\n\n│ ${reels[0]} │ ${reels[1]} │ ${reels[2]} │\n\n` +
-        `${net >= 0 ? (multiplier >= 10 ? `💎 JACKPOT! ${label}\n> *+£${Math.floor(amount * multiplier)}*` : `🎉 ${label}\n> *+£${Math.floor(amount * multiplier)}*`) : `😔 ${label}\n> *-£${amount.toLocaleString()}*`}\n\n` +
-        `💵 £${((u.wallet || 0) + net).toLocaleString()}\n_${rem} gambles left today._`,
+      text: fillTemplate(slotsTpl, {
+        r1: reels[0], r2: reels[1], r3: reels[2], label,
+        payout: Math.floor(amount * multiplier).toLocaleString(),
+        amount: amount.toLocaleString(), balance, remaining: rem,
+      }),
     }, { quoted: msg })
   }),
   async sl(ctx) { return module.exports.slots(ctx) },
@@ -216,7 +231,7 @@ module.exports = {
     }
     const err = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
-    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
+    if (await replyIfLimitHit(reply, sender)) return
 
     const roll = Math.floor(Math.random() * 6) + 1
     const win  = roll === guess
@@ -224,12 +239,13 @@ module.exports = {
     const net  = win ? amount * 4 : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     if (!win) await sinkCoins(amount); else await genCoins(amount * 4)
-    const rem = getRemainingGambles(sender)
-    return reply(
-      `🎲 *Dice Roll!*\n\nGuess: ${guess} | Rolled: *${roll}*\n\n` +
-      `${win ? `🎲 Rolled *${roll}*! Won *+£${(amount * 4).toLocaleString()}*` : `🎲 Rolled *${roll}*! Lost *-£${amount.toLocaleString()}*`}\n` +
-      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
-    )
+    const rem       = getRemainingGambles(sender)
+    const balance   = ((u.wallet || 0) + net).toLocaleString()
+    const diceKey   = win ? 'win' : 'lose'
+    const diceTpl   = getResponse('dice', diceKey) || (win
+      ? `🎲 *Dice Roll!*\n\nGuess: {guess} | Rolled: *{roll}*\n\n🎲 Correct! +£{payout}\n💵 £{balance}\n\n_{remaining} gambles left today._`
+      : `🎲 *Dice Roll!*\n\nGuess: {guess} | Rolled: *{roll}*\n\n💀 Wrong! -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._`)
+    return reply(fillTemplate(diceTpl, { guess, roll, payout: (amount * 4).toLocaleString(), amount: amount.toLocaleString(), balance, remaining: rem }))
   }),
 
   // ── .rps — rock paper scissors ────────────────────────────────────────
@@ -243,7 +259,7 @@ module.exports = {
     }
     const err = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
-    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
+    if (await replyIfLimitHit(reply, sender)) return
 
     const map        = { r: 'rock', p: 'paper', s: 'scissors' }
     const playerMove = map[choice] || choice
@@ -272,12 +288,14 @@ module.exports = {
     if (result !== 'draw') await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     if (result === 'lose') await sinkCoins(amount)
     if (result === 'win')  await genCoins(amount)
-    const rem = getRemainingGambles(sender)
-    return reply(
-      `🪨📄✂️ *Rock Paper Scissors!*\n\nYou: ${emojis[playerMove]} | Bot: ${emojis[botMove]}\n\n` +
-      `${result === 'win' ? `🏆 You: ${emojis[playerMove]} | Bot: ${emojis[botMove]} | You Win! *+£${amount.toLocaleString()}*` : result === 'draw' ? `🤝 You: ${emojis[playerMove]} | Bot: ${emojis[botMove]} | Draw!` : `💀 You: ${emojis[playerMove]} | Bot: ${emojis[botMove]} | You Lose! *-£${amount.toLocaleString()}*`}\n` +
-      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
-    )
+    const rem      = getRemainingGambles(sender)
+    const balance  = ((u.wallet || 0) + net).toLocaleString()
+    const rpsTpl   = getResponse('rps', result) || (result === 'win'
+      ? `🪨📄✂️ *Rock Paper Scissors!*\n\nYou: {player} | Bot: {bot}\n\n🏆 You Win! +£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._`
+      : result === 'draw'
+      ? `🪨📄✂️ *Rock Paper Scissors!*\n\nYou: {player} | Bot: {bot}\n\n🤝 Draw! Bet returned.\n💵 £{balance}\n\n_{remaining} gambles left today._`
+      : `🪨📄✂️ *Rock Paper Scissors!*\n\nYou: {player} | Bot: {bot}\n\n💀 You Lose! -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._`)
+    return reply(fillTemplate(rpsTpl, { player: emojis[playerMove], bot: emojis[botMove], amount: amount.toLocaleString(), balance, remaining: rem }))
   }),
 
   // ── .blackjack / .bj ─────────────────────────────────────────────────
@@ -287,7 +305,7 @@ module.exports = {
     const amount = parseAmount(args[0], u.wallet || 0)
     const err    = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
-    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
+    if (await replyIfLimitHit(reply, sender)) return
 
     const card = () => Math.min(Math.floor(Math.random() * 13) + 1, 10)
     const sum  = cards => cards.reduce((a, b) => a + b, 0)
@@ -315,15 +333,15 @@ module.exports = {
     if (result !== 'draw') await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     if (result === 'lose') await sinkCoins(amount)
     if (result === 'win')  await genCoins(amount)
-    const rem = getRemainingGambles(sender)
-    return reply(
-      `🃏 *Blackjack!*\n\n` +
-      `🎴 You: ${playerCards.join('+')} = *${playerSum}*\n` +
-      `🤖 Dealer: ${dealerCards.join('+')} = *${dealerSum}*\n\n` +
-      `${playerBust ? '💥 BUST! ' : dealerBust ? '💥 Dealer BUST! ' : ''}` +
-      `${result === 'win' ? `🏆 You win! *+£${amount.toLocaleString()}*` : result === 'draw' ? `🤝 Push — bet returned.` : `💀 Lost *-£${amount.toLocaleString()}*`}\n` +
-      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
-    )
+    const rem     = getRemainingGambles(sender)
+    const balance = ((u.wallet || 0) + net).toLocaleString()
+    const bustTag = playerBust ? '💥 BUST! ' : dealerBust ? '💥 Dealer BUST! ' : ''
+    const bjTpl   = getResponse('blackjack', result) || (result === 'win'
+      ? `🃏 *Blackjack!*\n\n🎴 You: {playerCards} = *{playerSum}*\n🤖 Dealer: {dealerCards} = *{dealerSum}*\n\n{bust}🏆 You win! +£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._`
+      : result === 'draw'
+      ? `🃏 *Blackjack!*\n\n🎴 You: {playerCards} = *{playerSum}*\n🤖 Dealer: {dealerCards} = *{dealerSum}*\n\n{bust}🤝 Push — bet returned.\n💵 £{balance}\n\n_{remaining} gambles left today._`
+      : `🃏 *Blackjack!*\n\n🎴 You: {playerCards} = *{playerSum}*\n🤖 Dealer: {dealerCards} = *{dealerSum}*\n\n{bust}💀 Lost -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._`)
+    return reply(fillTemplate(bjTpl, { playerCards: playerCards.join('+'), playerSum, dealerCards: dealerCards.join('+'), dealerSum, bust: bustTag, amount: amount.toLocaleString(), balance, remaining: rem }))
   }),
   async bj(ctx)     { return module.exports.blackjack(ctx) },
   async casino(ctx) { return module.exports.blackjack(ctx) },
@@ -335,7 +353,7 @@ module.exports = {
     const amount = parseAmount(args[0], u.wallet || 0)
     const err    = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
-    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
+    if (await replyIfLimitHit(reply, sender)) return
 
     const suits  = ['♠️', '♥️', '♦️', '♣️']
     const values = ['2','3','4','5','6','7','8','9','10','J','Q','K','A']
@@ -362,15 +380,16 @@ module.exports = {
     else if (freq[0] === 2)              { handName = 'One Pair';       mult = 0.9 } // slight loss (house edge)
     else                                 { handName = 'High Card';      mult = 0   }
 
-    const net = mult > 0 ? Math.floor(amount * mult) - amount : -amount
+    const net     = mult > 0 ? Math.floor(amount * mult) - amount : -amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     if (net < 0) await sinkCoins(Math.abs(net)); else if (net > 0) await genCoins(net)
-    const rem = getRemainingGambles(sender)
-    return reply(
-      `🂡 *Poker!*\n\n🃏 ${hand.join(' ')}\n\n🎯 ${handName}\n` +
-      `${mult > 0 ? `💎 WIN! ×${mult} → *+£${Math.floor(amount * mult)}*` : `😔 No win. Lost *-£${amount.toLocaleString()}*`}\n` +
-      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
-    )
+    const rem     = getRemainingGambles(sender)
+    const balance = ((u.wallet || 0) + net).toLocaleString()
+    const pokerKey = mult > 0 ? 'win' : 'lose'
+    const pokerTpl = getResponse('poker', pokerKey) || (mult > 0
+      ? `🂡 *Poker!*\n\n🃏 {cards}\n\n🎯 {hand}\n💎 WIN! ×{mult} → +£{payout}\n💵 £{balance}\n\n_{remaining} gambles left today._`
+      : `🂡 *Poker!*\n\n🃏 {cards}\n\n🎯 {hand}\n😔 No win. -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._`)
+    return reply(fillTemplate(pokerTpl, { cards: hand.join(' '), hand: handName, mult, payout: Math.floor(amount * mult).toLocaleString(), amount: amount.toLocaleString(), balance, remaining: rem }))
   }),
 
   // ── .spin — wheel of fortune ──────────────────────────────────────────
@@ -380,7 +399,7 @@ module.exports = {
     const amount = parseAmount(args[0], u.wallet || 0)
     const err    = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
-    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
+    if (await replyIfLimitHit(reply, sender)) return
 
     const outcomes = [
       { label: '💀 Bankrupt',  mult: 0,    weight: 20 },
@@ -397,12 +416,13 @@ module.exports = {
     const net = Math.floor(amount * result.mult) - amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     if (net < 0) await sinkCoins(Math.abs(net)); else if (net > 0) await genCoins(net)
-    const rem = getRemainingGambles(sender)
-    return reply(
-      `🎡 *Wheel Spin!*\n\n🎯 *${result.label}*\n\n` +
-      `${net >= 0 ? `💰 +£${net.toLocaleString()}` : `💸 -£${Math.abs(net).toLocaleString()}`}\n` +
-      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
-    )
+    const rem      = getRemainingGambles(sender)
+    const balance  = ((u.wallet || 0) + net).toLocaleString()
+    const spinKey  = net >= 0 ? 'win' : 'lose'
+    const spinTpl  = getResponse('spin', spinKey) || (net >= 0
+      ? `🎡 *Wheel Spin!*\n\n🎯 *{label}*\n\n💰 +£{payout}\n💵 £{balance}\n\n_{remaining} gambles left today._`
+      : `🎡 *Wheel Spin!*\n\n🎯 *{label}*\n\n💸 -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._`)
+    return reply(fillTemplate(spinTpl, { label: result.label, payout: net.toLocaleString(), amount: Math.abs(net).toLocaleString(), balance, remaining: rem }))
   }),
 
   // ── .roulette ─────────────────────────────────────────────────────────
@@ -417,7 +437,7 @@ module.exports = {
     }
     const err = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
-    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
+    if (await replyIfLimitHit(reply, sender)) return
 
     // European wheel: 0–36
     const num   = Math.floor(Math.random() * 37)
@@ -436,14 +456,13 @@ module.exports = {
     const net    = payout - amount
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     if (net < 0) await sinkCoins(Math.abs(net)); else if (net > 0) await genCoins(net)
-    const rem = getRemainingGambles(sender)
-    return reply(
-      `🎰 *Roulette!*\n\n` +
-      `${emoji} Ball landed on: *${num}* (${color})\n` +
-      `Your bet: *${bet}*\n\n` +
-      `${mult > 0 ? `🎯 Your bet won! ×${mult} → *+£${payout.toLocaleString()}*` : `😔 Ball missed your bet. Lost *-£${amount.toLocaleString()}*`}\n` +
-      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
-    )
+    const rem        = getRemainingGambles(sender)
+    const balance    = ((u.wallet || 0) + net).toLocaleString()
+    const roulKey    = mult > 0 ? 'win' : 'lose'
+    const roulTpl    = getResponse('roulette', roulKey) || (mult > 0
+      ? `🎰 *Roulette!*\n\n{emoji} Ball: *{num}* ({color})\nYour bet: *{bet}*\n\n🎯 Won! ×{mult} → +£{payout}\n💵 £{balance}\n\n_{remaining} gambles left today._`
+      : `🎰 *Roulette!*\n\n{emoji} Ball: *{num}* ({color})\nYour bet: *{bet}*\n\n😔 Missed. -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._`)
+    return reply(fillTemplate(roulTpl, { emoji, num, color, bet, mult, payout: payout.toLocaleString(), amount: amount.toLocaleString(), balance, remaining: rem }))
   }),
 
   // ── .horse — horse racing ─────────────────────────────────────────────
@@ -457,7 +476,7 @@ module.exports = {
     }
     const err = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
-    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
+    if (await replyIfLimitHit(reply, sender)) return
 
     const winner = Math.floor(Math.random() * 6) + 1
     const win    = winner === horse
@@ -466,13 +485,13 @@ module.exports = {
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     if (!win) await sinkCoins(amount); else await genCoins(Math.floor(amount * 3.5))
     const raceLines = [1,2,3,4,5,6].map(i => `🐴 Horse ${i}${i === winner ? ' 🏁' : ''}`).join('\n')
-    const rem = getRemainingGambles(sender)
-    return reply(
-      `🏇 *Horse Race!*\n\n${raceLines}\n\n` +
-      `Your pick: Horse ${horse} | Winner: Horse ${winner}\n\n` +
-      `${win ? `🏆 WIN! ×4.5 total → *+£${net.toLocaleString()}*` : `❌ Lose -£${amount.toLocaleString()}`}\n` +
-      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
-    )
+    const rem      = getRemainingGambles(sender)
+    const balance  = ((u.wallet || 0) + net).toLocaleString()
+    const horseKey = win ? 'win' : 'lose'
+    const horseTpl = getResponse('horse', horseKey) || (win
+      ? `🏇 *Horse Race!*\n\n{raceLines}\n\nYour pick: Horse {horse} | Winner: Horse {winner}\n\n🏆 WIN! ×4.5 → +£{payout}\n💵 £{balance}\n\n_{remaining} gambles left today._`
+      : `🏇 *Horse Race!*\n\n{raceLines}\n\nYour pick: Horse {horse} | Winner: Horse {winner}\n\n❌ Lose -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._`)
+    return reply(fillTemplate(horseTpl, { raceLines, horse, winner, payout: net.toLocaleString(), amount: amount.toLocaleString(), balance, remaining: rem }))
   }),
 
   // ── .jackpot — high-risk, rare win ───────────────────────────────────
@@ -482,15 +501,19 @@ module.exports = {
     const amount = parseAmount(args[0], u.wallet || 0)
     const err    = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
-    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
+    if (await replyIfLimitHit(reply, sender)) return
 
     const win = Math.random() < 0.015  // 1.5% chance
     const net = win ? amount * 19 : -amount  // net gain on win = 19x bet
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     if (!win) await sinkCoins(amount); else await genCoins(amount * 19)
-    const rem = getRemainingGambles(sender)
-    if (win) return reply(`💥 *JACKPOT!!!*\n\n🌟 ×20 total → *+£${(amount * 19).toLocaleString()}*\n💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
-    return reply(`🎰 *Jackpot Miss*\n\n-£${amount.toLocaleString()} (1.5% win chance)\n💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
+    const rem     = getRemainingGambles(sender)
+    const balance = ((u.wallet || 0) + net).toLocaleString()
+    const jpKey   = win ? 'win' : 'lose'
+    const jpTpl   = getResponse('jackpot', jpKey) || (win
+      ? `💥 *JACKPOT!!!*\n\n🌟 ×20 total → +£{payout}\n💵 £{balance}\n\n_{remaining} gambles left today._`
+      : `🎰 *Jackpot Miss*\n\n-£{amount} (1.5% win chance)\n💵 £{balance}\n\n_{remaining} gambles left today._`)
+    return reply(fillTemplate(jpTpl, { payout: (amount * 19).toLocaleString(), amount: amount.toLocaleString(), balance, remaining: rem }))
   }),
 
   // ── .highlow / .hl ────────────────────────────────────────────────────
@@ -504,7 +527,7 @@ module.exports = {
     }
     const err = validateBet(amount, u.wallet || 0)
     if (err) return reply(err)
-    if (checkDailyLimit(sender)) return reply(`🚫 *Daily limit reached!*\n\nYou've used all *${DAILY_LIMIT}* gambles today.\n\n_Come back tomorrow._ 🖤`)
+    if (await replyIfLimitHit(reply, sender)) return
 
     const card      = Math.floor(Math.random() * 13) + 1
     const guessHigh = choice === 'high' || choice === 'h'
@@ -514,12 +537,11 @@ module.exports = {
     if (win) await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     else     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     if (!win) await sinkCoins(amount); else await genCoins(amount)
-    const rem = getRemainingGambles(sender)
-    return reply(
-      `🃏 *High or Low!*\n\nGuess: *${guessHigh ? 'HIGH (8–13)' : 'LOW (1–6)'}* | Card: *${card}*\n\n` +
-      `${win ? `🏆 WIN! *+£${amount.toLocaleString()}*` : `❌ Lose -£${amount.toLocaleString()}`}\n` +
-      `💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`
-    )
+    const hlKey = win ? 'win' : 'lose'
+    const hlTpl = getResponse('highlow', hlKey) || (win
+      ? `🃏 *High or Low!*\n\nGuess: *{choice}* | Card: *{card}*\n\n🏆 WIN! +£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._`
+      : `🃏 *High or Low!*\n\nGuess: *{choice}* | Card: *{card}*\n\n❌ Lose -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._`)
+    return reply(fillTemplate(hlTpl, { choice: guessHigh ? 'HIGH (8–13)' : 'LOW (1–6)', card, amount: amount.toLocaleString(), balance: ((u.wallet || 0) + net).toLocaleString(), remaining: getRemainingGambles(sender) }))
   }),
   async hl(ctx) { return module.exports.highlow(ctx) },
 

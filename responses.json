@@ -1,26 +1,109 @@
 {
+  "daily": {
+    "success":  ["🌟 *Daily Reward Claimed!*\n\n💰 +£{coins}\n💎 +{gems} gems\n⭐ +{xp} XP\n🔥 Streak: {streak} days{levelUp}\n\n_Come back in 24 hours!_"],
+    "cooldown": ["⏳ You are on cooldown for *{hrs}h {mins}m*."]
+  },
+  "weekly": {
+    "success":  ["📅 *Weekly Reward!*\n\n💰 +£{coins}\n⭐ +{xp} XP{levelUp}\n\n_Come back in 7 days!_"],
+    "cooldown": ["⏳ You are on cooldown for *{duration}*."]
+  },
+  "monthly": {
+    "success":  ["🗓️ *Monthly Reward!*\n\n💰 +£{coins}\n⭐ +{xp} XP{levelUp}\n\n_Come back in 30 days!_"],
+    "cooldown": ["⏳ You are on cooldown for *{duration}*."]
+  },
+  "work": {
+    "success":  ["💼 *Work Complete!*\n\nYou {job}\n💰 +£{coins}\n\n⏳ Next work in *20 minutes*"],
+    "cooldown": ["⏳ You are on cooldown for *{duration}*."]
+  },
+  "dig": {
+    "legendary": ["⛏️ *Digging Result*\n\nYou found: {result}"],
+    "rare":      ["⛏️ *Digging Result*\n\nYou found: {result}"],
+    "uncommon":  ["⛏️ *Digging Result*\n\nYou found: {result}"],
+    "common":    ["⛏️ *Digging Result*\n\nYou found: {result}"],
+    "nothing":   ["⛏️ *Digging Result*\n\nYou found: {result}\n\n_You did not find anything this time._"],
+    "cooldown":  ["⏳ You are on cooldown for *{duration}*."]
+  },
+  "fish": {
+    "success":  ["🎣 *Fishing Result*\n\nCaught: *{catch}*\n💰 +£{coins}"],
+    "nothing":  ["🎣 *Fishing Result*\n\nCaught: *{catch}*\n\n_You did not catch anything this time._"],
+    "cooldown": ["⏳ You are on cooldown for *{duration}*."]
+  },
+  "beg": {
+    "success":  ["🙏 Someone felt generous — *+£{coins}*"],
+    "cooldown": ["⏳ You are on cooldown for *{duration}*."]
+  },
+  "crime": {
+    "success":  ["🦹 *Crime Successful!*\n\nYou {act}.\n💰 +£{coins}"],
+    "fail":     ["👮 *Caught!*\n\nYou were caught and fined *£{fine}*. Better luck next time."],
+    "cooldown": ["⏳ You are on cooldown for *{duration}*."]
+  },
+  "heist": {
+    "success":  ["💰 *Heist Successful!*\n\nYour crew cracked the {target} and got away with *£{coins}*!"],
+    "fail":     ["🚨 *The heist failed.*\n\nThe guards caught your crew. You lost *£{loss}* in the chaos.\n\n_Lay low for 90 minutes before trying again._"],
+    "cooldown": ["⏳ You are on cooldown for *{duration}*."]
+  },
+  "bonus": {
+    "success":  ["🎁 *Bonus Collected!*\n\n💰 +£{coins}\n\n_Next bonus in 4 hours._"],
+    "cooldown": ["⏳ You are on cooldown for *{duration}*."]
+  },
   "rob": {
-    "success": [
-      "🦹 *Rob Successful!*\n\nYou stole *£{stolen}* from @{target}!\n_({pct}% of their wallet)_"
-    ],
-    "fail": [
-      "👮 *Your robbery attempt failed.*\n\nYou failed to rob @{target} and paid a *£{fine}* fine."
-    ],
-    "cooldown": ["⏳ You are on cooldown for *{mins}m*."],
+    "success":    ["🦹 *Rob Successful!*\n\nYou stole *£{stolen}* from @{target}!\n_({pct}% of their wallet)_"],
+    "fail":       ["👮 *Your robbery attempt failed.*\n\nYou failed to rob @{target} and paid a *£{fine}* fine."],
+    "cooldown":   ["⏳ You are on cooldown for *{mins}m*."],
     "noTarget":   ["⚠️ Mention or *quote* a user to rob them."],
     "selfRob":    ["🪞 You can't rob yourself."],
     "poorTarget": ["🪙 Target has nothing worth stealing. (Need £200+ in wallet)"]
   },
-  "daily": {
-    "success": [
-      "🌟 *Daily Reward Claimed!*\n\n💰 +£{coins}\n💎 +{gems} gems\n⭐ +{xp} XP\n🔥 Streak: {streak} days{levelUp}\n\n_Come back in 24 hours!_"
-    ],
-    "cooldown": ["⏳ You are on cooldown for *{hrs}h {mins}m*."]
-  },
   "bet": {
-    "win":  ["🎲 *WIN!*\n\n£{amount} → *+£{payout}*\n💵 £{balance}\n\n_{remaining} gambles left today._"],
-    "lose": ["🎲 *LOST*\n\n-£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"],
-    "limit": ["🚫 *Daily limit reached!*\n\nYou've used all *{limit}* gambles today.\n\n_Come back tomorrow._ 🖤"],
+    "win":      ["🎲 *WIN!*\n\n£{amount} → *+£{payout}*\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "lose":     ["🎲 *LOST*\n\n-£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "limit":    ["🚫 *Daily limit reached!*\n\nYou've used all *{limit}* gambles today.\n\n_Come back tomorrow._ 🖤"],
     "cooldown": ["⏳ You are on cooldown for *{secs}s*."]
+  },
+  "cf": {
+    "win":  ["🪙 *Coin Flip!*\n\nYou bet *{choice}* — Flipped *{flip}*!\n\n💰 +£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "lose": ["🪙 *Coin Flip!*\n\nYou bet *{choice}* — Flipped *{flip}*!\n\n💸 -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"]
+  },
+  "slots": {
+    "win":  ["🎰 *Slots!*\n\n│ {r1} │ {r2} │ {r3} │\n\n🎉 {label}\n> *+£{payout}*\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "lose": ["🎰 *Slots!*\n\n│ {r1} │ {r2} │ {r3} │\n\n😔 {label}\n> *-£{amount}*\n💵 £{balance}\n\n_{remaining} gambles left today._"]
+  },
+  "dice": {
+    "win":  ["🎲 *Dice Roll!*\n\nGuess: {guess} | Rolled: *{roll}*\n\n🎲 Correct! +£{payout}\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "lose": ["🎲 *Dice Roll!*\n\nGuess: {guess} | Rolled: *{roll}*\n\n💀 Wrong! -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"]
+  },
+  "rps": {
+    "win":  ["🪨📄✂️ *Rock Paper Scissors!*\n\nYou: {player} | Bot: {bot}\n\n🏆 You Win! +£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "lose": ["🪨📄✂️ *Rock Paper Scissors!*\n\nYou: {player} | Bot: {bot}\n\n💀 You Lose! -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "draw": ["🪨📄✂️ *Rock Paper Scissors!*\n\nYou: {player} | Bot: {bot}\n\n🤝 Draw! Bet returned.\n💵 £{balance}\n\n_{remaining} gambles left today._"]
+  },
+  "blackjack": {
+    "win":  ["🃏 *Blackjack!*\n\n🎴 You: {playerCards} = *{playerSum}*\n🤖 Dealer: {dealerCards} = *{dealerSum}*\n\n{bust}🏆 You win! +£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "lose": ["🃏 *Blackjack!*\n\n🎴 You: {playerCards} = *{playerSum}*\n🤖 Dealer: {dealerCards} = *{dealerSum}*\n\n{bust}💀 Lost -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "draw": ["🃏 *Blackjack!*\n\n🎴 You: {playerCards} = *{playerSum}*\n🤖 Dealer: {dealerCards} = *{dealerSum}*\n\n{bust}🤝 Push — bet returned.\n💵 £{balance}\n\n_{remaining} gambles left today._"]
+  },
+  "poker": {
+    "win":  ["🂡 *Poker!*\n\n🃏 {cards}\n\n🎯 {hand}\n💎 WIN! ×{mult} → +£{payout}\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "lose": ["🂡 *Poker!*\n\n🃏 {cards}\n\n🎯 {hand}\n😔 No win. -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"]
+  },
+  "spin": {
+    "win":  ["🎡 *Wheel Spin!*\n\n🎯 *{label}*\n\n💰 +£{payout}\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "lose": ["🎡 *Wheel Spin!*\n\n🎯 *{label}*\n\n💸 -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"]
+  },
+  "roulette": {
+    "win":  ["🎰 *Roulette!*\n\n{emoji} Ball: *{num}* ({color})\nYour bet: *{bet}*\n\n🎯 Won! ×{mult} → +£{payout}\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "lose": ["🎰 *Roulette!*\n\n{emoji} Ball: *{num}* ({color})\nYour bet: *{bet}*\n\n😔 Missed. -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"]
+  },
+  "horse": {
+    "win":  ["🏇 *Horse Race!*\n\n{raceLines}\n\nYour pick: Horse {horse} | Winner: Horse {winner}\n\n🏆 WIN! ×4.5 → +£{payout}\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "lose": ["🏇 *Horse Race!*\n\n{raceLines}\n\nYour pick: Horse {horse} | Winner: Horse {winner}\n\n❌ Lose -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"]
+  },
+  "jackpot": {
+    "win":  ["💥 *JACKPOT!!!*\n\n🌟 ×20 total → +£{payout}\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "lose": ["🎰 *Jackpot Miss*\n\n-£{amount} (1.5% win chance)\n💵 £{balance}\n\n_{remaining} gambles left today._"]
+  },
+  "highlow": {
+    "win":  ["🃏 *High or Low!*\n\nGuess: *{choice}* | Card: *{card}*\n\n🏆 WIN! +£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "lose": ["🃏 *High or Low!*\n\nGuess: *{choice}* | Card: *{card}*\n\n❌ Lose -£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"]
   }
 }
