@@ -1,4 +1,5 @@
 const db = require('../database')
+const { getResponse, fillTemplate } = require('../responseHelper')
 
 // ── Gambling constants ──────────────────────────────────────────────────────
 // House edge is enforced per-game via true probabilities + adjusted payouts.
@@ -103,9 +104,14 @@ module.exports = {
     const net  = win ? Math.floor(amount * 0.85) : -amount  // net gain/loss
     await db.updateUser(sender, { wallet: (u.wallet || 0) + net })
     if (!win) await sinkCoins(amount); else await genCoins(net)
-    const rem = getRemainingGambles(sender)
-    if (win) return reply(`🎲 *WIN!*\n\n£${amount.toLocaleString()} → *+£${Math.floor(amount * 0.85)}*\n💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
-    return reply(`🎲 *LOST*\n\n-£${amount.toLocaleString()}\n💵 £${((u.wallet || 0) + net).toLocaleString()}\n\n_${rem} gambles left today._`)
+    const rem     = getRemainingGambles(sender)
+    const balance = ((u.wallet || 0) + net).toLocaleString()
+    if (win) {
+      const tpl = getResponse('bet', 'win') || `🎲 *WIN!*\n\n£{amount} → *+£{payout}*\n💵 £{balance}\n\n_{remaining} gambles left today._`
+      return reply(fillTemplate(tpl, { amount: amount.toLocaleString(), payout: Math.floor(amount * 0.85).toLocaleString(), balance, remaining: rem }))
+    }
+    const tpl = getResponse('bet', 'lose') || `🎲 *LOST*\n\n-£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._`
+    return reply(fillTemplate(tpl, { amount: amount.toLocaleString(), balance, remaining: rem }))
   }),
 
   // ── .cf — coin flip ────────────────────────────────────────────────────

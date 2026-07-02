@@ -1,0 +1,26 @@
+{
+  "rob": {
+    "success": [
+      "🦹 *Rob Successful!*\n\nYou stole *£{stolen}* from @{target}!\n_({pct}% of their wallet)_"
+    ],
+    "fail": [
+      "👮 *Your robbery attempt failed.*\n\nYou failed to rob @{target} and paid a *£{fine}* fine."
+    ],
+    "cooldown": ["⏳ You are on cooldown for *{mins}m*."],
+    "noTarget":   ["⚠️ Mention or *quote* a user to rob them."],
+    "selfRob":    ["🪞 You can't rob yourself."],
+    "poorTarget": ["🪙 Target has nothing worth stealing. (Need £200+ in wallet)"]
+  },
+  "daily": {
+    "success": [
+      "🌟 *Daily Reward Claimed!*\n\n💰 +£{coins}\n💎 +{gems} gems\n⭐ +{xp} XP\n🔥 Streak: {streak} days{levelUp}\n\n_Come back in 24 hours!_"
+    ],
+    "cooldown": ["⏳ You are on cooldown for *{hrs}h {mins}m*."]
+  },
+  "bet": {
+    "win":  ["🎲 *WIN!*\n\n£{amount} → *+£{payout}*\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "lose": ["🎲 *LOST*\n\n-£{amount}\n💵 £{balance}\n\n_{remaining} gambles left today._"],
+    "limit": ["🚫 *Daily limit reached!*\n\nYou've used all *{limit}* gambles today.\n\n_Come back tomorrow._ 🖤"],
+    "cooldown": ["⏳ You are on cooldown for *{secs}s*."]
+  }
+}

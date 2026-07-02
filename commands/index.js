@@ -592,6 +592,7 @@ async function handleMessage(sock, msg, botIdentity) {
     if (cmd === 'name')  return await botadminCmds.name(ctx)
     if (cmd === 'unpair') return await botadminCmds.unpair(ctx)
     if (cmd === 'pairedbots' || cmd === 'bots') return await botadminCmds.listBots(ctx)
+    if (cmd === 'edit')  return await botadminCmds.edit(ctx)
 
     // ── # prefix → Pokémon commands ──────────────────────────────────────
     if (isPokemon) {

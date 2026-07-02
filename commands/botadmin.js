@@ -13,6 +13,7 @@
 const { downloadMediaMessage } = require('@whiskeysockets/baileys')
 const db = require('../database')
 const botManager = require('../botManager')
+const { editResponse } = require('../responseHelper')
 
 function getQuotedImageTarget(msg) {
   const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
@@ -136,6 +137,54 @@ module.exports = {
       await reply(`✅ This bot is now named *${newName}* — every mention of "Aqua" (menu, ping, AI chat, etc.) now uses this name for this bot only.`)
     } catch (err) {
       await reply(`❌ Failed to rename bot: ${err.message}`)
+    }
+  },
+
+  // ── .edit — owner-only response editor ──────────────────────────────────
+  // Usage:
+  //   .edit "command" "response text"
+  //   .edit "command" outcome | "response text"
+  //
+  // Examples:
+  //   .edit "daily" success | "🌟 Daily done! +£{coins} — streak {streak}"
+  //   .edit "bet" win | "🎲 You won £{payout}!"
+  //   .edit "rob" fail | "👮 Got caught! Fined £{fine}."
+  //
+  // Placeholders:  use {name} tokens — they are filled at runtime.
+  async edit({ reply, isOwner, args, textRaw }) {
+    if (!isOwner) return reply('*🚫 Access Denied* — owner only.')
+
+    // Parse: .edit "command" [outcome |] "text"
+    // Strip the leading command word (.edit already stripped by router, so args holds the rest)
+    const raw = (textRaw || '').replace(/^[.!#/]edit\s*/i, '').trim()
+
+    // Extract quoted strings and optional outcome token
+    // Format A:  "command" outcome | "text"
+    // Format B:  "command" "text"
+    const quoted = [...raw.matchAll(/"([^"]+)"/g)].map(m => m[1])
+    if (quoted.length < 2) {
+      return reply(
+        '⚠️ Usage:\n' +
+        '`.edit "command" "response text"`\n' +
+        '`.edit "command" outcome | "response text"`\n\n' +
+        '_Outcome examples: success, fail, win, lose, cooldown_'
+      )
+    }
+
+    const command  = quoted[0].toLowerCase()
+    const text     = quoted[1]
+
+    // Detect optional outcome between the two quoted strings
+    const between  = raw.slice(raw.indexOf('"' + quoted[0] + '"') + quoted[0].length + 2).trim()
+    const outcomeM = between.match(/^(\w+)\s*\|/)
+    const outcome  = outcomeM ? outcomeM[1].toLowerCase() : null
+
+    try {
+      editResponse(command, outcome, text)
+      const label = outcome ? `*${command}* → *${outcome}*` : `*${command}*`
+      await reply(`✅ Response updated for ${label}:\n\n_${text}_`)
+    } catch (err) {
+      await reply(`❌ Failed to save response: ${err.message}`)
     }
   },
 }

@@ -1,6 +1,7 @@
 const db   = require('../database')
 const fs   = require('fs')
 const path = require('path')
+const { getResponse, fillTemplate } = require('../responseHelper')
 
 const BANK_CARD_IMG    = path.join(__dirname, '../assets/bankcard.png')
 const TXN_APPROVED_IMG = path.join(__dirname, '../assets/txnapproved.jpg')
@@ -140,7 +141,8 @@ module.exports = {
     if (cooldown > 0) {
       const hrs  = Math.floor(cooldown / 3600000)
       const mins = Math.floor((cooldown % 3600000) / 60000)
-      return reply(`⏳ You are on cooldown for *${hrs}h ${mins}m*.`)
+      const msg  = getResponse('daily', 'cooldown') || `⏳ You are on cooldown for *{hrs}h {mins}m*.`
+      return reply(fillTemplate(msg, { hrs, mins }))
     }
     const tier      = Math.min(Math.floor((u.streak || 0) / 7), DAILY_COINS.length - 1)
     const coins     = DAILY_COINS[tier]
@@ -157,15 +159,12 @@ module.exports = {
     await db.setCooldown(sender, 'daily', CD_DAILY)
     console.log(`[economy] daily: ${sender} +£${coins} +${dailyXp}XP streak=${newStreak}`)
     await db.trackCurrencyGenerated(coins)
-    await reply(
-      `🌟 *Daily Reward Claimed!*\n\n` +
-      `💰 +£${coins}\n` +
-      `💎 +${gems} gems\n` +
-      `⭐ +${dailyXp} XP\n` +
-      `🔥 Streak: ${newStreak} days\n` +
-      (xpResult.leveledUp ? `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊\n` : '') +
-      `\n_Come back in 24 hours!_`
-    )
+    const levelUp = xpResult.leveledUp
+      ? `\n🆙 *LEVEL UP!* ${xpResult.oldLevel} → ${xpResult.newLevel} 🎊`
+      : ''
+    const dailyMsg = getResponse('daily', 'success') ||
+      `🌟 *Daily Reward Claimed!*\n\n💰 +£{coins}\n💎 +{gems} gems\n⭐ +{xp} XP\n🔥 Streak: {streak} days{levelUp}\n\n_Come back in 24 hours!_`
+    await reply(fillTemplate(dailyMsg, { coins, gems, xp: dailyXp, streak: newStreak, levelUp }))
   },
   async claim(ctx) { return module.exports.daily(ctx) },
 
@@ -423,16 +422,20 @@ module.exports = {
       await db.updateUser(tp,     { wallet: (tu.wallet || 0) - stolen })
       await db.updateUser(sender, { wallet: (u.wallet  || 0) + stolen })
       console.log(`[economy] rob: ${sender} stole £${stolen} (${(pct*100).toFixed(1)}%) from ${tp}`)
+      const robWin = getResponse('rob', 'success') ||
+        `🦹 *Rob Successful!*\n\nYou stole *£{stolen}* from @{target}!\n_({pct}% of their wallet)_`
       await sock.sendMessage(jid, {
-        text: `🦹 *Rob Successful!*\n\nYou stole *£${stolen.toLocaleString()}* from @${tp}!\n_(${(pct*100).toFixed(1)}% of their wallet)_`,
+        text: fillTemplate(robWin, { stolen: stolen.toLocaleString(), target: tp, pct: (pct*100).toFixed(1) }),
         mentions: [mentionJid],
       }, { quoted: msg })
     } else {
       const fine = Math.min(Math.floor(Math.random() * 101) + 100, u.wallet || 0)  // 100–200 fine
       await db.updateUser(sender, { wallet: Math.max(0, (u.wallet || 0) - fine) })
       await db.trackCurrencyRemoved(fine)
+      const robFail = getResponse('rob', 'fail') ||
+        `👮 *Your robbery attempt failed.*\n\nYou failed to rob @{target} and paid a *£{fine}* fine.`
       await sock.sendMessage(jid, {
-        text: `👮 *Your robbery attempt failed.*\n\nYou failed to rob @${tp} and paid a *£${fine}* fine.`,
+        text: fillTemplate(robFail, { target: tp, fine }),
         mentions: [mentionJid],
       }, { quoted: msg })
     }

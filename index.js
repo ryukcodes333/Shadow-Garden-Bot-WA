@@ -2,10 +2,10 @@ const {
     makeWASocket,
     DisconnectReason,
     fetchLatestBaileysVersion,
-    useMultiFileAuthState,
     isJidBroadcast,
     Browsers,
   } = require('@whiskeysockets/baileys')
+  const { useMongoAuthState, clearMongoAuthState } = require('./mongoAuthState')
   const { Boom } = require('@hapi/boom')
   const pino = require('pino')
   const readline = require('readline')
@@ -50,9 +50,7 @@ const {
 
   async function clearSession() {
     try {
-      for (const file of fs.readdirSync(AUTH_FOLDER)) {
-        fs.rmSync(path.join(AUTH_FOLDER, file), { force: true })
-      }
+      await clearMongoAuthState('main')
       console.log('🗑️  Session cleared.')
     } catch (e) {
       console.error('Error clearing session:', e.message)
@@ -105,7 +103,7 @@ const {
     reconnectAttempts++
     global.pairingCodeRequested = false
 
-    const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER)
+    const { state, saveCreds } = await useMongoAuthState('main')
 
     if (!state.creds.registered) {
       const envPhone = (process.env.PHONE_NUMBER || '').replace(/\D/g, '')
