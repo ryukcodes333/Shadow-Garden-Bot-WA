@@ -831,14 +831,15 @@ function buildStatsSvg(user) {
   // No forced minimum — 0 XP shows a fully empty bar
   const barFill = Math.min(Math.max(Math.round(barW * xpPct), 0), barW)
 
-  // Vertical layout anchors — calibrated for AV_R = 220
+  // Vertical layout anchors — calibrated for AV_R = 220, FRAME_PAD = 160
+  // Frame bottom = AV_CY + AV_R + FRAME_PAD = 490 + 220 + 160 = 870
   const bankY     = 90
   const walletY   = 150
   const avatarBot = AV_CY + AV_R            // 710  (490 + 220)
-  const nameY     = avatarBot + 82          // 792
-  const subtitleY = nameY + 52              // 844
-  const rankY     = subtitleY + 70          // 914
-  const barTop    = rankY + 56              // 970
+  const nameY     = avatarBot + 165         // 875  — below frame decoration ring
+  const subtitleY = nameY + 50             // 925
+  const rankY     = subtitleY + 65         // 990
+  const barTop    = rankY + 54             // 1044
   const barTextY  = barTop + Math.round(barH / 2) + 12  // ~1011
 
   return `<svg width="${CARD_W}" height="${CARD_H}" xmlns="http://www.w3.org/2000/svg">
@@ -862,13 +863,13 @@ function buildStatsSvg(user) {
     </clipPath>
   </defs>
 
-  <!-- Black readability overlay (~37%) -->
-  <rect x="0" y="0" width="${CARD_W}" height="${CARD_H}" fill="black" opacity="0.37"/>
+  <!-- Black readability overlay (lighter so avatar stays vivid) -->
+  <rect x="0" y="0" width="${CARD_W}" height="${CARD_H}" fill="black" opacity="0.20"/>
 
-  <!-- Avatar depth vignette (behind the frame ring) -->
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 28}" fill="black" opacity="0.12"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 16}" fill="black" opacity="0.18"/>
-  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 6}"  fill="black" opacity="0.24"/>
+  <!-- Avatar edge vignette — stroke-only rings so the interior stays bright -->
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 14}" fill="none" stroke="black" stroke-width="28" opacity="0.13"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 8}"  fill="none" stroke="black" stroke-width="16" opacity="0.18"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 3}"  fill="none" stroke="black" stroke-width="10" opacity="0.22"/>
 
   <!-- Bank (top-left) -->
   <text x="62" y="${bankY + 2}"
@@ -1074,10 +1075,10 @@ async function generateProfileCard(user, ppBuffer = null, bgBuffer = null, custo
   // C) No custom frame at all:
   //    Use the built-in premium SVG ring from user.profile_frame.
   //
-  const FRAME_PAD  = 130                          // px of decoration headroom per side
-  const FRAME_SIZE = (AV_R + FRAME_PAD) * 2       // 700 px square
-  const FRAME_TOP  = AV_CY - AV_R - FRAME_PAD    //  140 px from card top
-  const FRAME_LEFT = AV_CX - AV_R - FRAME_PAD    //  290 px from card left
+  const FRAME_PAD  = 160                          // px of decoration headroom per side
+  const FRAME_SIZE = (AV_R + FRAME_PAD) * 2       // 760 px square
+  const FRAME_TOP  = AV_CY - AV_R - FRAME_PAD    //  110 px from card top
+  const FRAME_LEFT = AV_CX - AV_R - FRAME_PAD    //  260 px from card left
 
   let frameLayer = null  // { input, top, left }
 
