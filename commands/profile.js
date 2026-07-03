@@ -163,18 +163,35 @@ async function uploadToStorage(buffer, storagePath, mime = 'image/jpeg') {
 
 module.exports = {
   // ─── .p - image profile card ──────────────────────────────────────────────
+  // Sending .p normally → your own card.
+  // Quoting someone's message with .p  → that person's card.
   async p({ sock, msg, jid, sender, user, reply, isOwner, isMod, isGuardian }) {
     await sock.sendMessage(jid, { react: { text: '👤', key: msg.key } })
 
-    const u = user || await db.getOrCreateUser(sender)
-    if (!u) return reply('❌ Could not load your profile. Make sure the database is set up.')
+    // ── Quoted-user detection ────────────────────────────────────────────────
+    const quotedCtx  = msg.message?.extendedTextMessage?.contextInfo
+    const quotedJid  = quotedCtx?.participant || quotedCtx?.remoteJid || null
+    const targetPhone = quotedJid
+      ? quotedJid.split('@')[0].split(':')[0]
+      : sender
+    const isViewingOther = targetPhone !== sender
 
-    // Override displayed role using runtime permission flags so owner/mod/guardian
-    // always shows the correct badge even if the DB role column hasn't been set
-    const effectiveRole = isOwner ? 'owner'
-      : isMod                     ? 'mod'
-      : isGuardian                ? 'guardian'
-      : (u.role || 'member')
+    const u = isViewingOther
+      ? (await db.getOrCreateUser(targetPhone).catch(() => null))
+      : (user || await db.getOrCreateUser(sender))
+    if (!u) {
+      return reply(
+        isViewingOther
+          ? '❌ That user does not have a profile yet.'
+          : '❌ Could not load your profile. Make sure the database is set up.'
+      )
+    }
+
+    // Override displayed role using runtime permission flags (only for own card —
+    // we don't have live flags for other users, so fall back to stored DB role).
+    const effectiveRole = isViewingOther
+      ? (u.role || 'member')
+      : (isOwner ? 'owner' : isMod ? 'mod' : isGuardian ? 'guardian' : (u.role || 'member'))
     const displayUser = { ...u, role: effectiveRole }
 
     // Fetch custom bg + pp if set
@@ -203,11 +220,11 @@ module.exports = {
       }
     } catch { bgBuffer = null }
 
-    // Compute global rank (leaderboard position)
+    // Compute global rank (leaderboard position) for the target user
     let rankNum = null
     try {
-      const lb = await db.getLeaderboard(9999).catch(() => [])
-      const idx = lb.findIndex(u => u.phone === sender)
+      const lb  = await db.getLeaderboard(9999).catch(() => [])
+      const idx = lb.findIndex(entry => entry.phone === targetPhone)
       rankNum = idx >= 0 ? idx + 1 : lb.length + 1
     } catch {}
     const displayUserWithRank = { ...displayUser, rank: rankNum }
@@ -241,22 +258,31 @@ module.exports = {
       battleLosses = u.battle_losses || 0
     } catch {}
 
-    const isVerified = isOwner || isMod || isGuardian || !!u.premium
+    // When viewing another user's card we only know their stored premium flag,
+    // not their live runtime flags — use stored role for verification badge.
+    const isVerified = isViewingOther
+      ? (['owner','mod','guardian'].includes(u.role) || !!u.premium)
+      : (isOwner || isMod || isGuardian || !!u.premium)
+
     let statusLine = 'This user is not banned. ✅'
     if (u.banned) {
       statusLine = 'This user is currently banned. 🚫'
     } else {
       try {
-        const susp = await db.getSuspension(sender).catch(() => null)
+        const susp = await db.getSuspension(targetPhone).catch(() => null)
         if (susp) statusLine = 'Account is currently suspended. 🚫'
       } catch {}
     }
 
+    const viewingLabel = isViewingOther
+      ? `👁️ *Viewing* @${targetPhone}'s card\n\n`
+      : ''
+
     const caption =
-      `🌟 𝗨𝗦𝗘𝗥 𝗖𝗔𝗥𝗗 🌟\n` +
-      `ꕤ 𝗡𝗮𝗺𝗲: ${u.name || sender}\n` +
-      `ꕤ 𝗛𝗮𝗻𝗱𝗹𝗲: @${sender}\n` +
-      `ꕤ 𝗜𝗗: ${sender}\n` +
+      `${viewingLabel}🌟 𝗨𝗦𝗘𝗥 𝗖𝗔𝗥𝗗 🌟\n` +
+      `ꕤ 𝗡𝗮𝗺𝗲: ${u.name || targetPhone}\n` +
+      `ꕤ 𝗛𝗮𝗻𝗱𝗹𝗲: @${targetPhone}\n` +
+      `ꕤ 𝗜𝗗: ${targetPhone}\n` +
       `ꕤ 𝗔𝗯𝗼𝘂𝘁: ${u.bio || 'No bio set'}\n` +
       `ꕤ 𝗝𝗼𝗶𝗻𝗲𝗱: ${joinDate}\n` +
       `ꕤ 𝗕𝗮𝗱𝗴𝗲𝘀: ${u.pokemon_badges || gymBadges || 0}\n` +

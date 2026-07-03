@@ -5,8 +5,36 @@
 //   .setframe <name>          (anyone — equips a named custom frame)
 //   .clearframes              (owner only — wipes all custom frames)
 const db = require('../database')
+const sharp = require('sharp')
 const { downloadMediaMessage } = require('@whiskeysockets/baileys')
 const { buildFramesGridImage } = require('../frameHelper')
+
+// ── Auto black-background removal ────────────────────────────────────────────
+// Converts a solid-black-background frame PNG into a transparent overlay.
+// Pixels with max(r,g,b) below `hardCut` → fully transparent.
+// Pixels between `hardCut` and `softEdge` → linearly faded for smooth edges.
+async function removeBlackBg(inputBuf, hardCut = 40, softEdge = 80) {
+  const { data, info } = await sharp(inputBuf)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true })
+
+  for (let i = 0; i < data.length; i += 4) {
+    const brightness = Math.max(data[i], data[i + 1], data[i + 2])
+    if (brightness < hardCut) {
+      data[i + 3] = 0  // fully transparent
+    } else if (brightness < softEdge) {
+      // Fade in: 0 at hardCut, original alpha at softEdge
+      const t = (brightness - hardCut) / (softEdge - hardCut)
+      data[i + 3] = Math.round(t * data[i + 3])
+    }
+    // else: keep original alpha
+  }
+
+  return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
+    .png()
+    .toBuffer()
+}
 
 function getQuotedImageTarget(msg) {
   const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
@@ -61,10 +89,25 @@ module.exports = {
     if (!buffer || buffer.length < 50) return reply('❌ Could not read that image.')
 
     try {
-      const frame = await db.addFrame(name, buffer.toString('base64'), 'image/png', sender)
-      // Set the has_background flag if the bg keyword was used
+      let finalBuffer = buffer
+
+      if (!hasBgFlag) {
+        // Overlay frame — strip the black background automatically so the ring
+        // composites cleanly over the user's avatar and wallpaper.
+        try {
+          finalBuffer = await removeBlackBg(buffer)
+        } catch (e) {
+          console.warn('[frames] removeBlackBg failed, using original:', e.message)
+          finalBuffer = buffer
+        }
+      }
+
+      const frame = await db.addFrame(name, finalBuffer.toString('base64'), 'image/png', sender)
       if (hasBgFlag) await db.setFrameBackground(frame.name, true)
-      const bgNote = hasBgFlag ? '\n🌟 Marked as *background frame* — it will replace the user\'s wallpaper.' : ''
+
+      const bgNote = hasBgFlag
+        ? '\n🌟 Marked as *background frame* — it replaces the user\'s wallpaper.'
+        : '\n✨ Black background auto-removed — frame is now transparent.'
       await reply(`✅ Frame *${frame.name}* uploaded!${bgNote}\n\nUse *.frames* to view it or *.setframe ${frame.name}* to equip it.`)
     } catch (err) {
       await reply(`❌ Failed to save frame: ${err.message}`)
