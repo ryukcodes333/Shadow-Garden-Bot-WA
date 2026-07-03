@@ -831,15 +831,15 @@ function buildStatsSvg(user) {
   // No forced minimum — 0 XP shows a fully empty bar
   const barFill = Math.min(Math.max(Math.round(barW * xpPct), 0), barW)
 
-  // Vertical layout anchors — calibrated for AV_R = 220, FRAME_PAD = 160
-  // Frame bottom = AV_CY + AV_R + FRAME_PAD = 490 + 220 + 160 = 870
+  // Vertical layout anchors — AV_R = 220
+  // Custom overlay frame is centred on avatar with 1.35× diameter → frame bottom ≈ 787
   const bankY     = 90
   const walletY   = 150
   const avatarBot = AV_CY + AV_R            // 710  (490 + 220)
-  const nameY     = avatarBot + 165         // 875  — below frame decoration ring
-  const subtitleY = nameY + 50             // 925
-  const rankY     = subtitleY + 65         // 990
-  const barTop    = rankY + 54             // 1044
+  const nameY     = avatarBot + 110         // 820  — below frame decoration overhang
+  const subtitleY = nameY + 50             // 870
+  const rankY     = subtitleY + 65         // 935
+  const barTop    = rankY + 54             // 989
   const barTextY  = barTop + Math.round(barH / 2) + 12  // ~1011
 
   return `<svg width="${CARD_W}" height="${CARD_H}" xmlns="http://www.w3.org/2000/svg">
@@ -1075,10 +1075,13 @@ async function generateProfileCard(user, ppBuffer = null, bgBuffer = null, custo
   // C) No custom frame at all:
   //    Use the built-in premium SVG ring from user.profile_frame.
   //
-  const FRAME_PAD  = 160                          // px of decoration headroom per side
-  const FRAME_SIZE = (AV_R + FRAME_PAD) * 2       // 760 px square
-  const FRAME_TOP  = AV_CY - AV_R - FRAME_PAD    //  110 px from card top
-  const FRAME_LEFT = AV_CX - AV_R - FRAME_PAD    //  260 px from card left
+  // Frame sized so its ring circle aligns with the avatar circle.
+  // Typical ring PNGs have the ring at ~74% of total image width; using 1.35×
+  // avatar diameter gives ~25% decoration overhang per side beyond AV_R.
+  const FRAME_SIZE = Math.round(AV_R * 2 * 1.35)  // ≈ 594 px square
+  const FRAME_HALF = Math.round(FRAME_SIZE / 2)    // ≈ 297 px
+  const FRAME_TOP  = AV_CY - FRAME_HALF            //  193 px from card top
+  const FRAME_LEFT = AV_CX - FRAME_HALF            //  343 px from card left
 
   let frameLayer = null  // { input, top, left }
 
