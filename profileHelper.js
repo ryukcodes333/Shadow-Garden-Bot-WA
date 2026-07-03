@@ -814,7 +814,7 @@ function buildStatsSvg(user) {
   }
 
   const name   = esc((user.name || user.phone || 'Unknown').substring(0, 18))
-  const title  = esc((user.title || 'Newcomer').substring(0, 28))
+  const title  = esc((user.bio || user.title || 'No bio set').substring(0, 32))
   const level  = user.level || 1
   const xp     = Number(user.xp || 0)
   const xpNeed = level * 300              // matches economy.js xpForLevel: level * 300
@@ -1059,16 +1059,51 @@ async function generateProfileCard(user, ppBuffer = null, bgBuffer = null, custo
   const overlayBuf = Buffer.from(buildStatsSvg(user))
 
   // ── Layer 4: Frame overlay ──
-  // • Custom overlay frame (transparent PNG uploaded by staff, no bg)
-  // • Built-in premium SVG ring (when no custom frame or custom bg)
-  // • Nothing extra when the custom frame already supplied the background
-  let frameOverlayBuf = null
+  //
+  // Three scenarios:
+  //
+  // A) Custom overlay frame (has_background=false):
+  //    The uploaded PNG IS the ring. Resize to the frame zone centred on the avatar
+  //    and composite on top. No built-in SVG ring is drawn.
+  //
+  // B) Custom bg-frame (has_background=true):
+  //    The uploaded image is the BACKGROUND only (already applied above as bgLayer).
+  //    The ring still comes from the user's built-in profile_frame — so the avatar
+  //    is always framed, even when a custom wallpaper is active.
+  //
+  // C) No custom frame at all:
+  //    Use the built-in premium SVG ring from user.profile_frame.
+  //
+  const FRAME_PAD  = 130                          // px of decoration headroom per side
+  const FRAME_SIZE = (AV_R + FRAME_PAD) * 2       // 700 px square
+  const FRAME_TOP  = AV_CY - AV_R - FRAME_PAD    //  140 px from card top
+  const FRAME_LEFT = AV_CX - AV_R - FRAME_PAD    //  290 px from card left
+
+  let frameLayer = null  // { input, top, left }
+
   if (customFrameDoc && !customFrameDoc.has_background) {
-    try { frameOverlayBuf = Buffer.from(customFrameDoc.image, 'base64') } catch { /* ignore */ }
-  } else if (!frameBgUsed) {
+    // Scenario A — custom transparent ring overlay
+    try {
+      const rawFrame = Buffer.from(customFrameDoc.image, 'base64')
+      const resized = await sharp(rawFrame)
+        .resize(FRAME_SIZE, FRAME_SIZE, {
+          fit:        'contain',
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        })
+        .png()
+        .toBuffer()
+      frameLayer = { input: resized, top: FRAME_TOP, left: FRAME_LEFT }
+    } catch { /* ignore bad frame data */ }
+  } else {
+    // Scenario B or C — always draw the built-in SVG ring
+    // (bg-frame only changed the wallpaper; the ring decoration is independent)
     const frameId = user.profile_frame || 1
     const frame   = getFrame(frameId)
-    frameOverlayBuf = Buffer.from(buildPremiumFrameOverlaySvg(frame, AV_CX, AV_CY, AV_R))
+    frameLayer = {
+      input: Buffer.from(buildPremiumFrameOverlaySvg(frame, AV_CX, AV_CY, AV_R)),
+      top:   0,
+      left:  0,
+    }
   }
 
   // ── Composite: bg → avatar → stats overlay → frame ring (topmost) ──
@@ -1076,9 +1111,7 @@ async function generateProfileCard(user, ppBuffer = null, bgBuffer = null, custo
     { input: avatarBuf,  top: avatarTop,  left: avatarLeft },
     { input: overlayBuf, top: 0,          left: 0 },
   ]
-  if (frameOverlayBuf) {
-    layers.push({ input: frameOverlayBuf, top: 0, left: 0 })
-  }
+  if (frameLayer) layers.push(frameLayer)
 
   return sharp(bgLayer)
     .composite(layers)
