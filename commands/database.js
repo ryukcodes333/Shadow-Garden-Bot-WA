@@ -34,20 +34,25 @@ connectDB()
 // ── Schemas ────────────────────────────────────────────────────────────────
 
 const userSchema = new mongoose.Schema({
-  phone:     { type: String, unique: true, sparse: true },
-  name:      { type: String, default: 'Unknown' },
-  password:  { type: String, default: null },
-  wallet:    { type: Number, default: 0 },
-  bank:      { type: Number, default: 500 },
-  gems:      { type: Number, default: 0 },
-  xp:        { type: Number, default: 0 },
-  level:     { type: Number, default: 1 },
-  streak:    { type: Number, default: 0 },
-  banned:    { type: Boolean, default: false },
-  premium:   { type: Boolean, default: false },
-  role:      { type: String, default: 'member' },
-  title:     { type: String, default: 'Newcomer' },
-  bio:       { type: String, default: '' },
+  phone:      { type: String, unique: true, sparse: true },
+  name:       { type: String, default: 'Unknown' },
+  password:   { type: String, default: null },
+  wallet:     { type: Number, default: 0 },
+  bank:       { type: Number, default: 500 },
+  bank_limit: { type: Number, default: 50000 },
+  gems:       { type: Number, default: 0 },
+  xp:         { type: Number, default: 0 },
+  rpg_xp:     { type: Number, default: 0 },
+  rpg_wallet: { type: Number, default: 0 },
+  level:      { type: Number, default: 1 },
+  streak:     { type: Number, default: 0 },
+  banned:     { type: Boolean, default: false },
+  ban_reason: { type: String,  default: '' },
+  ban_mod:    { type: String,  default: '' },
+  premium:    { type: Boolean, default: false },
+  role:       { type: String, default: 'member' },
+  title:      { type: String, default: 'Newcomer' },
+  bio:        { type: String, default: '' },
   pokemon_badges: { type: Number, default: 0 },
   pokemon_wins:   { type: Number, default: 0 },
   pokemon_losses: { type: Number, default: 0 },
@@ -58,6 +63,8 @@ const userSchema = new mongoose.Schema({
   profile_pp:     { type: String, default: null },
   profile_bg:     { type: String, default: null },
   profile_frame:  { type: Number, default: 1 },
+  equipped_frame: { type: String, default: null },
+  jid:            { type: String, unique: true, sparse: true },
 }, { timestamps: true })
 
 const groupSchema = new mongoose.Schema({
@@ -69,8 +76,12 @@ const groupSchema = new mongoose.Schema({
   welcome:         { type: Boolean, default: false },
   leave:           { type: Boolean, default: false },
   muted:           { type: Boolean, default: false },
-  pokemon_enabled: { type: Boolean, default: false },
-  antibot:         { type: Boolean, default: false },
+  pokemon_enabled:   { type: Boolean, default: false },
+  antibot:           { type: Boolean, default: false },
+  cardspawn_enabled: { type: Boolean, default: false },
+  cardspawn_today:   { type: Number,  default: 0 },
+  cardspawn_date:    { type: String,  default: '' },
+  cardspawn_next:    { type: Date,    default: null },
 }, { timestamps: true })
 
 const warningSchema = new mongoose.Schema({
@@ -121,6 +132,7 @@ const cardSchema = new mongoose.Schema({
 const userCardSchema = new mongoose.Schema({
   phone:   String,
   card_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Card' },
+  in_deck: { type: Boolean, default: false },
 }, { timestamps: true })
 
 const userPokemonSchema = new mongoose.Schema({
@@ -192,10 +204,43 @@ const disabledCommandSchema = new mongoose.Schema({
   reason:  String,
 })
 
+// Singleton document that stores the bot's trained AI persona (name + facts).
+// Staff can update these via .aitrain. Groq uses them as a dynamic system prompt.
+const aiBotPersonaSchema = new mongoose.Schema({
+  singleton: { type: String, default: 'main', unique: true },
+  name:      { type: String, default: '' },
+  facts:     { type: [String], default: [] },
+}, { timestamps: true })
+
+// Custom staff-uploaded frames — image stored as base64, equipped via .setframe <name>
+const frameSchema = new mongoose.Schema({
+  name:           { type: String,  required: true, unique: true, lowercase: true, trim: true },
+  image:          { type: String,  required: true },
+  mimeType:       { type: String,  default: 'image/png' },
+  uploadedBy:     { type: String,  default: null },
+  // When true, this frame's image IS the card background (wallpaper replaced at full quality).
+  // When false (default), the image is a transparent overlay composited on top of the card.
+  has_background: { type: Boolean, default: false },
+  createdAt:      { type: Date,    default: Date.now },
+})
+
+// Additional bot instances connected by the owner via .pair <number>
+const pairedBotSchema = new mongoose.Schema({
+  phone:         { type: String, required: true, unique: true },
+  jid:           { type: String, default: null },
+  name:          { type: String, default: 'Aqua' },
+  menuImage:     { type: String, default: null },
+  menuImageMime: { type: String, default: null },
+  pairedBy:      { type: String, default: null },
+  connected:     { type: Boolean, default: false },
+  createdAt:     { type: Date, default: Date.now },
+})
+
 // ── Models ─────────────────────────────────────────────────────────────────
 
 const User           = mongoose.model('User',           userSchema)
 const Group          = mongoose.model('Group',          groupSchema)
+const AiBotPersona   = mongoose.model('AiBotPersona',   aiBotPersonaSchema)
 const Warning        = mongoose.model('Warning',        warningSchema)
 const AFK            = mongoose.model('AFK',            afkSchema)
 const Message        = mongoose.model('Message',        messageSchema)
@@ -211,6 +256,8 @@ const GuildMember    = mongoose.model('GuildMember',    guildMemberSchema)
 const Loan           = mongoose.model('Loan',           loanSchema)
 const Blacklist      = mongoose.model('Blacklist',      blacklistSchema)
 const DisabledCommand= mongoose.model('DisabledCommand',disabledCommandSchema)
+const Frame          = mongoose.model('Frame',          frameSchema)
+const PairedBot       = mongoose.model('PairedBot',       pairedBotSchema)
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -238,16 +285,31 @@ async function createUser(phone, name) {
   }
 }
 
-async function getOrCreateUser(phone, name) {
+async function getOrCreateUser(phone, name, jid) {
+  // ── JID-first lookup (post-WA↔web link) ──────────────────────────────────
+  // After a user links their WhatsApp to their web account via .link, the master
+  // record stores the web phone. The bot's sender phone (from the JID) may differ.
+  // Look up by JID first so the bot always reads/writes the canonical master record.
+  if (jid) {
+    try {
+      const cleanedJid = String(jid).includes('@') ? jid : `${jid}@s.whatsapp.net`
+      const byJid = await User.findOne({ jid: cleanedJid }).lean()
+      if (byJid) {
+        console.log(`[getOrCreateUser] found by JID: phone=${byJid.phone} jid=${cleanedJid}`)
+        return byJid
+      }
+    } catch {}
+  }
+  // ── Phone-based lookup / create ───────────────────────────────────────────
   phone = cleanPhone(phone)
   try {
     let user = await getUser(phone)
     if (!user) user = await createUser(phone, name)
-    if (!user) return { phone, name: name || phone, wallet: 0, bank: 0, gems: 0, xp: 0, level: 1, streak: 0, role: 'member', banned: false }
+    if (!user) return { phone, name: name || phone, wallet: 0, bank: 500, gems: 0, xp: 0, level: 1, streak: 0, role: 'member', banned: false }
     return user
   } catch (err) {
     console.error('getOrCreateUser error:', err.message)
-    return { phone, name: name || phone, wallet: 0, bank: 0, gems: 0, xp: 0, level: 1, streak: 0, role: 'member', banned: false }
+    return { phone, name: name || phone, wallet: 0, bank: 500, gems: 0, xp: 0, level: 1, streak: 0, role: 'member', banned: false }
   }
 }
 
@@ -399,7 +461,7 @@ async function getLeaderboard(limit = 10) {
 }
 
 async function getRichList(limit = 10) {
-  return User.find({}).sort({ wallet: -1 }).limit(limit).lean()
+  return User.find({}).sort({ bank: -1, wallet: -1 }).limit(limit).lean()
 }
 
 async function getUserCount() {
@@ -431,7 +493,7 @@ async function getCard(id) {
 
 async function getUserCards(phone) {
   phone = cleanPhone(phone)
-  return UserCard.find({ phone }).populate('card_id').lean()
+  return UserCard.find({ phone }).populate('card_id').sort({ in_deck: -1, createdAt: 1 }).lean()
 }
 
 async function getUserCardCount(phone) {
@@ -453,8 +515,16 @@ async function deleteUserCardById(rowId) {
   await UserCard.deleteOne({ _id: rowId })
 }
 
-async function getCardOwners(cardId) {
-  return UserCard.find({ card_id: cardId }).lean()
+async function updateUserCardById(rowId, fields) {
+  await UserCard.updateOne({ _id: rowId }, { $set: fields })
+}
+
+async function getCardOwners(externalId) {
+  if (!externalId) return []
+  // external_id on Card stores the full image URL; find Card first, then find its UserCards
+  const card = await Card.findOne({ external_id: externalId }).lean()
+  if (!card) return []
+  return UserCard.find({ card_id: card._id }).lean()
 }
 
 const RARITY_BY_TIER = {
@@ -494,7 +564,7 @@ async function getOrCreateShoobCard(shoobId, name, tier, series, imageUrl, price
 
 async function getUserPokemon(phone) {
   phone = cleanPhone(phone)
-  return UserPokemon.find({ phone }).lean()
+  return UserPokemon.find({ phone }).sort({ in_party: -1, slot: 1 }).lean()
 }
 
 async function addPokemon(phone, pokemonData) {
@@ -506,6 +576,112 @@ async function addPokemon(phone, pokemonData) {
 async function updatePokemon(id, updates) {
   const p = await UserPokemon.findByIdAndUpdate(id, { $set: updates }, { new: true }).lean()
   return p
+}
+
+// ── Card-spawn group functions ──────────────────────────────────────────────
+
+// Toggle auto card-spawn for a group. Resets the schedule when enabling.
+async function setGroupCardSpawn(groupId, enabled) {
+  await getOrCreateGroup(groupId)
+  const update = { cardspawn_enabled: enabled }
+  if (enabled) {
+    // Schedule first spawn 30–120 min from now
+    const delay = (30 + Math.floor(Math.random() * 90)) * 60 * 1000
+    update.cardspawn_next = new Date(Date.now() + delay)
+    update.cardspawn_today = 0
+    update.cardspawn_date  = new Date().toISOString().slice(0, 10)
+  }
+  return Group.findOneAndUpdate({ group_id: groupId }, { $set: update }, { new: true }).lean()
+}
+
+// Called each time a group message arrives. Returns true if a spawn should fire NOW.
+// Automatically resets daily count at midnight and schedules the next spawn window.
+async function tickCardSpawn(groupId) {
+  const g = await Group.findOne({ group_id: groupId }).lean()
+  if (!g || !g.cardspawn_enabled) return false
+
+  const today = new Date().toISOString().slice(0, 10)
+  let todayCount = g.cardspawn_date === today ? (g.cardspawn_today || 0) : 0
+
+  // Hit the daily cap — leave enabled but don't spawn again until tomorrow
+  if (todayCount >= 7) return false
+
+  const nextSpawn = g.cardspawn_next ? new Date(g.cardspawn_next) : null
+  if (!nextSpawn || Date.now() < nextSpawn.getTime()) return false
+
+  // It's time to spawn — increment count and schedule the next window (30min–5h)
+  const delay = (30 + Math.floor(Math.random() * 270)) * 60 * 1000
+  await Group.findOneAndUpdate(
+    { group_id: groupId },
+    { $set: {
+      cardspawn_today: todayCount + 1,
+      cardspawn_date:  today,
+      cardspawn_next:  new Date(Date.now() + delay),
+    } }
+  )
+  return true
+}
+
+// ── AI persona functions ────────────────────────────────────────────────────
+
+// Returns the singleton AI persona document (creates it if missing).
+async function getAiPersona() {
+  let p = await AiBotPersona.findOne({ singleton: 'main' }).lean()
+  if (!p) {
+    try { p = (await AiBotPersona.create({ singleton: 'main' })).toObject() } catch { p = await AiBotPersona.findOne({ singleton: 'main' }).lean() }
+  }
+  return p
+}
+
+async function setAiPersonaName(name) {
+  return AiBotPersona.findOneAndUpdate(
+    { singleton: 'main' },
+    { $set: { name: name.trim() } },
+    { new: true, upsert: true }
+  ).lean()
+}
+
+async function addAiPersonaFact(fact) {
+  return AiBotPersona.findOneAndUpdate(
+    { singleton: 'main' },
+    { $addToSet: { facts: fact.trim() } },
+    { new: true, upsert: true }
+  ).lean()
+}
+
+async function removeAiPersonaFact(index) {
+  const p = await AiBotPersona.findOne({ singleton: 'main' }).lean()
+  if (!p || !p.facts?.length) return null
+  const facts = [...p.facts]
+  facts.splice(index, 1)
+  return AiBotPersona.findOneAndUpdate(
+    { singleton: 'main' },
+    { $set: { facts } },
+    { new: true }
+  ).lean()
+}
+
+async function clearAiPersonaFacts() {
+  return AiBotPersona.findOneAndUpdate(
+    { singleton: 'main' },
+    { $set: { facts: [] } },
+    { new: true, upsert: true }
+  ).lean()
+}
+
+// Returns up to `limit` distinct trainers who own a Pokémon species by its PokeAPI id.
+// Joins with the User collection to resolve display names.
+async function getPokemonOwnersBySpeciesId(pokemonId, limit = 5) {
+  if (!pokemonId) return []
+  // Get distinct phones that own this species
+  const docs = await UserPokemon.find({ pokemon_id: Number(pokemonId) }, 'phone').lean()
+  const phones = [...new Set(docs.map(d => cleanPhone(d.phone)))].slice(0, limit)
+  if (!phones.length) return []
+  // Batch-fetch user names
+  const users = await User.find({ phone: { $in: phones } }, 'phone name').lean()
+  const nameMap = {}
+  for (const u of users) nameMap[u.phone] = u.name || u.phone
+  return phones.map(p => ({ phone: p, name: nameMap[p] || p }))
 }
 
 // ── Game functions ─────────────────────────────────────────────────────────
@@ -561,7 +737,8 @@ async function getGuildByMember(phone) {
   if (!member) return null
   const guild = await Guild.findById(member.guild_id).lean()
   if (!guild) return null
-  return { ...guild, guild_id: member.guild_id, is_leader: member.is_leader }
+  const liveCount = await GuildMember.countDocuments({ guild_id: member.guild_id })
+  return { ...guild, member_count: liveCount, guild_id: member.guild_id, is_leader: member.is_leader }
 }
 const getUserGuild = getGuildByMember
 
@@ -800,10 +977,323 @@ async function deleteAllUsers() {
   return result.deletedCount
 }
 
+// ── Per-group disabled commands ────────────────────────────────────────────
+async function getGroupDisabledCmds(groupJid) {
+  const g = await Group.findOne({ group_id: groupJid }).lean()
+  return g?.disabled_cmds || []
+}
+
+async function setGroupDisabledCmds(groupJid, cmds) {
+  await Group.findOneAndUpdate(
+    { group_id: groupJid },
+    { disabled_cmds: cmds },
+    { upsert: true }
+  )
+}
+
+// ── Get all staff members ──────────────────────────────────────────────────
+async function getAllStaff() {
+  return User.find({ role: { $nin: ['member', null, ''] } }).lean()
+}
+
+// ── WA ↔ Web linking ──────────────────────────────────────────────────────
+
+const waLinkOtpSchema = new mongoose.Schema({
+  jid:       { type: String, required: true, unique: true },
+  phone:     { type: String, required: true },
+  otp:       { type: String, required: true },
+  expiresAt: { type: Date, required: true },
+})
+waLinkOtpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+const WaLinkOtp = mongoose.model('WaLinkOtp', waLinkOtpSchema)
+
+async function requestWaLink(senderJid, phone) {
+  const cleanedPhone = cleanPhone(phone)
+  if (!cleanedPhone || cleanedPhone.length < 7) throw new Error('Invalid phone number. Include country code, no + or spaces.')
+  const otp = Math.floor(100000 + Math.random() * 900000).toString()
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000)
+  await WaLinkOtp.findOneAndUpdate(
+    { jid: senderJid },
+    { phone: cleanedPhone, otp, expiresAt },
+    { upsert: true, new: true }
+  )
+  return otp
+}
+
+async function verifyAndLinkJid(senderJid, otp) {
+  console.log('[verifyAndLinkJid] ── START ─────────────────────')
+  console.log('[verifyAndLinkJid] senderJid:', senderJid, '| otp:', otp)
+  console.log('[verifyAndLinkJid] Querying WaLinkOtp WHERE jid =', senderJid)
+
+  const record = await WaLinkOtp.findOne({ jid: senderJid }).lean()
+  console.log('[verifyAndLinkJid] OTP record found:', record ? JSON.stringify(record) : 'NULL — no pending request')
+
+  if (!record) throw new Error('No pending link request. Use .reg <phone> first.')
+  if (new Date() > record.expiresAt) throw new Error('OTP expired. Use .reg <phone> again.')
+  if (record.otp !== String(otp).trim()) {
+    console.log('[verifyAndLinkJid] OTP MISMATCH: expected', record.otp, 'got', String(otp).trim())
+    throw new Error('Incorrect OTP. Try again.')
+  }
+
+  const phone = record.phone
+  await WaLinkOtp.deleteOne({ jid: senderJid })
+  console.log('[verifyAndLinkJid] OTP verified. Target phone:', phone)
+
+  // Find master record (by phone = web-registered user)
+  let master = await User.findOne({ phone }).lean()
+  console.log('[verifyAndLinkJid] Querying User WHERE phone =', phone)
+  console.log('[verifyAndLinkJid] master record:', master ? `_id=${master._id} name=${master.name}` : 'NULL')
+
+  // Find duplicate (bot-created record for this WA number, different phone stored)
+  const senderPhone = cleanPhone(senderJid)
+  let duplicate = null
+  if (senderPhone && senderPhone !== phone) {
+    duplicate = await User.findOne({ phone: senderPhone }).lean()
+    console.log('[verifyAndLinkJid] Querying duplicate WHERE phone =', senderPhone, '→', duplicate ? `_id=${duplicate._id}` : 'NULL')
+  } else {
+    console.log('[verifyAndLinkJid] senderPhone === target phone, no duplicate lookup needed')
+  }
+
+  if (!master) {
+    const created = await User.create({ phone, jid: senderJid, name: duplicate?.name || phone })
+    master = created.toObject()
+    console.log('[verifyAndLinkJid] Created new master row _id:', master._id)
+  } else {
+    await User.updateOne({ phone }, { $set: { jid: senderJid } })
+    console.log('[verifyAndLinkJid] Linked jid to existing master _id:', master._id)
+  }
+
+  // Merge duplicate bot record into master + migrate all linked collections
+  if (duplicate && String(duplicate._id) !== String(master._id)) {
+    const merge = {}
+    // Take the higher stat from each account (bot is where most activity happens)
+    if ((duplicate.xp || 0) > (master.xp || 0))         merge.xp      = duplicate.xp
+    if ((duplicate.level || 1) > (master.level || 1))   merge.level   = duplicate.level
+    if ((duplicate.wallet || 0) > (master.wallet || 0)) merge.wallet  = duplicate.wallet
+    if ((duplicate.bank || 0) > (master.bank || 0))     merge.bank    = duplicate.bank
+    if ((duplicate.gems || 0) > (master.gems || 0))     merge.gems    = duplicate.gems
+    if ((duplicate.streak || 0) > (master.streak || 0)) merge.streak  = duplicate.streak
+    if ((duplicate.pokemon_wins || 0) > (master.pokemon_wins || 0)) merge.pokemon_wins = duplicate.pokemon_wins
+    if ((duplicate.pokemon_losses || 0) > (master.pokemon_losses || 0)) merge.pokemon_losses = duplicate.pokemon_losses
+    if (duplicate.name && duplicate.name !== duplicate.phone && (!master.name || master.name === master.phone)) {
+      merge.name = duplicate.name
+    }
+    console.log('[verifyAndLinkJid] Merging duplicate _id:', duplicate._id, '→ merge fields:', JSON.stringify(merge))
+    if (Object.keys(merge).length) await User.updateOne({ phone }, { $set: merge })
+
+    // ── Migrate all phone-keyed data from duplicate → master ─────────────
+    const dupPhone = duplicate.phone
+    const [ucRes, upRes, invRes] = await Promise.all([
+      UserCard.updateMany({ phone: dupPhone }, { $set: { phone } }),
+      UserPokemon.updateMany({ phone: dupPhone }, { $set: { phone } }),
+      Inventory.updateMany({ phone: dupPhone }, { $set: { phone } }),
+    ])
+    console.log(`[verifyAndLinkJid] Migrated: UserCards=${ucRes.modifiedCount} Pokemon=${upRes.modifiedCount} Inventory=${invRes.modifiedCount}`)
+
+    await User.deleteOne({ _id: duplicate._id })
+    console.log('[verifyAndLinkJid] Duplicate row DELETED ✓')
+  } else {
+    console.log('[verifyAndLinkJid] No duplicate to merge (same phone — just JID linked).')
+  }
+
+  const final = await User.findOne({ phone }).lean()
+  console.log('[verifyAndLinkJid] ── FINAL ROW ─────────────────')
+  console.log('[verifyAndLinkJid] phone:', final?.phone, '| jid:', final?.jid)
+  console.log('[verifyAndLinkJid] ─────────────────────────────────')
+  return final
+}
+
+// ── Economy Inflation Tracking ────────────────────────────────────────────────
+// Lightweight daily ledger stored in MongoDB.
+// Tracks total coins generated (income) and removed (sinks) each calendar day.
+// Staff can query this with the .ecostats command to detect inflation.
+
+const econStatsSchema = new mongoose.Schema({
+  date:      { type: String, unique: true },  // 'YYYY-MM-DD'
+  generated: { type: Number, default: 0 },    // total coins injected today
+  removed:   { type: Number, default: 0 },    // total coins removed today
+}, { timestamps: false })
+const EconStats = mongoose.model('EconStats', econStatsSchema)
+
+function todayKey() {
+  return new Date().toISOString().split('T')[0]
+}
+
+async function trackCurrencyGenerated(amount) {
+  if (!amount || amount <= 0) return
+  try {
+    await EconStats.findOneAndUpdate(
+      { date: todayKey() },
+      { $inc: { generated: amount } },
+      { upsert: true }
+    )
+  } catch {}
+}
+
+async function trackCurrencyRemoved(amount) {
+  if (!amount || amount <= 0) return
+  try {
+    await EconStats.findOneAndUpdate(
+      { date: todayKey() },
+      { $inc: { removed: amount } },
+      { upsert: true }
+    )
+  } catch {}
+}
+
+async function getEconStats(days = 7) {
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - days)
+  const dateStr = cutoff.toISOString().split('T')[0]
+  return EconStats.find({ date: { $gte: dateStr } }).sort({ date: -1 }).lean()
+}
+
+async function getEconTotals() {
+  const agg = await EconStats.aggregate([
+    { $group: { _id: null, totalGenerated: { $sum: '$generated' }, totalRemoved: { $sum: '$removed' } } },
+  ])
+  return agg[0] || { totalGenerated: 0, totalRemoved: 0 }
+}
+
+// ── Bulk seed all cards from JSON files into MongoDB ──────────────────────────
+// Usage: await db.seedAllCards(cardIndex, cardIndex2, cardIndexMazoku)
+// cardIndex:    [{tier, title, url}]       — old shoob (numeric tier)
+// cardIndex2:   [{name, tier, url, series}] — new shoob (numeric tier)
+// cardIndexMazoku: [{id, name, tier, series, url}] — mazoku (C/R/SR/SSR/UR)
+async function seedAllCards(cardIndex, cardIndex2, cardIndexMazoku) {
+  const LOCAL_TO_LABEL = { '1':'T1','2':'T2','3':'T3','4':'T4','5':'T5','6':'T6','S':'TS','Z':'TZ' }
+  const MAZOKU_PRICES  = { C:17500, R:27500, SR:37500, SSR:50000, UR:62500 }
+  const TIER_PRICES_S  = { T1:17500, T2:27500, T3:37500, T4:50000, T5:62500, T6:72500, TS:90000, TZ:0 }
+
+  const ops = []
+
+  const pushOp = (imageUrl, name, tier, series, price) => {
+    if (!imageUrl) return
+    ops.push({
+      updateOne: {
+        filter: { image_url: imageUrl },
+        update: {
+          $setOnInsert: {
+            name:        name || 'Unknown',
+            tier:        tier || 'T1',
+            series:      series || '',
+            price:       price || 17500,
+            image_url:   imageUrl,
+            rarity:      RARITY_BY_TIER[tier] || 'Common',
+            uploaded_by: 'system',
+            external_id: imageUrl,
+          },
+        },
+        upsert: true,
+      },
+    })
+  }
+
+  for (const c of (cardIndex || [])) {
+    const tier = LOCAL_TO_LABEL[String(c.tier)] || String(c.tier)
+    pushOp(c.url, c.title, tier, '', TIER_PRICES_S[tier] || 17500)
+  }
+  for (const c of (cardIndex2 || [])) {
+    const tier = LOCAL_TO_LABEL[String(c.tier)] || String(c.tier)
+    pushOp(c.url, c.name, tier, c.series || '', TIER_PRICES_S[tier] || 17500)
+  }
+  for (const c of (cardIndexMazoku || [])) {
+    pushOp(c.url, c.name, c.tier, c.series || '', MAZOKU_PRICES[c.tier] || 17500)
+  }
+
+  if (!ops.length) return { inserted: 0, total: 0 }
+
+  const BATCH = 1000
+  let inserted = 0
+  for (let i = 0; i < ops.length; i += BATCH) {
+    const result = await Card.bulkWrite(ops.slice(i, i + BATCH), { ordered: false })
+    inserted += result.upsertedCount || 0
+    console.log(`[seedAllCards] batch ${Math.floor(i/BATCH)+1}/${Math.ceil(ops.length/BATCH)} — upserted so far: ${inserted}`)
+  }
+
+  const total = await Card.countDocuments()
+  console.log(`[seedAllCards] DONE. new inserts: ${inserted}, total cards in DB: ${total}`)
+  return { inserted, total }
+}
+
+async function getUserByJid(jid) {
+  if (!jid) return null
+  const cleanedJid = String(jid).includes('@') ? jid : `${jid}@s.whatsapp.net`
+  try {
+    return await User.findOne({ jid: cleanedJid }).lean()
+  } catch {
+    return null
+  }
+}
+
+// ── Custom Frames (.upload frame / .frames / .setframe / .clearframes) ────
+
+async function addFrame(name, image, mimeType, uploadedBy) {
+  const clean = String(name).trim().toLowerCase()
+  return Frame.findOneAndUpdate(
+    { name: clean },
+    { name: clean, image, mimeType, uploadedBy, createdAt: new Date() },
+    { upsert: true, new: true }
+  )
+}
+
+async function getFrames() {
+  return Frame.find().sort({ createdAt: 1 }).lean()
+}
+
+async function getFrameByName(name) {
+  return Frame.findOne({ name: String(name).trim().toLowerCase() }).lean()
+}
+
+async function clearFrames() {
+  const res = await Frame.deleteMany({})
+  await User.updateMany({}, { $set: { equipped_frame: null } })
+  return res.deletedCount || 0
+}
+
+async function setEquippedFrame(phone, frameName) {
+  return User.findOneAndUpdate({ phone }, { equipped_frame: frameName }, { new: true })
+}
+
+// Toggle the has_background flag on a custom frame (staff only).
+async function setFrameBackground(name, hasBg) {
+  return Frame.findOneAndUpdate(
+    { name: String(name).trim().toLowerCase() },
+    { has_background: !!hasBg },
+    { new: true }
+  )
+}
+
+// ── Paired Bots (.pair / .pfp / .img / .name) ──────────────────────────────
+
+async function addPairedBot(phone, pairedBy) {
+  return PairedBot.findOneAndUpdate(
+    { phone },
+    { $setOnInsert: { phone, pairedBy, name: 'Aqua', createdAt: new Date() } },
+    { upsert: true, new: true }
+  )
+}
+
+async function getPairedBots() {
+  return PairedBot.find().lean()
+}
+
+async function getPairedBot(phone) {
+  return PairedBot.findOne({ phone }).lean()
+}
+
+async function updatePairedBot(phone, updates) {
+  return PairedBot.findOneAndUpdate({ phone }, updates, { new: true })
+}
+
+async function removePairedBot(phone) {
+  return PairedBot.deleteOne({ phone })
+}
+
 module.exports = {
   supabase,
   // Users
-  getUser, createUser, getOrCreateUser, updateUser,
+  getUser, createUser, getOrCreateUser, updateUser, getUserByJid,
   // Groups
   getGroup, getOrCreateGroup, updateGroup,
   // Warnings
@@ -820,11 +1310,15 @@ module.exports = {
   getLeaderboard, getRichList, getUserCount, getGroupCount,
   // Cards
   addCard, getCards, getCard, getUserCards, getUserCardCount,
-  assignCard, addUserCard, deleteUserCardById, getCardOwners, getOrCreateShoobCard,
+  assignCard, addUserCard, deleteUserCardById, updateUserCardById, getCardOwners, getOrCreateShoobCard,
   getCardByExternalId, getOwnerCountsBatch,
   addMutedUser, removeMutedUser, deleteAllUsers,
+  // Card-spawn
+  setGroupCardSpawn, tickCardSpawn,
+  // AI persona
+  getAiPersona, setAiPersonaName, addAiPersonaFact, removeAiPersonaFact, clearAiPersonaFacts,
   // Pokémon
-  getUserPokemon, addPokemon, updatePokemon,
+  getUserPokemon, addPokemon, updatePokemon, getPokemonOwnersBySpeciesId,
   // Games
   getGame, createGame, updateGame, endGame,
   // Summer
@@ -842,6 +1336,20 @@ module.exports = {
   getSuspension, addSuspension, removeSuspension, getSuspensions,
   // Loans
   getLoan, createLoan, repayLoan, deleteLoan, getLoanTierForLevel, LOAN_TIERS,
+  // Per-group disabled commands
+  getGroupDisabledCmds, setGroupDisabledCmds,
+  // All staff
+  getAllStaff,
+  // WA ↔ Web linking
+  requestWaLink, verifyAndLinkJid,
+  // Card seeding
+  seedAllCards,
+  // Economy inflation tracking
+  trackCurrencyGenerated, trackCurrencyRemoved, getEconStats, getEconTotals,
   // Mongoose instance
   mongoose,
+  // Custom Frames
+  addFrame, getFrames, getFrameByName, clearFrames, setEquippedFrame, setFrameBackground,
+  // Paired Bots
+  addPairedBot, getPairedBots, getPairedBot, updatePairedBot, removePairedBot,
 }

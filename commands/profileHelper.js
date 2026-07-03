@@ -1,0 +1,1329 @@
+const sharp = require('sharp')
+const https = require('https')
+const http = require('http')
+const { execFile } = require('child_process')
+const os = require('os')
+const path = require('path')
+const fs = require('fs')
+
+const CARD_W = 1280
+const CARD_H = 1280
+const AV_CX  = 640
+const AV_CY  = 490
+const AV_R   = 220
+
+// ─── 70 FRAMES ──────────────────────────────────────────────────────────────
+const FRAMES = [
+  // ── BASIC (1–5) ──
+  { id: 1,  name: 'Classic White',    category: 'Basic',    type: 'solid',    color: '#FFFFFF', width: 6 },
+  { id: 2,  name: 'Gold Rush',        category: 'Basic',    type: 'solid',    color: '#FFD700', width: 7 },
+  { id: 3,  name: 'Silver Strike',    category: 'Basic',    type: 'solid',    color: '#C0C0C0', width: 6 },
+  { id: 4,  name: 'Bronze Guard',     category: 'Basic',    type: 'solid',    color: '#CD7F32', width: 6 },
+  { id: 5,  name: 'Crimson Blood',    category: 'Basic',    type: 'solid',    color: '#DC143C', width: 7 },
+  // ── NEON (6–10) ──
+  { id: 6,  name: 'Neon Cyan',        category: 'Neon',     type: 'glow',     color: '#00FFFF', width: 5 },
+  { id: 7,  name: 'Neon Pink',        category: 'Neon',     type: 'glow',     color: '#FF00FF', width: 5 },
+  { id: 8,  name: 'Neon Green',       category: 'Neon',     type: 'glow',     color: '#39FF14', width: 5 },
+  { id: 9,  name: 'Neon Orange',      category: 'Neon',     type: 'glow',     color: '#FF6600', width: 5 },
+  { id: 10, name: 'Neon Yellow',      category: 'Neon',     type: 'glow',     color: '#FFFF00', width: 5 },
+  // ── GRADIENT (11–15) ──
+  { id: 11, name: 'Sunset Flame',     category: 'Gradient', type: 'gradient', color: '#FF6B35', color2: '#FF0066', width: 7 },
+  { id: 12, name: 'Ocean Tide',       category: 'Gradient', type: 'gradient', color: '#0099FF', color2: '#00FFCC', width: 7 },
+  { id: 13, name: 'Aurora',           category: 'Gradient', type: 'gradient', color: '#00FF88', color2: '#AA00FF', width: 7 },
+  { id: 14, name: 'Galaxy Core',      category: 'Gradient', type: 'gradient', color: '#9933FF', color2: '#FF3366', width: 7 },
+  { id: 15, name: 'Forest Dawn',      category: 'Gradient', type: 'gradient', color: '#228B22', color2: '#90EE90', width: 7 },
+  // ── ORNATE / DOUBLE (16–20) ──
+  { id: 16, name: 'Royal Crown',      category: 'Ornate',   type: 'double',   color: '#FFD700', color2: '#FFF8DC', width: 4 },
+  { id: 17, name: 'Shadow King',      category: 'Ornate',   type: 'double',   color: '#8B008B', color2: '#1a1a2e', width: 4 },
+  { id: 18, name: 'Eclipse Ring',     category: 'Ornate',   type: 'double',   color: '#FF8C00', color2: '#444444', width: 4 },
+  { id: 19, name: 'Void Abyss',       category: 'Ornate',   type: 'double',   color: '#440044', color2: '#220022', width: 4 },
+  { id: 20, name: 'Phantom Night',    category: 'Ornate',   type: 'double',   color: '#7B68EE', color2: '#2d2d4e', width: 4 },
+  // ── NATURE / DASHED (21–25) ──
+  { id: 21, name: 'Sakura Bloom',     category: 'Nature',   type: 'dashed',   color: '#FFB7C5', width: 6, dash: '8,4' },
+  { id: 22, name: 'Lightning',        category: 'Nature',   type: 'dashed',   color: '#FFD700', width: 4, dash: '3,7' },
+  { id: 23, name: 'Ice Crystal',      category: 'Nature',   type: 'dashed',   color: '#B0E0E6', width: 5, dash: '12,3' },
+  { id: 24, name: 'Fire Blaze',       category: 'Nature',   type: 'dashed',   color: '#FF4500', width: 8, dash: '6,2' },
+  { id: 25, name: 'Vine Wrap',        category: 'Nature',   type: 'dashed',   color: '#32CD32', width: 5, dash: '4,8' },
+  // ── PRESTIGE (26–30) ──
+  { id: 26, name: 'Diamond Crest',    category: 'Prestige', type: 'triple',   color: '#B9F2FF', color2: '#FFFFFF', color3: '#B9F2FF', width: 3 },
+  { id: 27, name: 'Zodiac Mystic',    category: 'Prestige', type: 'dotted',   color: '#9400D3', width: 4, dash: '3,6' },
+  { id: 28, name: 'Legendary Aura',   category: 'Prestige', type: 'triple',   color: '#FFD700', color2: '#FFA500', color3: '#FF8C00', width: 3 },
+  { id: 29, name: 'Mythic Seal',      category: 'Prestige', type: 'rainbow',  color: '#FF0000', color2: '#00FF00', color3: '#0000FF', width: 7 },
+  { id: 30, name: 'Shadow Crown',     category: 'Prestige', type: 'glow',     color: '#9933FF', width: 8 },
+  // ── PAGE 1 EXTRAS (31–35) ──
+  { id: 31, name: 'Pastel Lavender',  category: 'Extra',    type: 'solid',    color: '#E6D0FF', width: 6 },
+  { id: 32, name: 'Coral Sunset',     category: 'Extra',    type: 'solid',    color: '#FF7F50', width: 7 },
+  { id: 33, name: 'Sky Drift',        category: 'Extra',    type: 'solid',    color: '#87CEEB', width: 6 },
+  { id: 34, name: 'Mint Glow',        category: 'Extra',    type: 'glow',     color: '#98FF98', width: 5 },
+  { id: 35, name: 'Warm Amber',       category: 'Extra',    type: 'solid',    color: '#FFBF00', width: 7 },
+  // ── ANIME BASICS (36–40) ──
+  { id: 36, name: 'Sakura Petals',    category: 'Anime',    type: 'petal',    color: '#FFB7C5', count: 12, r2: 8, r3: 3 },
+  { id: 37, name: 'Stardust',         category: 'Anime',    type: 'dotring',  color: '#FFFFFF', count: 16, dotR: 4 },
+  { id: 38, name: 'Magical Girl',     category: 'Anime',    type: 'dotring',  color: '#FF69B4', count: 14, dotR: 5 },
+  { id: 39, name: 'Chibi Pop',        category: 'Anime',    type: 'dotring',  color: '#FFD700', count: 18, dotR: 3 },
+  { id: 40, name: 'Manga Action',     category: 'Anime',    type: 'triple',   color: '#FFFFFF', color2: '#AAAAAA', color3: '#444444', width: 2 },
+  // ── ANIME FANTASY (41–45) ──
+  { id: 41, name: 'Shonen Rage',      category: 'Anime',    type: 'glow',     color: '#FF2222', width: 9 },
+  { id: 42, name: 'Moon Rabbit',      category: 'Anime',    type: 'dotring',  color: '#DDE8FF', count: 12, dotR: 5 },
+  { id: 43, name: 'Dragon Lord',      category: 'Anime',    type: 'gradient', color: '#006400', color2: '#7FFF00', width: 8 },
+  { id: 44, name: 'Demon King',       category: 'Anime',    type: 'glow',     color: '#8B0000', width: 8 },
+  { id: 45, name: 'Spirit Fox',       category: 'Anime',    type: 'sparkle',  color: '#FF8C00', count: 8 },
+  // ── ANIME MAGIC (46–50) ──
+  { id: 46, name: 'Crystal Fairy',    category: 'Anime',    type: 'triple',   color: '#00FFFF', color2: '#7FFFAA', color3: '#00BFFF', width: 3 },
+  { id: 47, name: 'Shrine Maiden',    category: 'Anime',    type: 'double',   color: '#FFFFFF', color2: '#FF2244', width: 4 },
+  { id: 48, name: 'Dark Sorcerer',    category: 'Anime',    type: 'triple',   color: '#4B0082', color2: '#8B008B', color3: '#9400D3', width: 4 },
+  { id: 49, name: 'Thunder Deity',    category: 'Anime',    type: 'sparkle',  color: '#FFD700', count: 10 },
+  { id: 50, name: 'Cosmic Guard',     category: 'Anime',    type: 'glow',     color: '#4169E1', width: 7 },
+  // ── ANIME NATURE (51–55) ──
+  { id: 51, name: 'Cherry Storm',     category: 'Anime',    type: 'petal',    color: '#FF1493', count: 10, r2: 10, r3: 4 },
+  { id: 52, name: 'Arcane Rune',      category: 'Anime',    type: 'dotted',   color: '#9370DB', width: 5, dash: '4,4' },
+  { id: 53, name: 'Inferno Spirit',   category: 'Anime',    type: 'sparkle',  color: '#FF4500', count: 12 },
+  { id: 54, name: 'Frost Empress',    category: 'Anime',    type: 'triple',   color: '#ADD8E6', color2: '#E0F4FF', color3: '#87CEEB', width: 3 },
+  { id: 55, name: 'Night Blade',      category: 'Anime',    type: 'double',   color: '#778899', color2: '#1C1C1C', width: 5 },
+  // ── ANIME CYBERPUNK (56–60) ──
+  { id: 56, name: 'Neo Tokyo',        category: 'Anime',    type: 'glow',     color: '#00FF41', width: 6 },
+  { id: 57, name: 'Pixel Warrior',    category: 'Anime',    type: 'dashed',   color: '#FF6347', width: 5, dash: '4,4' },
+  { id: 58, name: 'Aurora Dream',     category: 'Anime',    type: 'rainbow',  color: '#FF1493', color2: '#9400D3', color3: '#00BFFF', width: 8 },
+  { id: 59, name: 'Crimson Oni',      category: 'Anime',    type: 'double',   color: '#DC143C', color2: '#8B0000', width: 5 },
+  { id: 60, name: 'Ronin Edge',       category: 'Anime',    type: 'gradient', color: '#191970', color2: '#DAA520', width: 8 },
+  // ── ANIME PRESTIGE (61–65) ──
+  { id: 61, name: 'Twilight Witch',   category: 'Anime',    type: 'glow',     color: '#9B30FF', width: 8 },
+  { id: 62, name: 'Bubble Charm',     category: 'Anime',    type: 'dotring',  color: '#FFB6C1', count: 20, dotR: 3 },
+  { id: 63, name: 'Storm Dragon',     category: 'Anime',    type: 'triple',   color: '#4169E1', color2: '#87CEEB', color3: '#F0F8FF', width: 4 },
+  { id: 64, name: 'Blossom Crown',    category: 'Anime',    type: 'petal',    color: '#FF91A4', count: 16, r2: 6, r3: 2 },
+  { id: 65, name: 'Void Walker',      category: 'Anime',    type: 'glow',     color: '#9400D3', width: 10 },
+  // ── ANIME ULTIMATE (66–70) ──
+  { id: 66, name: 'Cotton Candy',     category: 'Anime',    type: 'gradient', color: '#FFB6C1', color2: '#B0C4DE', width: 7 },
+  { id: 67, name: 'Phantom Soul',     category: 'Anime',    type: 'glow',     color: '#B0C4DE', width: 6 },
+  { id: 68, name: 'Infernal Lord',    category: 'Anime',    type: 'triple',   color: '#FF0000', color2: '#8B0000', color3: '#DC143C', width: 4 },
+  { id: 69, name: 'Star Prism',       category: 'Anime',    type: 'rainbow',  color: '#FF0000', color2: '#00FF88', color3: '#0099FF', width: 9 },
+  { id: 70, name: 'Eternal Shadow',   category: 'Anime',    type: 'glow',     color: '#CC00FF', width: 11 },
+
+  // ── 3D IMAGE FRAMES (71–100) ──────────────────────────────────────────────
+  // Aquatic
+  { id: 71,  name: 'Ocean Storm',     category: '3D',  type: 'image', light: '#66ddff', mid: '#0066cc', dark: '#001144', glow: '#00ccff', accent: '#00ffff', accent2: '#88eeff', deco: 'drop'    },
+  { id: 72,  name: 'Frost Crown',     category: '3D',  type: 'image', light: '#eef8ff', mid: '#88bbdd', dark: '#0a2a44', glow: '#cceeff', accent: '#ffffff', accent2: '#aaddff', deco: 'crystal' },
+  { id: 73,  name: 'Coral Reef',      category: '3D',  type: 'image', light: '#ff9966', mid: '#dd4422', dark: '#220800', glow: '#ff7744', accent: '#00ccee', accent2: '#ff8866', deco: 'orb'     },
+  // Fire
+  { id: 74,  name: 'Inferno Gate',    category: '3D',  type: 'image', light: '#ffaa44', mid: '#cc2200', dark: '#280400', glow: '#ff5500', accent: '#ffdd00', accent2: '#ff8833', deco: 'flame'   },
+  { id: 75,  name: 'Phoenix Rise',    category: '3D',  type: 'image', light: '#ffee66', mid: '#dd6600', dark: '#1e0800', glow: '#ff8800', accent: '#fff066', accent2: '#ffcc22', deco: 'flame'   },
+  { id: 76,  name: 'Solar Flare',     category: '3D',  type: 'image', light: '#ffff88', mid: '#ff9900', dark: '#220f00', glow: '#ffcc00', accent: '#ffff44', accent2: '#ffdd44', deco: 'star'    },
+  // Nature
+  { id: 77,  name: 'Emerald Warden',  category: '3D',  type: 'image', light: '#66ff99', mid: '#00aa44', dark: '#001a0a', glow: '#00ff66', accent: '#aaff66', accent2: '#44ff88', deco: 'crystal' },
+  { id: 78,  name: 'Forest Spirit',   category: '3D',  type: 'image', light: '#44cc55', mid: '#006622', dark: '#000d04', glow: '#33bb44', accent: '#88ff55', accent2: '#66dd33', deco: 'drop'    },
+  { id: 79,  name: 'Cherry Blossom',  category: '3D',  type: 'image', light: '#ffccdd', mid: '#dd4488', dark: '#1a000e', glow: '#ff88bb', accent: '#ffffff', accent2: '#ffbbdd', deco: 'orb'     },
+  // Arcane
+  { id: 80,  name: 'Arcane Seal',     category: '3D',  type: 'image', light: '#dd88ff', mid: '#8800cc', dark: '#12002a', glow: '#bb44ff', accent: '#ff99ff', accent2: '#cc66ff', deco: 'orb'     },
+  { id: 81,  name: 'Void Nexus',      category: '3D',  type: 'image', light: '#44ffee', mid: '#007766', dark: '#000d0a', glow: '#00ffcc', accent: '#66ffee', accent2: '#33ddcc', deco: 'diamond' },
+  { id: 82,  name: 'Shadow Throne',   category: '3D',  type: 'image', light: '#bb77ff', mid: '#550099', dark: '#080011', glow: '#8800ff', accent: '#dd77ff', accent2: '#9933ff', deco: 'spike'   },
+  { id: 83,  name: 'Nebula Core',     category: '3D',  type: 'image', light: '#ff66cc', mid: '#5533ff', dark: '#080011', glow: '#9966ff', accent: '#88aaff', accent2: '#ff88ff', deco: 'star'    },
+  // Prestige
+  { id: 84,  name: 'Golden Emperor',  category: '3D',  type: 'image', light: '#fff099', mid: '#ddaa00', dark: '#2e1a00', glow: '#ffcc00', accent: '#ffffff', accent2: '#ffee88', deco: 'diamond' },
+  { id: 85,  name: 'Diamond Crest',   category: '3D',  type: 'image', light: '#ffffff', mid: '#aaccee', dark: '#223344', glow: '#ddeeff', accent: '#ccffff', accent2: '#aaddff', deco: 'diamond' },
+  { id: 86,  name: 'Angel Halo',      category: '3D',  type: 'image', light: '#fffff0', mid: '#eedd88', dark: '#1a1200', glow: '#ffffaa', accent: '#ffffff', accent2: '#ffffcc', deco: 'orb'     },
+  { id: 87,  name: 'Ancient Rune',    category: '3D',  type: 'image', light: '#ddbb66', mid: '#886600', dark: '#0d0900', glow: '#ccaa33', accent: '#ffdd88', accent2: '#ccaa44', deco: 'diamond' },
+  // Dark
+  { id: 88,  name: 'Crimson Eclipse', category: '3D',  type: 'image', light: '#ff6655', mid: '#aa0000', dark: '#110000', glow: '#dd0000', accent: '#ff8888', accent2: '#ff3333', deco: 'spike'   },
+  { id: 89,  name: 'Demon Seal',      category: '3D',  type: 'image', light: '#cc3300', mid: '#550000', dark: '#080000', glow: '#aa1100', accent: '#ff2200', accent2: '#882200', deco: 'spike'   },
+  { id: 90,  name: 'Obsidian Edge',   category: '3D',  type: 'image', light: '#888899', mid: '#333344', dark: '#050508', glow: '#7777aa', accent: '#9999bb', accent2: '#666688', deco: 'crystal' },
+  { id: 91,  name: 'Midnight Raven',  category: '3D',  type: 'image', light: '#4466aa', mid: '#112255', dark: '#020509', glow: '#3355aa', accent: '#6688cc', accent2: '#334477', deco: 'orb'     },
+  { id: 92,  name: 'Blood Moon',      category: '3D',  type: 'image', light: '#dd2222', mid: '#770000', dark: '#0d0000', glow: '#cc1100', accent: '#ff4444', accent2: '#cc0000', deco: 'orb'     },
+  // Storm & Energy
+  { id: 93,  name: 'Thunder God',     category: '3D',  type: 'image', light: '#ffff44', mid: '#ffaa00', dark: '#1a1000', glow: '#ffee00', accent: '#ffffff', accent2: '#ffff99', deco: 'star'    },
+  { id: 94,  name: 'Storm Breaker',   category: '3D',  type: 'image', light: '#88aacc', mid: '#334466', dark: '#05080f', glow: '#6688bb', accent: '#aaccff', accent2: '#7799bb', deco: 'spike'   },
+  { id: 95,  name: 'Neon Surge',      category: '3D',  type: 'image', light: '#66ffcc', mid: '#00bb88', dark: '#000d08', glow: '#00ffaa', accent: '#aaffee', accent2: '#33ffcc', deco: 'star'    },
+  // Special
+  { id: 96,  name: 'Dragon Scale',    category: '3D',  type: 'image', light: '#44dd22', mid: '#115500', dark: '#010800', glow: '#44bb22', accent: '#ffdd00', accent2: '#33bb11', deco: 'spike'   },
+  { id: 97,  name: 'Lunar Shrine',    category: '3D',  type: 'image', light: '#eef4ff', mid: '#7788bb', dark: '#080c18', glow: '#9aaad4', accent: '#ffffff', accent2: '#ccd8ff', deco: 'orb'     },
+  { id: 98,  name: 'Rose Quartz',     category: '3D',  type: 'image', light: '#ffddee', mid: '#cc5577', dark: '#150008', glow: '#ff88aa', accent: '#ffd0e0', accent2: '#ff99bb', deco: 'orb'     },
+  { id: 99,  name: 'Toxic Bloom',     category: '3D',  type: 'image', light: '#aaff22', mid: '#55aa00', dark: '#081000', glow: '#88ff00', accent: '#eeff44', accent2: '#88dd00', deco: 'drop'    },
+  { id: 100, name: 'Starfall',        category: '3D',  type: 'image', light: '#5577ff', mid: '#1133bb', dark: '#010318', glow: '#3355dd', accent: '#ffdd66', accent2: '#aabbff', deco: 'star'    },
+]
+
+function getFrame(id) {
+  return FRAMES.find(f => f.id === Number(id)) || FRAMES[0]
+}
+module.exports.FRAMES = FRAMES
+module.exports.getFrame = getFrame
+
+// ─── FRAME SVG ELEMENTS ──────────────────────────────────────────────────────
+function buildFrameElements(frame, cx, cy, r, uid) {
+  let defs = ''
+  let circles = ''
+  const w = frame.width || 5
+
+  switch (frame.type) {
+    case 'solid':
+      // 3D bevel effect: lighter top-left, darker bottom-right
+      defs = `
+        <filter id="bevel-${uid}" x="-5%" y="-5%" width="110%" height="110%">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur"/>
+          <feOffset dx="-2" dy="-2" in="blur" result="offsetBlur1"/>
+          <feOffset dx="2" dy="2" in="blur" result="offsetBlur2"/>
+          <feFlood flood-color="rgba(255,255,255,0.4)" result="light"/>
+          <feFlood flood-color="rgba(0,0,0,0.5)" result="shadow"/>
+          <feComposite in="light" in2="offsetBlur1" operator="in" result="lightEdge"/>
+          <feComposite in="shadow" in2="offsetBlur2" operator="in" result="shadowEdge"/>
+          <feMerge>
+            <feMergeNode in="shadowEdge"/>
+            <feMergeNode in="SourceGraphic"/>
+            <feMergeNode in="lightEdge"/>
+          </feMerge>
+        </filter>
+        <linearGradient id="bevelGrad-${uid}" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="${lighten(frame.color, 0.5)}"/>
+          <stop offset="40%" stop-color="${frame.color}"/>
+          <stop offset="100%" stop-color="${darken(frame.color, 0.4)}"/>
+        </linearGradient>`
+      // Outer shadow ring
+      circles = `
+        <circle cx="${cx + 2}" cy="${cy + 2}" r="${r}" fill="none" stroke="rgba(0,0,0,0.4)" stroke-width="${w + 2}"/>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="url(#bevelGrad-${uid})" stroke-width="${w}" filter="url(#bevel-${uid})"/>
+        <circle cx="${cx - 1}" cy="${cy - 1}" r="${r - w / 2}" fill="none" stroke="${lighten(frame.color, 0.6)}" stroke-width="1" opacity="0.5"/>`
+      break
+
+    case 'glow': {
+      const fid = `glow-${uid}`
+      // Multi-layer glow for cartoon 3D pop
+      defs = `
+        <filter id="${fid}" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="6" result="blur1"/>
+          <feGaussianBlur stdDeviation="3" result="blur2"/>
+          <feMerge><feMergeNode in="blur1"/><feMergeNode in="blur2"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <linearGradient id="glowG-${uid}" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="${lighten(frame.color, 0.5)}"/>
+          <stop offset="100%" stop-color="${frame.color}"/>
+        </linearGradient>`
+      circles = `
+        <circle cx="${cx + 2}" cy="${cy + 2}" r="${r}" fill="none" stroke="${darken(frame.color, 0.5)}" stroke-width="${w + 3}" opacity="0.4"/>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${frame.color}" stroke-width="${w + 4}" filter="url(#${fid})" opacity="0.5"/>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="url(#glowG-${uid})" stroke-width="${w}"/>`
+      break
+    }
+
+    case 'gradient': {
+      const gid = `grad-${uid}`
+      defs = `
+        <linearGradient id="${gid}" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="${frame.color}"/>
+          <stop offset="50%" stop-color="${blend(frame.color, frame.color2 || frame.color, 0.5)}"/>
+          <stop offset="100%" stop-color="${frame.color2 || frame.color}"/>
+        </linearGradient>
+        <filter id="gradShadow-${uid}">
+          <feDropShadow dx="2" dy="3" stdDeviation="3" flood-color="rgba(0,0,0,0.5)"/>
+        </filter>`
+      circles = `
+        <circle cx="${cx + 3}" cy="${cy + 3}" r="${r}" fill="none" stroke="rgba(0,0,0,0.3)" stroke-width="${w + 2}"/>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="url(#${gid})" stroke-width="${w}" filter="url(#gradShadow-${uid})"/>
+        <circle cx="${cx - 1}" cy="${cy - 1}" r="${r}" fill="none" stroke="${lighten(frame.color, 0.4)}" stroke-width="1.5" opacity="0.5"/>`
+      break
+    }
+
+    case 'double':
+      defs = `<filter id="dblShadow-${uid}"><feDropShadow dx="2" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,0.6)"/></filter>`
+      circles = `
+        <circle cx="${cx + 2}" cy="${cy + 2}" r="${r + 5}" fill="none" stroke="rgba(0,0,0,0.3)" stroke-width="5"/>
+        <circle cx="${cx}" cy="${cy}" r="${r + 5}" fill="none" stroke="${frame.color}" stroke-width="3.5" filter="url(#dblShadow-${uid})"/>
+        <circle cx="${cx}" cy="${cy}" r="${r - 4}" fill="none" stroke="${frame.color2 || frame.color}" stroke-width="3"/>
+        <circle cx="${cx - 1}" cy="${cy - 1}" r="${r + 5}" fill="none" stroke="${lighten(frame.color, 0.5)}" stroke-width="1" opacity="0.4"/>`
+      break
+
+    case 'dashed':
+      defs = `<filter id="dashShadow-${uid}"><feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,0.5)"/></filter>`
+      circles = `
+        <circle cx="${cx + 2}" cy="${cy + 2}" r="${r}" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="${w + 2}" stroke-dasharray="${frame.dash || '8,4'}"/>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${frame.color}" stroke-width="${w}" stroke-dasharray="${frame.dash || '8,4'}" filter="url(#dashShadow-${uid})"/>`
+      break
+
+    case 'dotted':
+      circles = `
+        <circle cx="${cx + 2}" cy="${cy + 2}" r="${r}" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="${w}" stroke-dasharray="${frame.dash || '3,6'}" stroke-linecap="round"/>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${frame.color}" stroke-width="${w}" stroke-dasharray="${frame.dash || '3,6'}" stroke-linecap="round"/>`
+      break
+
+    case 'triple': {
+      const c1 = frame.color
+      const c2 = frame.color2 || frame.color
+      const c3 = frame.color3 || frame.color2 || frame.color
+      defs = `<filter id="triShadow-${uid}"><feDropShadow dx="2" dy="3" stdDeviation="3" flood-color="rgba(0,0,0,0.5)"/></filter>`
+      circles = `
+        <circle cx="${cx + 3}" cy="${cy + 3}" r="${r + 7}" fill="none" stroke="rgba(0,0,0,0.3)" stroke-width="${w + 2}"/>
+        <circle cx="${cx}" cy="${cy}" r="${r + 7}" fill="none" stroke="${c1}" stroke-width="${w}" filter="url(#triShadow-${uid})"/>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${c2}" stroke-width="${w}"/>
+        <circle cx="${cx}" cy="${cy}" r="${r - 7}" fill="none" stroke="${c3}" stroke-width="${w}"/>
+        <circle cx="${cx - 1}" cy="${cy - 1}" r="${r + 7}" fill="none" stroke="${lighten(c1, 0.4)}" stroke-width="1" opacity="0.4"/>`
+      break
+    }
+
+    case 'rainbow': {
+      const gid = `rainbow-${uid}`
+      defs = `
+        <linearGradient id="${gid}" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="${frame.color}"/>
+          <stop offset="50%" stop-color="${frame.color2 || '#00FF00'}"/>
+          <stop offset="100%" stop-color="${frame.color3 || '#0000FF'}"/>
+        </linearGradient>
+        <filter id="rainbowGlow-${uid}" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="4" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>`
+      circles = `
+        <circle cx="${cx + 2}" cy="${cy + 2}" r="${r}" fill="none" stroke="rgba(0,0,0,0.3)" stroke-width="${w + 2}"/>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="url(#${gid})" stroke-width="${w}" filter="url(#rainbowGlow-${uid})"/>`
+      break
+    }
+
+    case 'dotring': {
+      const N = frame.count || 16
+      const dr = frame.dotR || 4
+      defs = `<filter id="dotShadow-${uid}"><feDropShadow dx="1" dy="1" stdDeviation="1.5" flood-color="rgba(0,0,0,0.5)"/></filter>`
+      for (let i = 0; i < N; i++) {
+        const angle = (i / N) * 2 * Math.PI
+        const dx = (cx + r * Math.cos(angle)).toFixed(1)
+        const dy = (cy + r * Math.sin(angle)).toFixed(1)
+        // Alternating size for 3D depth illusion
+        const sz = dr * (0.75 + 0.25 * Math.sin(angle + Math.PI / 4))
+        circles += `<circle cx="${dx}" cy="${dy}" r="${sz.toFixed(1)}" fill="${frame.color}" filter="url(#dotShadow-${uid})"/>`
+        // Highlight on top of each dot
+        circles += `<circle cx="${(parseFloat(dx) - 0.5).toFixed(1)}" cy="${(parseFloat(dy) - 0.5).toFixed(1)}" r="${(sz * 0.3).toFixed(1)}" fill="${lighten(frame.color, 0.6)}" opacity="0.7"/>`
+      }
+      break
+    }
+
+    case 'petal': {
+      const N = frame.count || 12
+      const rx = frame.r2 || 7
+      const ry = frame.r3 || 3
+      defs = `<filter id="petalShadow-${uid}"><feDropShadow dx="1" dy="1" stdDeviation="1.5" flood-color="rgba(0,0,0,0.4)"/></filter>
+        <radialGradient id="petalG-${uid}" cx="35%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="${lighten(frame.color, 0.5)}"/>
+          <stop offset="100%" stop-color="${frame.color}"/>
+        </radialGradient>`
+      for (let i = 0; i < N; i++) {
+        const angleDeg = (i / N) * 360
+        const angleRad = (angleDeg * Math.PI) / 180
+        const ex = (cx + r * Math.cos(angleRad)).toFixed(1)
+        const ey = (cy + r * Math.sin(angleRad)).toFixed(1)
+        circles += `<ellipse cx="${ex}" cy="${ey}" rx="${rx}" ry="${ry}" fill="url(#petalG-${uid})" transform="rotate(${angleDeg.toFixed(1)} ${ex} ${ey})" filter="url(#petalShadow-${uid})"/>`
+      }
+      break
+    }
+
+    case 'sparkle': {
+      const N = frame.count || 8
+      const sz = 7
+      defs = `<filter id="sparkShadow-${uid}"><feDropShadow dx="1" dy="1" stdDeviation="2" flood-color="rgba(0,0,0,0.5)"/></filter>
+        <radialGradient id="sparkG-${uid}" cx="30%" cy="30%" r="70%">
+          <stop offset="0%" stop-color="${lighten(frame.color, 0.6)}"/>
+          <stop offset="100%" stop-color="${frame.color}"/>
+        </radialGradient>`
+      for (let i = 0; i < N; i++) {
+        const angle = (i / N) * 2 * Math.PI
+        const sx = (cx + r * Math.cos(angle)).toFixed(1)
+        const sy = (cy + r * Math.sin(angle)).toFixed(1)
+        const deg = ((i / N) * 360).toFixed(1)
+        const pts = [
+          `${sx},${(cy + r * Math.sin(angle) - sz * 1.8).toFixed(1)}`,
+          `${(cx + r * Math.cos(angle) + sz * 0.6).toFixed(1)},${sy}`,
+          `${sx},${(cy + r * Math.sin(angle) + sz * 1.8).toFixed(1)}`,
+          `${(cx + r * Math.cos(angle) - sz * 0.6).toFixed(1)},${sy}`,
+        ].join(' ')
+        circles += `<polygon points="${pts}" fill="url(#sparkG-${uid})" transform="rotate(${deg} ${sx} ${sy})" filter="url(#sparkShadow-${uid})"/>`
+        // Star highlight
+        circles += `<polygon points="${pts}" fill="${lighten(frame.color, 0.6)}" transform="rotate(${deg} ${sx} ${sy})" opacity="0.25" transform-origin="${sx} ${sy}" style="transform: rotate(${deg}deg) scale(0.4)"/>`
+      }
+      break
+    }
+
+    case 'image': {
+      // 3D image frame - render a vivid layered ring using the frame's palette
+      const gid   = `imgGrad-${uid}`
+      const gid2  = `imgRim-${uid}`
+      const light  = frame.light  || '#ffffff'
+      const mid    = frame.mid    || '#888888'
+      const dark   = frame.dark   || '#111111'
+      const glowC  = frame.glow   || light
+      const acc    = frame.accent || light
+      const acc2   = frame.accent2 || acc
+      defs = `
+        <radialGradient id="${gid}" cx="32%" cy="28%" r="72%">
+          <stop offset="0%"   stop-color="${light}"/>
+          <stop offset="45%"  stop-color="${mid}"/>
+          <stop offset="100%" stop-color="${dark}"/>
+        </radialGradient>
+        <linearGradient id="${gid2}" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%"   stop-color="${light}"/>
+          <stop offset="100%" stop-color="${mid}"/>
+        </linearGradient>`
+      // outer ambient glow (two overlapping for bloom)
+      circles = `
+        <circle cx="${cx}"   cy="${cy}"   r="${r+13}" fill="${glowC}" opacity="0.10"/>
+        <circle cx="${cx}"   cy="${cy}"   r="${r+9}"  fill="${glowC}" opacity="0.14"/>
+        <circle cx="${cx+3}" cy="${cy+3}" r="${r+6}"  fill="${dark}"  opacity="0.55"/>
+        <circle cx="${cx}"   cy="${cy}"   r="${r+6}"  fill="url(#${gid})" opacity="0.88"/>
+        <circle cx="${cx}"   cy="${cy}"   r="${r+3}"  fill="none" stroke="${mid}"   stroke-width="6"/>
+        <circle cx="${cx}"   cy="${cy}"   r="${r+6}"  fill="none" stroke="${light}" stroke-width="1.5" opacity="0.55"/>
+        <circle cx="${cx}"   cy="${cy}"   r="${r}"    fill="none" stroke="url(#${gid2})" stroke-width="2.5" opacity="0.7"/>
+        <circle cx="${cx-1}" cy="${cy-1}" r="${r+4}"  fill="none" stroke="white" stroke-width="0.8" opacity="0.18"/>
+        <circle cx="${cx}"   cy="${cy}"   r="${r-3}"  fill="none" stroke="${acc2}" stroke-width="1.2" opacity="0.45"/>`
+      // top & bottom accent gems
+      circles += `
+        <circle cx="${cx}" cy="${cy-r-3}" r="5.5" fill="${acc}" opacity="0.92"/>
+        <circle cx="${cx-1.5}" cy="${cy-r-4.5}" r="2" fill="white" opacity="0.5"/>
+        <circle cx="${cx}" cy="${cy+r+3}" r="4" fill="${acc2}" opacity="0.82"/>
+        <circle cx="${cx-1}" cy="${cy+r+1.5}" r="1.4" fill="white" opacity="0.42"/>`
+      break
+    }
+
+    default:
+      circles = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${frame.color || '#FFFFFF'}" stroke-width="${w}"/>`
+  }
+
+  return { defs, circles }
+}
+
+// ─── COLOR HELPERS ──────────────────────────────────────────────────────────
+function hexToRgb(hex) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16),
+  } : { r: 128, g: 128, b: 128 }
+}
+function lighten(hex, amount) {
+  const { r, g, b } = hexToRgb(hex)
+  const rr = Math.round(Math.min(255, r + (255 - r) * amount))
+  const gg = Math.round(Math.min(255, g + (255 - g) * amount))
+  const bb = Math.round(Math.min(255, b + (255 - b) * amount))
+  return `rgb(${rr},${gg},${bb})`
+}
+function darken(hex, amount) {
+  const { r, g, b } = hexToRgb(hex)
+  const rr = Math.round(r * (1 - amount))
+  const gg = Math.round(g * (1 - amount))
+  const bb = Math.round(b * (1 - amount))
+  return `rgb(${rr},${gg},${bb})`
+}
+function blend(hex1, hex2, t) {
+  const a = hexToRgb(hex1), b = hexToRgb(hex2)
+  return `rgb(${Math.round(a.r + (b.r - a.r) * t)},${Math.round(a.g + (b.g - a.g) * t)},${Math.round(a.b + (b.b - a.b) * t)})`
+}
+
+// ─── 3D IMAGE FRAME SVG GENERATOR ────────────────────────────────────────────
+// NOTE: Uses NO SVG <filter> elements - libvips/Sharp only supports gradients
+// and basic shapes. The 3D illusion is achieved with layered circles.
+function buildImageFrameSvg(frame) {
+  const SIZE  = 300
+  const CX    = 150, CY = 150
+  const MID_R = 117
+  const W     = 58
+  const id    = `if${frame.id}`
+
+  const { light, mid, dark, glow: glowC, accent, deco = 'orb' } = frame
+  const accent2 = frame.accent2 || accent
+
+  // ── Dots (no filter attribute) ──
+  let dotsSvg = ''
+  const NUM_DOTS = 8
+  for (let i = 0; i < NUM_DOTS; i++) {
+    if (i === 0 || i === 4) continue
+    const angleDeg = (i / NUM_DOTS) * 360 - 90
+    const angleRad = angleDeg * Math.PI / 180
+    const dx = (CX + MID_R * Math.cos(angleRad)).toFixed(1)
+    const dy = (CY + MID_R * Math.sin(angleRad)).toFixed(1)
+    const sz = (3.2 + 1.4 * Math.abs(Math.sin(angleRad))).toFixed(1)
+    // Simulated glow: two overlapping circles at different opacities
+    dotsSvg += `<circle cx="${dx}" cy="${dy}" r="${(parseFloat(sz)*1.9).toFixed(1)}" fill="${accent2}" opacity="0.18"/>`
+    dotsSvg += `<circle cx="${dx}" cy="${dy}" r="${sz}" fill="${accent2}" opacity="0.92"/>`
+    dotsSvg += `<circle cx="${(parseFloat(dx)-0.8).toFixed(1)}" cy="${(parseFloat(dy)-0.8).toFixed(1)}" r="${(parseFloat(sz)*0.35).toFixed(1)}" fill="white" opacity="0.58"/>`
+  }
+
+  // ── Accent gem builder (NO filter attributes) ──
+  function makeAccent(ax, ay, sz, top) {
+    const d = top ? -1 : 1
+    switch (deco) {
+      case 'diamond': {
+        const hw = sz * 0.55, hh = sz * 0.9
+        const pts = `${ax},${ay - hh} ${ax + hw},${ay} ${ax},${ay + hh} ${ax - hw},${ay}`
+        return `<circle cx="${ax}" cy="${ay}" r="${sz*1.6}" fill="${accent}" opacity="0.15"/>
+          <polygon points="${pts}" fill="${accent}" opacity="0.96"/>
+          <polygon points="${ax},${ay-hh*0.82} ${ax+hw*0.5},${ay-hh*0.08} ${ax},${ay-hh*0.12} ${ax-hw*0.5},${ay-hh*0.08}" fill="white" opacity="0.32"/>
+          <circle cx="${ax - sz*0.14}" cy="${ay - hh*0.5}" r="${sz*0.14}" fill="white" opacity="0.5"/>`
+      }
+      case 'orb': return `
+          <circle cx="${ax}" cy="${ay}" r="${sz*1.8}" fill="${accent}" opacity="0.15"/>
+          <circle cx="${ax}" cy="${ay}" r="${sz}" fill="${accent}" opacity="0.96"/>
+          <circle cx="${ax - sz*0.28}" cy="${ay - sz*0.28}" r="${sz*0.38}" fill="white" opacity="0.38"/>
+          <circle cx="${ax - sz*0.18}" cy="${ay - sz*0.18}" r="${sz*0.15}" fill="white" opacity="0.6"/>`
+      case 'star': {
+        const pts = []
+        for (let i = 0; i < 8; i++) {
+          const r2 = i % 2 === 0 ? sz : sz * 0.44
+          const a  = (i / 8) * 2 * Math.PI - Math.PI / 2
+          pts.push(`${(ax + r2 * Math.cos(a)).toFixed(1)},${(ay + r2 * Math.sin(a)).toFixed(1)}`)
+        }
+        return `<circle cx="${ax}" cy="${ay}" r="${sz*1.6}" fill="${accent}" opacity="0.15"/>
+          <polygon points="${pts.join(' ')}" fill="${accent}" opacity="0.96"/>
+          <circle cx="${ax - sz*0.22}" cy="${ay - sz*0.22}" r="${sz*0.22}" fill="white" opacity="0.42"/>`
+      }
+      case 'crystal': {
+        const hw = sz * 0.48
+        const pts = `${ax},${ay - sz} ${ax+hw},${ay-sz*0.18} ${ax+hw*0.45},${ay+sz} ${ax-hw*0.45},${ay+sz} ${ax-hw},${ay-sz*0.18}`
+        return `<circle cx="${ax}" cy="${ay}" r="${sz*1.5}" fill="${accent}" opacity="0.15"/>
+          <polygon points="${pts}" fill="${accent}" opacity="0.92"/>
+          <polygon points="${ax},${ay-sz} ${ax+hw},${ay-sz*0.18} ${ax},${ay}" fill="white" opacity="0.22"/>
+          <circle cx="${ax - sz*0.1}" cy="${ay - sz*0.5}" r="${sz*0.12}" fill="white" opacity="0.6"/>`
+      }
+      case 'drop': return `
+          <circle cx="${ax}" cy="${ay}" r="${sz*1.7}" fill="${accent}" opacity="0.15"/>
+          <ellipse cx="${ax}" cy="${ay}" rx="${sz*0.62}" ry="${sz*0.78}" fill="${accent}" opacity="0.95"/>
+          <circle cx="${ax}" cy="${ay + d*sz*0.28}" r="${sz*0.52}" fill="${accent2}" opacity="0.6"/>
+          <circle cx="${ax - sz*0.2}" cy="${ay - d*sz*0.18}" r="${sz*0.22}" fill="white" opacity="0.48"/>
+          <circle cx="${ax - sz*0.1}" cy="${ay - d*sz*0.08}" r="${sz*0.1}" fill="white" opacity="0.65"/>`
+      case 'spike': {
+        const hw = sz * 0.36
+        const pts = top
+          ? `${ax},${ay - sz} ${ax+hw},${ay} ${ax},${ay+sz*0.38} ${ax-hw},${ay}`
+          : `${ax},${ay + sz} ${ax+hw},${ay} ${ax},${ay-sz*0.38} ${ax-hw},${ay}`
+        return `<circle cx="${ax}" cy="${ay}" r="${sz*1.5}" fill="${accent}" opacity="0.15"/>
+          <polygon points="${pts}" fill="${accent}" opacity="0.92"/>
+          <polygon points="${ax},${top ? ay-sz : ay+sz} ${ax+hw*0.38},${ay} ${ax},${ay+(top?0:-1)*sz*0.28}" fill="white" opacity="0.22"/>`
+      }
+      case 'flame': return `
+          <circle cx="${ax}" cy="${ay}" r="${sz*1.6}" fill="${accent}" opacity="0.15"/>
+          <ellipse cx="${ax}" cy="${ay}" rx="${sz*0.52}" ry="${sz*0.82}" fill="${accent}" opacity="0.92" transform="rotate(${top?0:180} ${ax} ${ay})"/>
+          <ellipse cx="${ax}" cy="${ay + d*sz*0.14}" rx="${sz*0.28}" ry="${sz*0.52}" fill="${accent2}" opacity="0.65"/>
+          <circle cx="${ax - sz*0.1}" cy="${ay - d*sz*0.2}" r="${sz*0.13}" fill="white" opacity="0.52"/>`
+      default: return `
+          <circle cx="${ax}" cy="${ay}" r="${sz*1.8}" fill="${accent}" opacity="0.15"/>
+          <circle cx="${ax}" cy="${ay}" r="${sz}" fill="${accent}" opacity="0.95"/>
+          <circle cx="${ax - sz*0.28}" cy="${ay - sz*0.28}" r="${sz*0.38}" fill="white" opacity="0.38"/>`
+    }
+  }
+
+  const topY = CY - MID_R - W / 2 + 4
+  const botY = CY + MID_R + W / 2 - 4
+
+  // Simulated inner glow: thin ring at slightly larger opacity
+  const innerGlow1 = MID_R - W / 2 + 9
+  const outerGlow1 = MID_R + W / 2 - 7
+
+  return `<svg width="${SIZE}" height="${SIZE}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="rg-${id}" gradientUnits="userSpaceOnUse" cx="105" cy="90" fx="88" fy="74" r="145">
+      <stop offset="0%"   stop-color="${light}"/>
+      <stop offset="42%"  stop-color="${mid}"/>
+      <stop offset="100%" stop-color="${dark}"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Drop shadow: soft dark ring offset down-right -->
+  <circle cx="${CX+3}" cy="${CY+6}" r="${MID_R}" fill="none" stroke="${dark}" stroke-width="${W+10}" opacity="0.42"/>
+  <circle cx="${CX+2}" cy="${CY+4}" r="${MID_R}" fill="none" stroke="${dark}" stroke-width="${W+4}"  opacity="0.28"/>
+
+  <!-- Main 3D ring: radial gradient gives top-left lit, bottom-right dark -->
+  <circle cx="${CX}" cy="${CY}" r="${MID_R}" fill="none" stroke="url(#rg-${id})" stroke-width="${W}"/>
+
+  <!-- Inner bevel edge -->
+  <circle cx="${CX}" cy="${CY}" r="${MID_R - W/2 + 1.5}" fill="none" stroke="${dark}"  stroke-width="3.5" opacity="0.65"/>
+  <circle cx="${CX}" cy="${CY}" r="${MID_R - W/2 + 4}"   fill="none" stroke="${light}" stroke-width="1.5" opacity="0.28"/>
+
+  <!-- Outer bevel edge -->
+  <circle cx="${CX}" cy="${CY}" r="${MID_R + W/2 - 1.5}" fill="none" stroke="${dark}"  stroke-width="2.5" opacity="0.52"/>
+  <circle cx="${CX}" cy="${CY}" r="${MID_R + W/2 - 4}"   fill="none" stroke="${light}" stroke-width="1.5" opacity="0.22"/>
+
+  <!-- Top-left broad highlight arc (3D pop illusion) -->
+  <path d="M ${CX - MID_R + 10},${CY - 8} A ${MID_R},${MID_R} 0 0 1 ${CX - 8},${CY - MID_R + 10}"
+    fill="none" stroke="white" stroke-width="14" stroke-linecap="round" opacity="0.12"/>
+
+  <!-- Specular hot-spot (smaller brighter arc) -->
+  <path d="M ${CX - 62},${CY - 92} A ${MID_R - 8},${MID_R - 8} 0 0 1 ${CX - 92},${CY - 62}"
+    fill="none" stroke="white" stroke-width="7" stroke-linecap="round" opacity="0.30"/>
+
+  <!-- Simulated inner glow (no filter - just slightly wider transparent ring) -->
+  <circle cx="${CX}" cy="${CY}" r="${innerGlow1}" fill="none" stroke="${glowC}" stroke-width="5" opacity="0.22"/>
+  <circle cx="${CX}" cy="${CY}" r="${innerGlow1}" fill="none" stroke="${glowC}" stroke-width="2" opacity="0.40"/>
+
+  <!-- Simulated outer glow -->
+  <circle cx="${CX}" cy="${CY}" r="${outerGlow1}" fill="none" stroke="${glowC}" stroke-width="4" opacity="0.18"/>
+  <circle cx="${CX}" cy="${CY}" r="${outerGlow1}" fill="none" stroke="${glowC}" stroke-width="1.5" opacity="0.32"/>
+
+  <!-- Decorative ring dots -->
+  ${dotsSvg}
+
+  <!-- Top accent gem -->
+  ${makeAccent(CX, topY, 11, true)}
+
+  <!-- Bottom accent gem -->
+  ${makeAccent(CX, botY, 11, false)}
+</svg>`
+}
+
+// ─── FRAME OVERLAY SVG (transparent layer over the full card) ────────────────
+// Legacy helper kept for catalog use; card rendering now uses buildPremiumFrameOverlaySvg.
+function buildCardFrameSvg(frame) {
+  const r = AV_R + 6
+  const { defs, circles } = buildFrameElements(frame, AV_CX, AV_CY, r, `cf${frame.id}`)
+  return `<svg width="${CARD_W}" height="${CARD_H}" xmlns="http://www.w3.org/2000/svg">
+    <defs>${defs}</defs>
+    ${circles}
+  </svg>`
+}
+
+// ─── PREMIUM FRAME OVERLAY SVG ───────────────────────────────────────────────
+// Generates a 1280×1280 transparent SVG with a full premium anime-style
+// decorative ring: 3D metallic ring, top bow/ribbon, bottom hanging charms,
+// side flowers, diagonal gems, and sparkle accents.
+// NOTE: No SVG <filter> elements — all depth via layered shapes (libvips compat).
+function buildPremiumFrameOverlaySvg(frame, cx, cy, avR) {
+  const uid = `pf${frame.id}`
+
+  // ── Resolve palette from frame definition ────────────────────────────────
+  let primary, lt, dk, accent, accent2, glowC
+
+  if (frame.type === 'image') {
+    primary = frame.mid    || '#888888'
+    lt      = frame.light  || '#ffffff'
+    dk      = frame.dark   || '#111111'
+    accent  = frame.accent  || lt
+    accent2 = frame.accent2 || accent
+    glowC   = frame.glow   || primary
+  } else {
+    primary = frame.color  || '#ffffff'
+    lt      = lighten(primary, 0.48)
+    dk      = darken(primary,  0.55)
+    accent  = frame.color2 || primary
+    accent2 = frame.color3 || accent
+    glowC   = primary
+  }
+
+  // ── Ring geometry ─────────────────────────────────────────────────────────
+  const R  = avR + 16        // ring midpoint radius (236 when avR=220)
+  const RW = 24              // ring stroke width
+
+  const topY  = cy - R       // (490 - 236) = 254
+  const botY  = cy + R       // (490 + 236) = 726
+  const ltX   = cx - R       // (640 - 236) = 404
+  const rtX   = cx + R       // (640 + 236) = 876
+
+  const d45   = R * 0.7071
+  const neX = (cx + d45).toFixed(0), neY = (cy - d45).toFixed(0)  // ~807, 323
+  const nwX = (cx - d45).toFixed(0), nwY = (cy - d45).toFixed(0)  // ~473, 323
+  const seX = (cx + d45).toFixed(0), seY = (cy + d45).toFixed(0)  // ~807, 657
+  const swX = (cx - d45).toFixed(0), swY = (cy + d45).toFixed(0)  // ~473, 657
+
+  // Gradient source: offset upper-left for 3D pop illusion
+  const gCx = Math.round(cx - avR * 0.38)  // 556
+  const gCy = Math.round(cy - avR * 0.52)  // 376
+  const gR  = Math.round(avR * 1.42)       // 312
+
+  // Specular arc — upper-left quadrant: 200° → 290°
+  const a1x = Math.round(cx + R * Math.cos(200 * Math.PI / 180))  // ≈ 418
+  const a1y = Math.round(cy + R * Math.sin(200 * Math.PI / 180))  // ≈ 409
+  const a2x = Math.round(cx + R * Math.cos(290 * Math.PI / 180))  // ≈ 721
+  const a2y = Math.round(cy + R * Math.sin(290 * Math.PI / 180))  // ≈ 268
+
+  // Bow anchor (centre of ring top, slightly inside)
+  const bCx = cx, bCy = topY + 4
+
+  // Charm anchors
+  const cBot  = botY          // 726 — ring bottom
+  const cDrop = cBot + 13     // 739 — end of chain
+  const cCY   = cBot + 40     // 766 — pendant centre y
+
+  // ── Inner helpers (all return SVG strings, no filters) ───────────────────
+  function star4(px, py, outerR, innerR, col, op) {
+    const pts = []
+    for (let i = 0; i < 8; i++) {
+      const r2 = i % 2 === 0 ? outerR : innerR
+      const a  = i * Math.PI / 4 - Math.PI / 2
+      pts.push(`${(px + r2 * Math.cos(a)).toFixed(1)},${(py + r2 * Math.sin(a)).toFixed(1)}`)
+    }
+    return `<polygon points="${pts.join(' ')}" fill="${col}" opacity="${op}"/>`
+  }
+
+  function diamond(px, py, hw, hh, col) {
+    return (
+      `<polygon points="${px},${py - hh} ${px + hw},${py} ${px},${py + hh} ${px - hw},${py}" fill="${col}" opacity="0.93"/>` +
+      `<polygon points="${px},${py - hh} ${px + hw * 0.42},${py - hh * 0.16} ${px},${py - hh * 0.28} ${px - hw * 0.42},${py - hh * 0.16}" fill="white" opacity="0.26"/>` +
+      `<circle cx="${(px - hw * 0.12).toFixed(1)}" cy="${(py - hh * 0.45).toFixed(1)}" r="${(hw * 0.14).toFixed(1)}" fill="white" opacity="0.50"/>`
+    )
+  }
+
+  function heartShape(px, py, s, col) {
+    const hw = s * 0.5, hh = s * 0.88
+    return (
+      `<path d="M ${px},${py + s * 0.3} ` +
+      `C ${px},${py} ${px - hw},${py - s * 0.38} ${px - hw},${py + s * 0.05} ` +
+      `C ${px - hw},${py + s * 0.55} ${px},${py + hh} ${px},${py + hh} ` +
+      `C ${px},${py + hh} ${px + hw},${py + s * 0.55} ${px + hw},${py + s * 0.05} ` +
+      `C ${px + hw},${py - s * 0.38} ${px},${py} ${px},${py + s * 0.3} Z" fill="${col}" opacity="0.93"/>` +
+      `<circle cx="${(px - hw * 0.3).toFixed(1)}" cy="${(py + s * 0.08).toFixed(1)}" r="${(s * 0.12).toFixed(1)}" fill="white" opacity="0.42"/>`
+    )
+  }
+
+  function gemOrb(gx, gy, r, col) {
+    return (
+      `<circle cx="${+gx}" cy="${+gy}" r="${r + 4}" fill="${col}" opacity="0.18"/>` +
+      `<circle cx="${+gx}" cy="${+gy}" r="${r}" fill="${col}" opacity="0.93"/>` +
+      `<circle cx="${(+gx - r * 0.32).toFixed(1)}" cy="${(+gy - r * 0.32).toFixed(1)}" r="${(r * 0.38).toFixed(1)}" fill="white" opacity="0.45"/>` +
+      `<circle cx="${(+gx - r * 0.10).toFixed(1)}" cy="${(+gy - r * 0.10).toFixed(1)}" r="${(r * 0.15).toFixed(1)}" fill="white" opacity="0.62"/>` +
+      `<circle cx="${+gx}" cy="${+gy}" r="${r}" fill="none" stroke="${lt}" stroke-width="1.5" opacity="0.40"/>`
+    )
+  }
+
+  function flower4(fx, fy, pLen, pW, col) {
+    return (
+      `<ellipse cx="${fx}" cy="${fy}" rx="${pLen}" ry="${pW}" fill="${col}" opacity="0.82"/>` +
+      `<ellipse cx="${fx}" cy="${fy}" rx="${pW}" ry="${pLen}" fill="${col}" opacity="0.82"/>` +
+      `<ellipse cx="${fx}" cy="${fy}" rx="${pLen}" ry="${pW}" fill="${col}" opacity="0.68" transform="rotate(45 ${fx} ${fy})"/>` +
+      `<ellipse cx="${fx}" cy="${fy}" rx="${pLen}" ry="${pW}" fill="${col}" opacity="0.68" transform="rotate(-45 ${fx} ${fy})"/>` +
+      `<circle cx="${fx}" cy="${fy}" r="${pW}" fill="${lt}" opacity="0.95"/>` +
+      `<circle cx="${+fx - 2}" cy="${+fy - 2}" r="${Math.max(1, pW * 0.42).toFixed(1)}" fill="white" opacity="0.55"/>`
+    )
+  }
+
+  return `<svg width="${CARD_W}" height="${CARD_H}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="ring-${uid}" gradientUnits="userSpaceOnUse"
+        cx="${gCx}" cy="${gCy}" r="${gR}">
+      <stop offset="0%"   stop-color="${lt}"/>
+      <stop offset="44%"  stop-color="${primary}"/>
+      <stop offset="100%" stop-color="${dk}"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Outer bloom (glow simulation — no filter) -->
+  <circle cx="${cx}" cy="${cy}" r="${R + 14}" fill="none" stroke="${glowC}" stroke-width="7"  opacity="0.09"/>
+  <circle cx="${cx}" cy="${cy}" r="${R + 8}"  fill="none" stroke="${glowC}" stroke-width="5"  opacity="0.14"/>
+
+  <!-- Drop shadow -->
+  <circle cx="${cx + 5}" cy="${cy + 6}" r="${R}" fill="none" stroke="rgba(0,0,0,0.55)" stroke-width="${RW + 5}"/>
+
+  <!-- Main 3D ring (radial gradient gives lit top-left, dark bottom-right) -->
+  <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="url(#ring-${uid})" stroke-width="${RW}"/>
+
+  <!-- Bevel edges -->
+  <circle cx="${cx}" cy="${cy}" r="${R - RW / 2 + 2}" fill="none" stroke="${dk}" stroke-width="2.5" opacity="0.68"/>
+  <circle cx="${cx}" cy="${cy}" r="${R - RW / 2 + 5}" fill="none" stroke="${lt}" stroke-width="1.5" opacity="0.22"/>
+  <circle cx="${cx}" cy="${cy}" r="${R + RW / 2 - 2}" fill="none" stroke="${dk}" stroke-width="2.0" opacity="0.55"/>
+  <circle cx="${cx}" cy="${cy}" r="${R + RW / 2 - 5}" fill="none" stroke="${lt}" stroke-width="1.5" opacity="0.18"/>
+
+  <!-- Specular highlight arc — upper-left quadrant -->
+  <path d="M ${a1x},${a1y} A ${R},${R} 0 0 0 ${a2x},${a2y}"
+    fill="none" stroke="white" stroke-width="11" stroke-linecap="round" opacity="0.12"/>
+  <path d="M ${a1x},${a1y} A ${R},${R} 0 0 0 ${a2x},${a2y}"
+    fill="none" stroke="white" stroke-width="4"  stroke-linecap="round" opacity="0.30"/>
+
+  <!-- Inner ring glow line -->
+  <circle cx="${cx}" cy="${cy}" r="${R - RW / 2 + 8}" fill="none" stroke="${glowC}" stroke-width="4" opacity="0.20"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- BOW / RIBBON at ring top                                           -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- Left wing -->
+  <path d="M ${bCx},${bCy} C ${bCx - 22},${bCy - 13} ${bCx - 52},${bCy - 12} ${bCx - 45},${bCy + 9} C ${bCx - 38},${bCy + 23} ${bCx - 14},${bCy + 17} ${bCx},${bCy + 9}"
+    fill="${primary}" opacity="0.93"/>
+  <!-- Right wing -->
+  <path d="M ${bCx},${bCy} C ${bCx + 22},${bCy - 13} ${bCx + 52},${bCy - 12} ${bCx + 45},${bCy + 9} C ${bCx + 38},${bCy + 23} ${bCx + 14},${bCy + 17} ${bCx},${bCy + 9}"
+    fill="${primary}" opacity="0.93"/>
+  <!-- Wing highlights -->
+  <path d="M ${bCx},${bCy} C ${bCx - 18},${bCy - 8} ${bCx - 42},${bCy - 8} ${bCx - 38},${bCy + 3} C ${bCx - 32},${bCy + 10} ${bCx - 11},${bCy + 9} ${bCx},${bCy + 5}"
+    fill="white" opacity="0.20"/>
+  <path d="M ${bCx},${bCy} C ${bCx + 18},${bCy - 8} ${bCx + 42},${bCy - 8} ${bCx + 38},${bCy + 3} C ${bCx + 32},${bCy + 10} ${bCx + 11},${bCy + 9} ${bCx},${bCy + 5}"
+    fill="white" opacity="0.20"/>
+  <!-- Knot -->
+  <ellipse cx="${bCx}" cy="${bCy + 5}" rx="11" ry="8" fill="${lt}" opacity="0.96"/>
+  <ellipse cx="${bCx - 2}" cy="${bCy + 2}" rx="5" ry="3.5" fill="white" opacity="0.45"/>
+  <!-- Ribbon tails -->
+  <path d="M ${bCx - 7},${bCy + 11} C ${bCx - 12},${bCy + 18} ${bCx - 24},${bCy + 30} ${bCx - 20},${bCy + 40} L ${bCx - 11},${bCy + 38} C ${bCx - 14},${bCy + 30} ${bCx - 2},${bCy + 18} ${bCx + 2},${bCy + 13}"
+    fill="${primary}" opacity="0.80"/>
+  <path d="M ${bCx + 7},${bCy + 11} C ${bCx + 12},${bCy + 18} ${bCx + 24},${bCy + 30} ${bCx + 20},${bCy + 40} L ${bCx + 11},${bCy + 38} C ${bCx + 14},${bCy + 30} ${bCx + 2},${bCy + 18} ${bCx - 2},${bCy + 13}"
+    fill="${primary}" opacity="0.80"/>
+  <!-- Tail sheen -->
+  <path d="M ${bCx - 6},${bCy + 13} C ${bCx - 9},${bCy + 20} ${bCx - 18},${bCy + 28} ${bCx - 16},${bCy + 34}"
+    fill="none" stroke="white" stroke-width="1.8" opacity="0.28" stroke-linecap="round"/>
+  <path d="M ${bCx + 6},${bCy + 13} C ${bCx + 9},${bCy + 20} ${bCx + 18},${bCy + 28} ${bCx + 16},${bCy + 34}"
+    fill="none" stroke="white" stroke-width="1.8" opacity="0.28" stroke-linecap="round"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- HANGING CHARMS — 3 pendants below ring                            -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- Horizontal chain bar -->
+  <line x1="${cx - 28}" y1="${cBot}" x2="${cx + 28}" y2="${cBot}" stroke="${lt}" stroke-width="2" opacity="0.55"/>
+  <!-- Left chain -->
+  <line x1="${cx - 28}" y1="${cBot}" x2="${cx - 28}" y2="${cDrop}" stroke="${lt}" stroke-width="1.8" opacity="0.62"/>
+  <circle cx="${cx - 28}" cy="${cBot + 5}"  r="2.5" fill="${lt}" opacity="0.72"/>
+  <circle cx="${cx - 28}" cy="${cBot + 10}" r="2.5" fill="${lt}" opacity="0.72"/>
+  <!-- Centre chain -->
+  <line x1="${cx}" y1="${cBot}" x2="${cx}" y2="${cDrop}" stroke="${lt}" stroke-width="1.8" opacity="0.62"/>
+  <circle cx="${cx}" cy="${cBot + 5}"  r="2.5" fill="${lt}" opacity="0.72"/>
+  <circle cx="${cx}" cy="${cBot + 10}" r="2.5" fill="${lt}" opacity="0.72"/>
+  <!-- Right chain -->
+  <line x1="${cx + 28}" y1="${cBot}" x2="${cx + 28}" y2="${cDrop}" stroke="${lt}" stroke-width="1.8" opacity="0.62"/>
+  <circle cx="${cx + 28}" cy="${cBot + 5}"  r="2.5" fill="${lt}" opacity="0.72"/>
+  <circle cx="${cx + 28}" cy="${cBot + 10}" r="2.5" fill="${lt}" opacity="0.72"/>
+  <!-- Left pendant — diamond -->
+  ${diamond(cx - 28, cCY, 11, 14, accent)}
+  <!-- Centre pendant — 4-pt star -->
+  ${star4(cx, cCY, 13, 5.5, accent2, 0.96)}
+  <circle cx="${cx - 2}" cy="${cCY - 3}" r="3" fill="white" opacity="0.38"/>
+  <!-- Right pendant — heart -->
+  ${heartShape(cx + 28, cCY - 7, 14, accent)}
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- DIAGONAL ACCENT GEMS — NE / NW / SE / SW                          -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  ${gemOrb(neX, neY, 9, accent)}
+  ${gemOrb(nwX, nwY, 9, accent2)}
+  ${gemOrb(seX, seY, 9, accent2)}
+  ${gemOrb(swX, swY, 9, accent)}
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- SIDE FLOWERS — 9 o'clock and 3 o'clock                            -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  ${flower4(ltX, cy, 14, 5, accent)}
+  ${flower4(rtX, cy, 14, 5, accent)}
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- MINI SPARKLE STARS scattered around ring                           -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  ${star4(bCx - 58, bCy - 22, 6, 2.5, lt,      0.55)}
+  ${star4(bCx + 58, bCy - 22, 6, 2.5, lt,      0.55)}
+  ${star4(cx - 184, cy - 148, 8, 3.5, accent,  0.50)}
+  ${star4(cx + 184, cy - 148, 8, 3.5, accent,  0.50)}
+  ${star4(cx - 184, cy + 148, 7, 3.0, accent2, 0.45)}
+  ${star4(cx + 184, cy + 148, 7, 3.0, accent2, 0.45)}
+  ${star4(bCx - 30, bCy - 36, 5, 2.0, lt,      0.42)}
+  ${star4(bCx + 30, bCy - 36, 5, 2.0, lt,      0.42)}
+</svg>`
+}
+module.exports.buildPremiumFrameOverlaySvg = buildPremiumFrameOverlaySvg
+
+// ─── STATS OVERLAY SVG (Konosuba card style) ─────────────────────────────────
+function buildStatsSvg(user) {
+  const esc = (s) => String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+  const fmtMoney = (n) => {
+    if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
+    if (n >= 1_000)     return `$${(n / 1_000).toFixed(1)}K`
+    return `$${Math.round(n)}`
+  }
+
+  const name   = esc((user.name || user.phone || 'Unknown').substring(0, 18))
+  const title  = esc((user.bio || user.title || 'No bio set').substring(0, 32))
+  const level  = user.level || 1
+  const xp     = Number(user.xp || 0)
+  const xpNeed = level * 300              // matches economy.js xpForLevel: level * 300
+  const xpPct  = Math.min(xp / xpNeed, 1)
+  const rank   = user.rank != null ? user.rank : (user.phone ? user.phone.slice(-4) : '???')
+  const bank   = user.bank   || 0
+  const wallet = user.wallet || 0
+
+  // XP bar — 760×58px centred, fully rounded (rx = barH/2)
+  const barW    = 760
+  const barH    = 58
+  const barX    = (CARD_W - barW) / 2      // 260
+  const barR    = barH / 2                 // fully rounded pill
+  // No forced minimum — 0 XP shows a fully empty bar
+  const barFill = Math.min(Math.max(Math.round(barW * xpPct), 0), barW)
+
+  // Vertical layout anchors — AV_R = 220
+  // Custom overlay frame is centred on avatar with 1.35× diameter → frame bottom ≈ 787
+  const bankY     = 90
+  const walletY   = 150
+  const avatarBot = AV_CY + AV_R            // 710  (490 + 220)
+  const nameY     = avatarBot + 110         // 820  — below frame decoration overhang
+  const subtitleY = nameY + 50             // 870
+  const rankY     = subtitleY + 65         // 935
+  const barTop    = rankY + 54             // 989
+  const barTextY  = barTop + Math.round(barH / 2) + 12  // ~1011
+
+  return `<svg width="${CARD_W}" height="${CARD_H}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Horizontal blue gradient: #39A9F9 → #58B9FF per spec -->
+    <linearGradient id="xpFill" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#39A9F9"/>
+      <stop offset="100%" stop-color="#58B9FF"/>
+    </linearGradient>
+    <!-- Soft top-sheen on filled bar -->
+    <linearGradient id="xpSheen" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="rgba(255,255,255,0.22)"/>
+      <stop offset="55%"  stop-color="rgba(255,255,255,0.06)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </linearGradient>
+    <clipPath id="barClip">
+      <rect x="${barX}" y="${barTop}" width="${barW}" height="${barH}" rx="${barR}"/>
+    </clipPath>
+    <clipPath id="barFillClip">
+      <rect x="${barX}" y="${barTop}" width="${barFill}" height="${barH}" rx="${barR}"/>
+    </clipPath>
+  </defs>
+
+  <!-- Black readability overlay (lighter so avatar stays vivid) -->
+  <rect x="0" y="0" width="${CARD_W}" height="${CARD_H}" fill="black" opacity="0.20"/>
+
+  <!-- Avatar edge vignette — stroke-only rings so the interior stays bright -->
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 14}" fill="none" stroke="black" stroke-width="28" opacity="0.13"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 8}"  fill="none" stroke="black" stroke-width="16" opacity="0.18"/>
+  <circle cx="${AV_CX}" cy="${AV_CY}" r="${AV_R + 3}"  fill="none" stroke="black" stroke-width="10" opacity="0.22"/>
+
+  <!-- Bank (top-left) -->
+  <text x="62" y="${bankY + 2}"
+    fill="black" font-size="44" font-weight="bold" opacity="0.50"
+    font-family="Liberation Sans,sans-serif">Bank: ${fmtMoney(bank)}</text>
+  <text x="60" y="${bankY}"
+    fill="#FFFFFF" font-size="44" font-weight="bold"
+    font-family="Liberation Sans,sans-serif">Bank: ${fmtMoney(bank)}</text>
+
+  <!-- Wallet (top-left) -->
+  <text x="62" y="${walletY + 2}"
+    fill="black" font-size="44" font-weight="bold" opacity="0.50"
+    font-family="Liberation Sans,sans-serif">Wallet: ${fmtMoney(wallet)}</text>
+  <text x="60" y="${walletY}"
+    fill="#FFFFFF" font-size="44" font-weight="bold"
+    font-family="Liberation Sans,sans-serif">Wallet: ${fmtMoney(wallet)}</text>
+
+  <!-- Username -->
+  <text x="${AV_CX + 2}" y="${nameY + 2}"
+    fill="black" font-size="79" font-weight="bold" text-anchor="middle" opacity="0.52"
+    font-family="Liberation Sans,sans-serif">${name}</text>
+  <text x="${AV_CX}" y="${nameY}"
+    fill="#FFFFFF" font-size="79" font-weight="bold" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif">${name}</text>
+
+  <!-- Title / Subtitle -->
+  <text x="${AV_CX + 1}" y="${subtitleY + 2}"
+    fill="black" font-size="36" text-anchor="middle" opacity="0.42"
+    font-family="Liberation Sans,sans-serif">(${title})</text>
+  <text x="${AV_CX}" y="${subtitleY}"
+    fill="rgba(255,255,255,0.82)" font-size="36" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif">(${title})</text>
+
+  <!-- Rank · Level -->
+  <text x="${AV_CX + 2}" y="${rankY + 2}"
+    fill="black" font-size="54" font-weight="bold" text-anchor="middle" opacity="0.48"
+    font-family="Liberation Sans,sans-serif">Rank #${rank}  ·  Level ${level}</text>
+  <text x="${AV_CX}" y="${rankY}"
+    fill="#FFFFFF" font-size="54" font-weight="bold" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif">Rank #${rank}  ·  Level ${level}</text>
+
+  <!-- XP bar track (charcoal) -->
+  <rect x="${barX}" y="${barTop}" width="${barW}" height="${barH}" fill="#4B4B4B" rx="${barR}"/>
+
+  <!-- XP bar fill — gradient, clipped to pill shape -->
+  <rect x="${barX}" y="${barTop}" width="${barFill}" height="${barH}"
+    fill="url(#xpFill)" clip-path="url(#barClip)"/>
+
+  <!-- XP bar premium sheen highlight -->
+  <rect x="${barX}" y="${barTop}" width="${barFill}" height="${barH}"
+    fill="url(#xpSheen)" clip-path="url(#barFillClip)"/>
+
+  <!-- XP text centred inside bar -->
+  <text x="${AV_CX}" y="${barTextY}"
+    fill="white" font-size="34" font-weight="bold" text-anchor="middle"
+    font-family="Liberation Sans,sans-serif">${xp} / ${xpNeed} XP</text>
+</svg>`
+}
+
+// ─── CIRCULAR AVATAR ─────────────────────────────────────────────────────────
+async function makeCircleAvatar(inputBuffer, diameter) {
+  const r = diameter / 2
+  const mask = Buffer.from(
+    `<svg width="${diameter}" height="${diameter}" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="${r}" cy="${r}" r="${r}" fill="white"/>
+    </svg>`
+  )
+  return sharp(inputBuffer)
+    .resize(diameter, diameter, { fit: 'cover' })
+    .composite([{ input: mask, blend: 'dest-in' }])
+    .png()
+    .toBuffer()
+}
+
+async function makeInitialsAvatar(name, diameter) {
+  const initial = (name || '?')[0].toUpperCase().replace(/[^A-Z0-9]/, '?')
+  const r = diameter / 2
+  const svg = `<svg width="${diameter}" height="${diameter}" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="${r}" cy="${r}" r="${r}" fill="#1e1e2e"/>
+    <text x="${r}" y="${r + diameter * 0.15}" fill="#8b5cf6" font-size="${Math.round(diameter * 0.42)}"
+      font-weight="bold" text-anchor="middle" font-family="Liberation Sans,sans-serif">${initial}</text>
+  </svg>`
+  return sharp(Buffer.from(svg)).png().toBuffer()
+}
+
+// ─── FETCH REMOTE BUFFER ─────────────────────────────────────────────────────
+function fetchBuffer(url) {
+  // Handle base64 data URLs stored directly in MongoDB (used by setpp / setbg)
+  if (url && url.startsWith('data:')) {
+    const match = url.match(/^data:[^;]+;base64,(.+)$/)
+    if (match) return Promise.resolve(Buffer.from(match[1], 'base64'))
+    return Promise.reject(new Error('Invalid data URL'))
+  }
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith('https') ? https : http
+    const req = client.get(url, { timeout: 15000 }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return fetchBuffer(res.headers.location).then(resolve).catch(reject)
+      }
+      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`))
+      const chunks = []
+      res.on('data', c => chunks.push(c))
+      res.on('end', () => resolve(Buffer.concat(chunks)))
+      res.on('error', reject)
+    })
+    req.on('error', reject)
+    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')) })
+  })
+}
+
+// ─── MAIN: GENERATE PROFILE CARD ────────────────────────────────────────────
+// customFrameDoc — optional MongoDB Frame document from db.getFrameByName().
+//   • has_background=true  → frame image IS the background (user wallpaper ignored).
+//   • has_background=false → frame image is a transparent overlay (no built-in ring drawn).
+//   • null                 → draw built-in premium SVG ring from user.profile_frame.
+async function generateProfileCard(user, ppBuffer = null, bgBuffer = null, customFrameDoc = null) {
+  const diameter = AV_R * 2   // 440px (AV_R = 220)
+
+  // ── Layer 1: Background ──
+  let bgLayer
+  let frameBgUsed = false
+
+  // Custom frame background path — full-quality, no double-wallpaper
+  if (customFrameDoc && customFrameDoc.has_background) {
+    try {
+      const rawBuf = Buffer.from(customFrameDoc.image, 'base64')
+      bgLayer = await sharp(rawBuf)
+        .resize(CARD_W, CARD_H, { fit: 'cover' })
+        .png()
+        .toBuffer()
+      frameBgUsed = true
+    } catch { bgLayer = null }
+  }
+
+  if (!bgLayer && bgBuffer) {
+    bgLayer = await sharp(bgBuffer)
+      .resize(CARD_W, CARD_H, { fit: 'cover' })
+      .png()
+      .toBuffer()
+  }
+
+  if (!bgLayer) {
+    // Starry night default background
+    const stars = Array.from({ length: 90 }, (_, i) => {
+      const x  = Math.abs(((i * 137 + 43) * 7) % CARD_W)
+      const y  = Math.abs(((i * 97  + 11) * 9) % CARD_H)
+      const r  = (0.4 + (i % 5) * 0.35).toFixed(1)
+      const op = Math.min(0.25 + (i % 6) * 0.13, 0.90).toFixed(2)
+      return `<circle cx="${x}" cy="${y}" r="${r}" fill="white" opacity="${op}"/>`
+    }).join('\n  ')
+
+    const bgSvg = `<svg width="${CARD_W}" height="${CARD_H}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="nightSky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#040C20"/>
+      <stop offset="35%"  stop-color="#071540"/>
+      <stop offset="70%"  stop-color="#0B1D58"/>
+      <stop offset="100%" stop-color="#040C1C"/>
+    </linearGradient>
+    <radialGradient id="moonGlow" cx="72%" cy="14%" r="38%">
+      <stop offset="0%"   stop-color="#16386A" stop-opacity="0.70"/>
+      <stop offset="100%" stop-color="#040C20" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bottomGlow" cx="28%" cy="92%" r="46%">
+      <stop offset="0%"   stop-color="#0D2865" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#040C20" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="${CARD_W}" height="${CARD_H}" fill="url(#nightSky)"/>
+  <rect width="${CARD_W}" height="${CARD_H}" fill="url(#moonGlow)"/>
+  <rect width="${CARD_W}" height="${CARD_H}" fill="url(#bottomGlow)"/>
+  ${stars}
+</svg>`
+    bgLayer = await sharp(Buffer.from(bgSvg)).png().toBuffer()
+  }
+
+  // ── Layer 2: Circular avatar ──
+  let avatarBuf
+  if (ppBuffer) {
+    avatarBuf = await makeCircleAvatar(ppBuffer, diameter)
+  } else {
+    avatarBuf = await makeInitialsAvatar(user.name || user.phone || '?', diameter)
+  }
+  const avatarTop  = AV_CY - AV_R   // 490 - 220 = 270
+  const avatarLeft = AV_CX - AV_R   // 640 - 220 = 420
+
+  // ── Layer 3: Stats overlay (black vignette + text) ──
+  const overlayBuf = Buffer.from(buildStatsSvg(user))
+
+  // ── Layer 4: Frame overlay ──
+  //
+  // Three scenarios:
+  //
+  // A) Custom overlay frame (has_background=false):
+  //    The uploaded PNG IS the ring. Resize to the frame zone centred on the avatar
+  //    and composite on top. No built-in SVG ring is drawn.
+  //
+  // B) Custom bg-frame (has_background=true):
+  //    The uploaded image is the BACKGROUND only (already applied above as bgLayer).
+  //    The ring still comes from the user's built-in profile_frame — so the avatar
+  //    is always framed, even when a custom wallpaper is active.
+  //
+  // C) No custom frame at all:
+  //    Use the built-in premium SVG ring from user.profile_frame.
+  //
+  // Frame sized so its ring circle aligns with the avatar circle.
+  // Typical ring PNGs have the ring at ~74% of total image width; using 1.35×
+  // avatar diameter gives ~25% decoration overhang per side beyond AV_R.
+  const FRAME_SIZE = Math.round(AV_R * 2 * 1.35)  // ≈ 594 px square
+  const FRAME_HALF = Math.round(FRAME_SIZE / 2)    // ≈ 297 px
+  const FRAME_TOP  = AV_CY - FRAME_HALF            //  193 px from card top
+  const FRAME_LEFT = AV_CX - FRAME_HALF            //  343 px from card left
+
+  let frameLayer = null  // { input, top, left }
+
+  if (customFrameDoc && !customFrameDoc.has_background) {
+    // Scenario A — custom transparent ring overlay
+    try {
+      const rawFrame = Buffer.from(customFrameDoc.image, 'base64')
+      const resized = await sharp(rawFrame)
+        .resize(FRAME_SIZE, FRAME_SIZE, {
+          fit:        'contain',
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        })
+        .png()
+        .toBuffer()
+      frameLayer = { input: resized, top: FRAME_TOP, left: FRAME_LEFT }
+    } catch { /* ignore bad frame data */ }
+  } else {
+    // Scenario B or C — always draw the built-in SVG ring
+    // (bg-frame only changed the wallpaper; the ring decoration is independent)
+    const frameId = user.profile_frame || 1
+    const frame   = getFrame(frameId)
+    frameLayer = {
+      input: Buffer.from(buildPremiumFrameOverlaySvg(frame, AV_CX, AV_CY, AV_R)),
+      top:   0,
+      left:  0,
+    }
+  }
+
+  // ── Composite: bg → avatar → stats overlay → frame ring (topmost) ──
+  const layers = [
+    { input: avatarBuf,  top: avatarTop,  left: avatarLeft },
+    { input: overlayBuf, top: 0,          left: 0 },
+  ]
+  if (frameLayer) layers.push(frameLayer)
+
+  return sharp(bgLayer)
+    .composite(layers)
+    .png()
+    .toBuffer()
+}
+module.exports.generateProfileCard = generateProfileCard
+
+// ─── FRAME CATALOG IMAGE (3D cartoon style, paged: 35 per page) ──────────────
+async function generateFrameCatalog(page = 1) {
+  const PER_PAGE = 35
+  const COLS = 7
+  const ROWS = 5
+  const CW = 112
+  const CH = 156
+  const PAD = 18
+  const HEADER = 96
+  const W = COLS * CW + PAD * 2
+  const H = ROWS * CH + HEADER + PAD * 2
+
+  const startIdx = (page - 1) * PER_PAGE
+  const pageFrames = FRAMES.slice(startIdx, startIdx + PER_PAGE)
+
+  const totalPages = Math.ceil(FRAMES.length / PER_PAGE)
+  const pageLabel = `Page ${page} / ${totalPages}`
+  const rangeLabel = `Frames ${startIdx + 1}–${Math.min(startIdx + PER_PAGE, FRAMES.length)}`
+
+  let allDefs = `
+    <!-- 3D cartoon cell styles -->
+    <filter id="cellShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="rgba(0,0,0,0.7)"/>
+    </filter>
+    <filter id="innerGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="cellGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e1e3f"/>
+      <stop offset="50%" stop-color="#12122a"/>
+      <stop offset="100%" stop-color="#0a0a1c"/>
+    </linearGradient>
+    <linearGradient id="cellHighlight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.12)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </linearGradient>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0d0d1a"/>
+      <stop offset="50%" stop-color="#1a0a2e"/>
+      <stop offset="100%" stop-color="#0d0d1a"/>
+    </linearGradient>
+    <linearGradient id="idBadge" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#4c1d95"/>
+    </linearGradient>
+  `
+  let allCells = ''
+
+  pageFrames.forEach((frame, i) => {
+    const col = i % COLS
+    const row = Math.floor(i / COLS)
+    const ox = PAD + col * CW
+    const oy = HEADER + PAD + row * CH
+    const cx = ox + CW / 2
+    const cy = oy + 50
+    const r  = 38
+
+    // 3D card: bottom shadow layer
+    allCells += `<rect x="${ox + 4}" y="${oy + 6}" width="${CW - 8}" height="${CH - 8}" fill="rgba(0,0,0,0.6)" rx="12"/>`
+    // Main cell background
+    allCells += `<rect x="${ox + 2}" y="${oy + 2}" width="${CW - 4}" height="${CH - 4}" fill="url(#cellGrad)" rx="12" filter="url(#cellShadow)"/>`
+    // Top highlight (gives 3D raised look)
+    allCells += `<rect x="${ox + 3}" y="${oy + 3}" width="${CW - 6}" height="${(CH - 6) * 0.45}" fill="url(#cellHighlight)" rx="10"/>`
+    // Inner border
+    allCells += `<rect x="${ox + 3}" y="${oy + 3}" width="${CW - 6}" height="${CH - 6}" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="1" rx="11"/>`
+
+    // Avatar circle backing with 3D depth
+    allCells += `<circle cx="${cx + 2}" cy="${cy + 2}" r="${r + 2}" fill="rgba(0,0,0,0.5)"/>`
+    allCells += `<circle cx="${cx}" cy="${cy}" r="${r + 2}" fill="#07071a"/>`
+    allCells += `<circle cx="${cx}" cy="${cy}" r="${r - 1}" fill="#0d0d20"/>`
+    // Inner avatar area sheen
+    allCells += `<ellipse cx="${cx - 5}" cy="${cy - 8}" rx="${r * 0.6}" ry="${r * 0.35}" fill="rgba(255,255,255,0.04)"/>`
+    // PP placeholder text
+    allCells += `<text x="${cx}" y="${cy + 4}" fill="#1e1e44" font-size="9" text-anchor="middle" font-family="Liberation Sans,sans-serif" font-weight="bold">PP</text>`
+
+    const uid = `cat${frame.id}`
+    const { defs, circles } = buildFrameElements(frame, cx, cy, r, uid)
+    allDefs += defs
+    allCells += circles
+
+    // ID badge - 3D pill
+    allCells += `<rect x="${cx - 13}" y="${cy + r + 5}" width="26" height="17" fill="url(#idBadge)" rx="8"/>`
+    // Badge highlight
+    allCells += `<rect x="${cx - 12}" y="${cy + r + 6}" width="24" height="7" fill="rgba(255,255,255,0.15)" rx="6"/>`
+    // Badge shadow
+    allCells += `<rect x="${cx - 13}" y="${cy + r + 16}" width="26" height="4" fill="rgba(0,0,0,0.4)" rx="0 0 8 8"/>`
+    allCells += `<text x="${cx}" y="${cy + r + 17}" fill="#ffffff" font-size="10" font-weight="bold" text-anchor="middle" font-family="Liberation Sans,sans-serif">${frame.id}</text>`
+
+    // Frame name
+    const n = frame.name.length > 12 ? frame.name.slice(0, 11) + '.' : frame.name
+    allCells += `<text x="${cx}" y="${cy + r + 32}" fill="#c4b5fd" font-size="8" font-weight="bold" text-anchor="middle" font-family="Liberation Sans,sans-serif">${n}</text>`
+
+    // Category tag
+    const catColor = { Basic: '#6b7280', Neon: '#06b6d4', Gradient: '#f59e0b', Ornate: '#a855f7', Nature: '#22c55e', Prestige: '#eab308', Extra: '#f97316', Anime: '#ec4899' }[frame.category] || '#6b7280'
+    allCells += `<text x="${cx}" y="${cy + r + 46}" fill="${catColor}" font-size="7" text-anchor="middle" font-family="Liberation Sans,sans-serif" font-weight="bold">${frame.category.toUpperCase()}</text>`
+  })
+
+  const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+    <defs>${allDefs}</defs>
+
+    <!-- Background -->
+    <rect width="${W}" height="${H}" fill="#060612"/>
+    <!-- Subtle grid pattern for depth -->
+    <rect width="${W}" height="${H}" fill="url(#headerGrad)" opacity="0.4"/>
+
+    <!-- Header area -->
+    <rect width="${W}" height="${HEADER}" fill="url(#headerGrad)"/>
+    <rect x="0" y="${HEADER - 2}" width="${W}" height="2" fill="#8b5cf6" opacity="0.6"/>
+
+    <!-- Header star-field dots -->
+    ${Array.from({length: 30}, (_, i) => {
+      const sx = Math.abs((i * 137 + 43) % W)
+      const sy = Math.abs((i * 97 + 11) % (HEADER - 20)) + 4
+      const sz = (i % 3 === 0) ? 1.5 : 1
+      return `<circle cx="${sx}" cy="${sy}" r="${sz}" fill="#ffffff" opacity="${0.2 + (i % 5) * 0.08}"/>`
+    }).join('')}
+
+    <text x="${W / 2}" y="34" fill="#ffffff" font-size="22" font-weight="bold"
+      text-anchor="middle" font-family="Liberation Sans,sans-serif">🖼 FRAMES COLLECTION</text>
+    <text x="${W / 2}" y="56" fill="#8b5cf6" font-size="13" font-weight="bold"
+      text-anchor="middle" font-family="Liberation Sans,sans-serif">${pageLabel}  ·  ${rangeLabel}</text>
+    <line x1="${PAD}" y1="68" x2="${W - PAD}" y2="68" stroke="#1e1e4a" stroke-width="1"/>
+    <text x="${W / 2}" y="84" fill="#4a4a77" font-size="10"
+      text-anchor="middle" font-family="Liberation Sans,sans-serif">Use .setframe &lt;id&gt; to equip  ·  .frames 2 for anime page</text>
+
+    <!-- Cells -->
+    ${allCells}
+  </svg>`
+
+  return sharp(Buffer.from(svg)).png().toBuffer()
+}
+module.exports.generateFrameCatalog = generateFrameCatalog
+module.exports.fetchBuffer = fetchBuffer
+
+// ─── ANIMATED PROFILE CARD (GIF bg → single-pass ffmpeg overlay → MP4) ────────
+// Fast path: build overlay PNG once in Sharp, then let ffmpeg composite natively.
+// No per-frame Sharp loop — goes from potentially 60+ s down to ~5–15 s.
+async function generateAnimatedProfileCard(user, ppBuffer, gifBgBuffer) {
+  const sid    = Date.now() + '_' + Math.random().toString(36).slice(2, 7)
+  const tmpDir = os.tmpdir()
+  const gifIn  = path.join(tmpDir, `sgbot_bgin_${sid}.gif`)
+  const ovIn   = path.join(tmpDir, `sgbot_ov_${sid}.png`)
+  const outMp4 = path.join(tmpDir, `sgbot_anim_${sid}.mp4`)
+
+  const run = (cmd, args, timeout) => new Promise((res, rej) =>
+    execFile(cmd, args, { timeout: timeout || 90000 }, (err, _o, stderr) =>
+      err ? rej(new Error((stderr || err.message).slice(0, 300))) : res()
+    )
+  )
+
+  try {
+    // Write GIF to disk
+    fs.writeFileSync(gifIn, gifBgBuffer)
+
+    // ── Build overlay PNG (avatar + stats, transparent background) — done ONCE ──
+    const diameter  = AV_R * 2
+    const avatarBuf = ppBuffer
+      ? await makeCircleAvatar(ppBuffer, diameter)
+      : await makeInitialsAvatar(user.name || user.phone || '?', diameter)
+    const avatarTop  = AV_CY - AV_R   // 130
+    const avatarLeft = AV_CX - AV_R   // 115
+    const overlayBuf = Buffer.from(buildStatsSvg(user))
+
+    const overlayPng = await sharp({
+      create: { width: CARD_W, height: CARD_H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
+    })
+      .composite([
+        { input: avatarBuf,  top: avatarTop,  left: avatarLeft },
+        { input: overlayBuf, top: 0,           left: 0 },
+      ])
+      .png()
+      .toBuffer()
+
+    fs.writeFileSync(ovIn, overlayPng)
+
+    // ── Single ffmpeg call: scale GIF → overlay transparent PNG → encode MP4 ──
+    // yuv420p requires even width/height
+    const w = CARD_W % 2 === 0 ? CARD_W : CARD_W - 1
+    const h = CARD_H % 2 === 0 ? CARD_H : CARD_H - 1
+
+    await run('ffmpeg', [
+      '-y',
+      '-i',    gifIn,
+      '-i',    ovIn,
+      '-filter_complex',
+      `[0:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setpts=PTS-STARTPTS[bg];[bg][1:v]overlay=0:0[out]`,
+      '-map',  '[out]',
+      '-c:v',  'libx264',
+      '-preset', 'ultrafast',
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
+      outMp4,
+    ])
+
+    return fs.readFileSync(outMp4)
+  } finally {
+    try { fs.unlinkSync(gifIn)  } catch {}
+    try { fs.unlinkSync(ovIn)   } catch {}
+    try { fs.unlinkSync(outMp4) } catch {}
+  }
+}
+module.exports.generateAnimatedProfileCard = generateAnimatedProfileCard
