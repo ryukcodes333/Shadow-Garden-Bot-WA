@@ -1,7 +1,9 @@
 const axios = require('axios')
 
-const GROQ_KEY = process.env.GROQ_KEY || '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'
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
+const GROQ_KEY = process.env.GROQ_KEY
+if (!GROQ_KEY) {
+  throw new Error('GROQ_KEY is not set in environment variables')
+}
 
 const ALPHA_PROMPT = [
   'You are Alpha - a real person inside Konosuba. NOT an AI assistant or chatbot.',
