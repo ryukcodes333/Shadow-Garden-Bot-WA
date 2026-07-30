@@ -48,8 +48,8 @@ module.exports = {
   async menu({ sock, msg, jid, sender, pushName, botIdentity }) {
     const userName = pushName || sender || 'Traveller'
     const menuText =
-      `Hᴇʏʏʏʏʏ ${userName}... ɪ'ᴍ Aǫᴜᴀ ꜰʀᴏᴍ ᴛʜᴇ 𝐊𝚯𝐍𝚯𝐒𝐔𝐁𝚫 ᴄᴏᴍᴜɴɪᴛʏ ɴɪᴄᴇ ᴛᴏ ᴍᴇᴇᴛ ʏᴏᴜ!\n\n` +
-      `Cʜᴇᴄᴋ ʙᴇʟᴏᴡ ғᴏʀ ᴀᴠᴀɪʟᴀʙʟᴇ ᴄᴏᴍᴍᴀɴᴅs ✦\n\n` +
+      `Heyyy ${userName}... I'm Misa from 𝕿𝖍𝖊 𝕹𝖊𝖜 𝖂𝖔𝖗𝖑𝖉, nice to meet you!\n\n` +
+      `Check below for my available commands!\n\n` +
 
       `*⚙️ ADMIN ⚙️*\n` +
       `┃\n` +
